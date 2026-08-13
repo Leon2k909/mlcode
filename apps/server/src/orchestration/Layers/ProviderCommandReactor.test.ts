@@ -5,10 +5,12 @@ import * as NodePath from "node:path";
 
 import {
   ModelSelection,
+  EmployeeId,
   ProviderRuntimeEvent,
   ProviderSession,
   ProviderDriverKind,
   ProviderInstanceId,
+  type ServerSettings,
 } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
 import {
@@ -150,6 +152,7 @@ describe("ProviderCommandReactor", () => {
     readonly requiresNewThreadForModelChange?: boolean;
     readonly titleRegenerationCompletionDispatchFailures?: number;
     readonly titleRegenerationBeforeStart?: "one" | "two";
+    readonly serverSettings?: Partial<ServerSettings>;
     readonly startSessionEffect?: (
       session: ProviderSession,
     ) => Effect.Effect<ProviderSession, ProviderAdapterRequestError>;
@@ -412,7 +415,7 @@ describe("ProviderCommandReactor", () => {
           generateThreadTitle,
         }),
       ),
-      Layer.provideMerge(ServerSettingsService.layerTest()),
+      Layer.provideMerge(ServerSettingsService.layerTest(input?.serverSettings)),
       Layer.provideMerge(ServerConfig.layerTest(process.cwd(), baseDir)),
       Layer.provideMerge(NodeServices.layer),
     );
@@ -2380,6 +2383,119 @@ describe("ProviderCommandReactor", () => {
         detail: expect.stringContaining("cannot switch to 'claudeAgent'"),
       },
     });
+  });
+
+  it("routes a group handoff to the target employee's provider with only group teammates", async () => {
+    const ceoId = EmployeeId.make("ceo");
+    const reviewerId = EmployeeId.make("reviewer");
+    const outsiderId = EmployeeId.make("outsider");
+    const groupSelection: ModelSelection = {
+      instanceId: ProviderInstanceId.make("codex"),
+      model: "gpt-5-codex",
+      employeeId: ceoId,
+      employeeIds: [ceoId, reviewerId],
+    };
+    const harness = await createHarness({
+      threadModelSelection: groupSelection,
+      serverSettings: {
+        employees: {
+          [ceoId]: {
+            displayName: "Casey",
+            role: "CEO",
+            providerInstanceId: ProviderInstanceId.make("codex"),
+            model: "gpt-5-codex",
+            instructions: "Own the implementation.",
+            enabled: true,
+          },
+          [reviewerId]: {
+            displayName: "Riley",
+            role: "Reviewer",
+            providerInstanceId: ProviderInstanceId.make("claudeAgent"),
+            model: "claude-opus-4-6",
+            instructions: "Review carefully.",
+            enabled: true,
+          },
+          [outsiderId]: {
+            displayName: "Morgan",
+            role: "Designer",
+            providerInstanceId: ProviderInstanceId.make("codex"),
+            model: "gpt-5-codex",
+            instructions: "Design interfaces.",
+            enabled: true,
+          },
+        },
+      },
+    });
+    const now = "2026-08-13T10:00:00.000Z";
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-employee-group-ceo"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-employee-group-ceo"),
+          role: "user",
+          text: "Implement this feature.",
+          attachments: [],
+        },
+        modelSelection: groupSelection,
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: now,
+      }),
+    );
+    await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+
+    expect(harness.sendTurn.mock.calls[0]?.[0]).toMatchObject({
+      modelSelection: groupSelection,
+    });
+    const ceoInput = harness.sendTurn.mock.calls[0]?.[0] as { input?: string };
+    expect(ceoInput.input).toContain("You are Casey, working as CEO.");
+    expect(ceoInput.input).toContain("Riley (id: reviewer)");
+    expect(ceoInput.input).not.toContain("Morgan (id: outsider)");
+
+    const reviewerSelection: ModelSelection = {
+      instanceId: ProviderInstanceId.make("claudeAgent"),
+      model: "claude-opus-4-6",
+      employeeId: reviewerId,
+      employeeIds: [ceoId, reviewerId],
+    };
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-employee-group-reviewer"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("employee-group-reviewer"),
+          role: "user",
+          text: "To Riley, from Casey:\n\nPlease review the implementation.",
+          attachments: [],
+          employeeId: ceoId,
+        },
+        modelSelection: reviewerSelection,
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: "2026-08-13T10:00:01.000Z",
+      }),
+    );
+    await waitFor(() => harness.startSession.mock.calls.length === 2);
+    await waitFor(() => harness.sendTurn.mock.calls.length === 2);
+
+    expect(harness.startSession.mock.calls[1]?.[1]).toMatchObject({
+      provider: ProviderDriverKind.make("claudeAgent"),
+      providerInstanceId: ProviderInstanceId.make("claudeAgent"),
+      modelSelection: reviewerSelection,
+    });
+    expect(harness.startSession.mock.calls[1]?.[1]).not.toHaveProperty("resumeCursor");
+    const reviewerTurn = harness.sendTurn.mock.calls[1]?.[0] as {
+      input?: string;
+      modelSelection?: ModelSelection;
+    };
+    expect(reviewerTurn.modelSelection).toEqual(reviewerSelection);
+    expect(reviewerTurn.input).toContain("You are Riley, working as Reviewer.");
+    expect(reviewerTurn.input).toContain("Casey (id: ceo)");
+    expect(reviewerTurn.input).not.toContain("Morgan (id: outsider)");
   });
 
   it("rejects cross-driver provider changes after the existing thread session has stopped", async () => {

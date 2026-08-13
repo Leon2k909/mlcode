@@ -1,19 +1,22 @@
-# T3 Code
+# ML Code
 
-T3 Code is an "agent harness control surface". It enables control of the agents on your machine with a best-in-class mobile app ([iOS](https://apps.apple.com/us/app/t3-code-remote-claude-more/id6787819824), [Android](https://play.google.com/store/apps/details?id=com.t3tools.t3code)), [web app](https://app.t3.codes) and [Electron-based desktop app](https://t3.codes).
+<img src="./apps/web/public/ml-code-logo.png" alt="ML Code logo" width="96" />
 
-Works with your subscriptions on Claude Code, Codex, Cursor, Grok Build, and OpenCode. If they're set up on your computer, T3 Code can control them.
+ML Code is a Windows-first desktop workspace for Codex, Claude Code, Cursor, Grok Build, and OpenCode. It is based on the open-source [T3 Code](https://github.com/pingdotgg/t3code) project and adds persistent employees, employee group chats, clearer employee/sub-agent identity, and Micheon/Codex pets.
 
-## "Wait, what are you selling me?"
+Employees can work in their own chats or collaborate in shared conversations with roles such as CEO, implementer, and reviewer. ML Code uses the provider CLIs and subscriptions already installed on your computer.
 
-Nothing. We built T3 Code because we wanted the best possible development experience with agents. We were inspired by existing solutions like the Codex desktop app, Conductor, Claude Desktop and Cursor Glass, but none met our bar.
+## Install ML Code Alpha on Windows
 
-We wanted something performant, remote-ready, and truly open. If we ever go the wrong direction, we want you to have everything you need to fork and build the editor that you want.
+1. Open [ML Code Releases](https://github.com/Leon2k909/mlcode/releases/latest).
+2. Download `ML-Code-<version>-x64.exe`.
+3. Run the installer. Early alpha builds are currently unsigned, so Windows may show a SmartScreen warning. Choose **More info**, then **Run anyway** only when the file came from this repository.
+4. Start **ML Code (Alpha)** from the Start menu.
 
-## Installation
+Installed builds check this repository for a newer release shortly after startup and every few minutes while running. When an update is available, ML Code offers to download and install it. You can also use **Settings > General > Check for Updates**.
 
 > [!WARNING]
-> T3 Code currently supports Codex, Claude, Cursor, Grok Build and OpenCode. Install and authenticate at least one provider before use:
+> Install and authenticate at least one provider before use:
 >
 > - Codex: install [Codex CLI](https://developers.openai.com/codex/cli) and run `codex login`
 > - Claude: install [Claude Code](https://claude.com/product/claude-code) and run `claude auth login`
@@ -21,88 +24,50 @@ We wanted something performant, remote-ready, and truly open. If we ever go the 
 > - Grok Build: install [Grok Build CLI](https://x.ai/cli) and run `grok login`
 > - OpenCode: install [OpenCode](https://opencode.ai) and run `opencode auth login`
 
-### Try it out (install-free)
+## Build from source on Windows
 
-The easiest way to test T3 Code is to run the server in your terminal (requires Node.js 22.16+, 23.11+, or 24.10+):
+Install [Vite+](https://viteplus.dev/guide/), clone the repository, and install dependencies:
 
-```bash
-npx t3@latest
-```
-
-This will launch T3 Code's backend on your machine as well as the local web app to control your agents.
-
-Tip: Use `npx t3@latest --help` for the full CLI reference.
-
-### Desktop app
-
-Install the latest version of the desktop app from [GitHub Releases](https://github.com/pingdotgg/t3code/releases), or from your favorite package registry:
-
-#### Windows (`winget`)
-
-```bash
-winget install T3Tools.T3Code
-```
-
-#### macOS (Homebrew)
-
-```bash
-brew install --cask t3-code
-```
-
-#### Arch Linux (AUR)
-
-```bash
-yay -S t3code-bin
-```
-
-## Some notes
-
-We are very very early in this project. Expect bugs.
-
-We are (mostly) not accepting contributions yet. Small fixes may be considered. Big features will not be.
-
-## Documentation
-
-Full docs live in [docs/](./docs). There's no docs site yet.
-
-- [Install and first run](./docs/user/install.md)
-- [Permission modes](./docs/user/permission-modes.md)
-- [Keyboard shortcuts](./docs/user/keybindings.md)
-- [Customize a project icon](./docs/user/project-settings.md)
-- [Remote access from a phone or another machine](./docs/user/remote-access.md)
-- [Keeping app and server in sync](./docs/user/updating.md)
-- [Source control integrations](./docs/user/source-control.md)
-- Multiple accounts: [Codex](./docs/user/providers-codex.md) · [Claude](./docs/user/providers-claude.md)
-- Linux: [run T3 Code as a background service](./docs/user/background-service.md)
-
-Building from source? Start at [docs/internals/overview.md](./docs/internals/overview.md).
-
-## If you REALLY want to contribute still.... read this first
-
-### Install `vp`
-
-T3 Code uses Vite+ so you'll need to install the global `vp` command-line tool.
-
-#### macOS / Linux
-
-```bash
-curl -fsSL https://vite.plus | bash
-```
-
-#### Windows
-
-```bash
+```powershell
 irm https://vite.plus/ps1 | iex
-```
-
-Checkout their getting started guide for more information: https://viteplus.dev/guide/
-
-### Install dependencies
-
-```bash
+git clone https://github.com/Leon2k909/mlcode.git
+cd mlcode
 vp i
 ```
 
-Read [CONTRIBUTING.md](./CONTRIBUTING.md) before opening an issue or PR.
+Run the development desktop app:
 
-Need support? Join the [Discord](https://discord.gg/jn4EGJjrvv).
+```powershell
+vp run dev:desktop
+```
+
+Create a Windows x64 installer:
+
+```powershell
+$env:T3CODE_DESKTOP_VERSION = "0.1.0"
+vp run dist:desktop:win:x64
+```
+
+## Status
+
+ML Code is an early alpha. Expect bugs and keep important work in Git.
+
+## Documentation
+
+Full docs live in [docs/](./docs).
+
+- [Install and first run](./docs/user/install.md)
+- [Employees and group chats](./docs/user/employees.md)
+- [Permission modes](./docs/user/permission-modes.md)
+- [Keyboard shortcuts](./docs/user/keybindings.md)
+- [Customize a project icon](./docs/user/project-settings.md)
+- [Remote access](./docs/user/remote-access.md)
+- [Keeping app and server in sync](./docs/user/updating.md)
+- [Source control integrations](./docs/user/source-control.md)
+- Multiple accounts: [Codex](./docs/user/providers-codex.md) · [Claude](./docs/user/providers-claude.md)
+
+Building from source? Start at [docs/internals/overview.md](./docs/internals/overview.md). Read [CONTRIBUTING.md](./CONTRIBUTING.md) before opening an issue or pull request.
+
+## Upstream
+
+ML Code keeps the original T3 Code Git history and license. The upstream repository is [pingdotgg/t3code](https://github.com/pingdotgg/t3code).

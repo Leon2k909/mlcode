@@ -39,6 +39,9 @@ directory to route session and turn operations for a thread, so callers name a t
 Adding a driver means writing the driver plus adapter and adding it to `BUILT_IN_DRIVERS`. No
 orchestration, contract, or client change is required for the common case.
 
+A provider instance answers "which CLI, whose credentials". "Who is doing this work" is a separate
+layer above it — see [employees.md](./employees.md).
+
 ## How provider work is requested
 
 Clients never call a provider directly. They dispatch orchestration commands over the RPC method

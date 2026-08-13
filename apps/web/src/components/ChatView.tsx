@@ -2,9 +2,11 @@ import {
   type ApprovalRequestId,
   DEFAULT_MODEL,
   defaultInstanceIdForDriver,
+  type EmployeeId,
   type EnvironmentId,
   type MessageId,
   type ModelSelection,
+  resolveEmployee,
   type ProjectScript,
   type ProjectId,
   type ProviderApprovalDecision,
@@ -188,6 +190,7 @@ import {
 import { useNowMinute } from "../hooks/useNowMinute";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
 import { resolveAppModelSelectionForInstance } from "../modelSelection";
+import { deriveEmployeeEntries, withEmployeeRouting } from "../employees";
 import { getTerminalFocusOwner } from "../lib/terminalFocus";
 import { preventRepeatedTerminalCloseShortcut } from "../lib/terminalCloseShortcut";
 import { resolveNewDraftStartFromOrigin } from "../lib/chatThreadActions";
@@ -5165,10 +5168,13 @@ function ChatViewContent(props: ChatViewProps) {
       }
     }
     const title = truncate(titleSeed);
-    const threadCreateModelSelection = createModelSelection(
-      ctxSelectedModelSelection.instanceId,
-      ctxSelectedModel || activeProject.defaultModelSelection?.model || DEFAULT_MODEL,
-      ctxSelectedModelSelection.options,
+    const threadCreateModelSelection = withEmployeeRouting(
+      createModelSelection(
+        ctxSelectedModelSelection.instanceId,
+        ctxSelectedModel || activeProject.defaultModelSelection?.model || DEFAULT_MODEL,
+        ctxSelectedModelSelection.options,
+      ),
+      ctxSelectedModelSelection,
     );
 
     let failure: AtomCommandResult<unknown, unknown> | null = null;
@@ -5836,7 +5842,7 @@ function ChatViewContent(props: ChatViewProps) {
   );
 
   const onProviderModelSelect = useCallback(
-    (instanceId: ProviderInstanceId, model: string) => {
+    (instanceId: ProviderInstanceId, model: string, baseSelection: ModelSelection) => {
       if (!activeThread) return;
       // Look up the configured instance so model normalization and custom
       // model lookup stay scoped to that exact instance. Unknown instance ids
@@ -5874,9 +5880,17 @@ function ChatViewContent(props: ChatViewProps) {
         scheduleComposerFocus();
         return;
       }
+      const activeEmployee = resolveEmployee(settings.employees, baseSelection.employeeId);
+      const keepEmployee = activeEmployee?.providerInstanceId === instanceId;
       const nextModelSelection: ModelSelection = {
         instanceId,
         model: resolvedModel,
+        ...(keepEmployee && baseSelection.employeeId !== undefined
+          ? { employeeId: baseSelection.employeeId }
+          : {}),
+        ...(keepEmployee && baseSelection.employeeIds !== undefined
+          ? { employeeIds: baseSelection.employeeIds }
+          : {}),
       };
       const modelChangeBlockReason = getStartedThreadModelChangeBlockReason({
         providers: providerStatuses,
@@ -5911,6 +5925,112 @@ function ChatViewContent(props: ChatViewProps) {
       settings,
     ],
   );
+
+  // Employees ride on the thread's ModelSelection, so picking one reuses the
+  // same draft path as picking a model — no separate thread state to keep in
+  // sync. Clearing drops the key entirely rather than storing an empty id.
+  const employeeEntries = useMemo(
+    () => deriveEmployeeEntries(settings.employees),
+    [settings.employees],
+  );
+  const onEmployeeSelect = useCallback(
+    (
+      employeeId: EmployeeId | undefined,
+      employeeIds: ReadonlyArray<EmployeeId> | undefined,
+      baseSelection: ModelSelection,
+    ) => {
+      if (!activeThread) return;
+      const {
+        employeeId: _droppedEmployeeId,
+        employeeIds: _droppedEmployeeIds,
+        options,
+        ...selectionWithoutEmployee
+      } = baseSelection;
+      if (employeeId === undefined) {
+        const nextModelSelection = {
+          ...selectionWithoutEmployee,
+          ...(options !== undefined ? { options } : {}),
+        } satisfies ModelSelection;
+        setComposerDraftModelSelection(
+          scopeThreadRef(activeThread.environmentId, activeThread.id),
+          nextModelSelection,
+        );
+        setStickyComposerModelSelection(nextModelSelection);
+        scheduleComposerFocus();
+        return;
+      }
+
+      const employee = resolveEmployee(settings.employees, employeeId);
+      if (employee === undefined) {
+        toastManager.add({
+          type: "warning",
+          title: "Employee unavailable",
+          description: "This employee is disabled or no longer configured.",
+        });
+        scheduleComposerFocus();
+        return;
+      }
+      const resolvedModel = resolveAppModelSelectionForInstance(
+        employee.providerInstanceId,
+        settings,
+        providerStatuses,
+        employee.model ??
+          (baseSelection.instanceId === employee.providerInstanceId ? baseSelection.model : null),
+      );
+      if (!resolvedModel) {
+        toastManager.add({
+          type: "warning",
+          title: "Employee provider unavailable",
+          description: `${employee.displayName} is bound to a provider that is not ready.`,
+        });
+        scheduleComposerFocus();
+        return;
+      }
+      const nextModelSelection: ModelSelection = {
+        ...selectionWithoutEmployee,
+        instanceId: employee.providerInstanceId,
+        model: resolvedModel,
+        employeeId,
+        ...(employeeIds !== undefined && employeeIds.length >= 2
+          ? { employeeIds: [...employeeIds] }
+          : {}),
+        ...(baseSelection.instanceId === employee.providerInstanceId && options !== undefined
+          ? { options }
+          : {}),
+      };
+      const modelChangeBlockReason = getStartedThreadModelChangeBlockReason({
+        providers: providerStatuses,
+        hasStartedSession: activeThread.session !== null,
+        currentModelSelection: activeThread.modelSelection,
+        currentProviderInstanceId: activeThread.session?.providerInstanceId ?? null,
+        nextModelSelection,
+      });
+      if (modelChangeBlockReason) {
+        toastManager.add({
+          type: "warning",
+          title: modelChangeBlockReason.title,
+          description: `${modelChangeBlockReason.description} Start a new thread for this employee or group.`,
+        });
+        scheduleComposerFocus();
+        return;
+      }
+      setComposerDraftModelSelection(
+        scopeThreadRef(activeThread.environmentId, activeThread.id),
+        nextModelSelection,
+      );
+      setStickyComposerModelSelection(nextModelSelection);
+      scheduleComposerFocus();
+    },
+    [
+      activeThread,
+      providerStatuses,
+      scheduleComposerFocus,
+      setComposerDraftModelSelection,
+      setStickyComposerModelSelection,
+      settings,
+    ],
+  );
+
   const onEnvModeChange = useCallback(
     (mode: DraftThreadEnvMode) => {
       if (canOverrideServerThreadEnvMode) {
@@ -6226,6 +6346,7 @@ function ChatViewContent(props: ChatViewProps) {
                 activeTurnStartedAt={activeWorkStartedAt}
                 listRef={legendListRef}
                 timelineEntries={timelineEntries}
+                employees={settings.employees}
                 latestTurn={activeLatestTurn}
                 runningTurnId={
                   activeThread.session?.status === "running"
@@ -6396,6 +6517,8 @@ function ChatViewContent(props: ChatViewProps) {
                               onChangeActivePendingUserInputCustomAnswer
                             }
                             onProviderModelSelect={onProviderModelSelect}
+                            employeeEntries={employeeEntries}
+                            onEmployeeSelect={onEmployeeSelect}
                             getModelDisabledReason={getModelDisabledReason}
                             toggleInteractionMode={toggleInteractionMode}
                             handleRuntimeModeChange={handleRuntimeModeChange}

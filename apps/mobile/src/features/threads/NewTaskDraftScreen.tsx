@@ -34,6 +34,7 @@ import { useThreadSettingsSheetPresentation } from "./use-thread-settings-sheet-
 
 import { makeTurnCommandMetadata } from "../../lib/commandMetadata";
 import { convertPastedImagesToAttachments, pickComposerImages } from "../../lib/composerImages";
+import { employeeSelectionLabel } from "../../lib/employees";
 import { resolveProviderOptionDescriptors } from "../../lib/providerOptions";
 import { useScaledTextRole } from "../settings/appearance/useScaledTextRole";
 import {
@@ -641,6 +642,12 @@ export function NewTaskDraftScreen(props: {
     flow.availableBranches.find((branch) => branch.isDefault)?.name ??
     null;
   const settingsSummaryLabel = threadSettingsSummaryLabel({
+    employeeLabel: flow.selectedModel
+      ? employeeSelectionLabel(
+          selectedEnvironmentServerConfig?.settings.employees,
+          flow.selectedModel,
+        )
+      : undefined,
     modelLabel: flow.selectedModelOption?.label ?? "Model",
     optionDescriptors: providerOptionDescriptors,
     runtimeMode: flow.runtimeMode,
@@ -965,6 +972,8 @@ export function NewTaskDraftScreen(props: {
       providerGroups={flow.providerGroups}
       selectedModel={flow.selectedModel}
       onSelectModel={(option) => flow.setSelectedModelKey(option.key, option.selection.options)}
+      employees={selectedEnvironmentServerConfig?.settings.employees}
+      onUpdateEmployeeSelection={flow.setEmployeeSelection}
       optionDescriptors={providerOptionDescriptors}
       onUpdateOptionSelections={flow.setSelectedModelOptions}
       runtimeMode={flow.runtimeMode}

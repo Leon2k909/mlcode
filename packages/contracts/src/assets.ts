@@ -19,6 +19,9 @@ export const AssetResource = Schema.Union([
     // project projection before it issues the signed URL.
     path: Schema.optional(ProjectFaviconPath),
   }),
+  Schema.TaggedStruct("pet-spritesheet", {
+    key: TrimmedNonEmptyString.check(Schema.isMaxLength(512)),
+  }),
 ]);
 export type AssetResource = typeof AssetResource.Type;
 
@@ -175,6 +178,17 @@ export class AssetProjectFaviconNotFoundError extends Schema.TaggedErrorClass<As
   }
 }
 
+export class AssetPetNotFoundError extends Schema.TaggedErrorClass<AssetPetNotFoundError>()(
+  "AssetPetNotFoundError",
+  {
+    resource: AssetResource,
+  },
+) {
+  override get message(): string {
+    return "Pet spritesheet was not found.";
+  }
+}
+
 export class AssetSigningKeyLoadError extends Schema.TaggedErrorClass<AssetSigningKeyLoadError>()(
   "AssetSigningKeyLoadError",
   {
@@ -200,6 +214,7 @@ export const AssetAccessError = Schema.Union([
   AssetProjectFaviconResolutionError,
   AssetProjectFaviconInspectionError,
   AssetProjectFaviconNotFoundError,
+  AssetPetNotFoundError,
   AssetSigningKeyLoadError,
 ]);
 export type AssetAccessError = typeof AssetAccessError.Type;

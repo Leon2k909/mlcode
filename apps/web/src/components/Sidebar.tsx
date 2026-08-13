@@ -29,8 +29,8 @@ import {
   scopeThreadRef,
   scopedThreadKey,
 } from "@t3tools/client-runtime/environment";
-import type { ScopedThreadRef, ThreadId } from "@t3tools/contracts";
-import type { TimestampFormat } from "@t3tools/contracts/settings";
+import type { EmployeeMap, ScopedThreadRef, ThreadId } from "@t3tools/contracts";
+import type { TimestampFormat, UnifiedSettings } from "@t3tools/contracts/settings";
 import {
   AlarmClockIcon,
   AlarmClockOffIcon,
@@ -52,6 +52,7 @@ import {
   SquarePenIcon,
   TerminalIcon,
   Undo2Icon,
+  UsersRoundIcon,
   XIcon,
 } from "lucide-react";
 import {
@@ -99,7 +100,7 @@ import { useThreadActions } from "../hooks/useThreadActions";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
 import { openCommandPalette } from "../commandPaletteBus";
 import { startNewThreadFromContext } from "../lib/chatThreadActions";
-import { useClientSettings } from "../hooks/useSettings";
+import { useClientSettings, useEnvironmentSettings } from "../hooks/useSettings";
 import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
 import { useLocalStorage } from "../hooks/useLocalStorage";
 import { useNowMinute } from "../hooks/useNowMinute";
@@ -160,6 +161,12 @@ import { getTriggerDisplayModelLabel } from "./chat/providerIconUtils";
 import { deriveProviderInstanceEntries, type ProviderInstanceEntry } from "../providerInstances";
 import { primaryServerProvidersAtom } from "../state/server";
 import { useThreadRunningTerminalIds } from "../state/terminalSessions";
+import {
+  deriveThreadEmployeeParticipants,
+  employeeRoutingEqual,
+  type ThreadEmployeeParticipant,
+} from "../employees";
+import { formatProviderDisplayName } from "../lib/contextWindow";
 import { stackedThreadToast, toastManager } from "./ui/toast";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -183,6 +190,8 @@ const SETTLED_TAIL_PAGE_COUNT = 25;
 // Keep the v2 key so existing preferences survive the v2-to-default rename.
 const SETTLED_SHELF_EXPANDED_KEY = "t3code:sidebar-v2:settled-expanded";
 const SNOOZED_SHELF_EXPANDED_KEY = "t3code:sidebar-v2:snoozed-expanded";
+
+const selectEnvironmentEmployees = (settings: UnifiedSettings): EmployeeMap => settings.employees;
 
 function compactSidebarTimeLabel(label: string): string {
   if (label === "just now") return "now";
@@ -252,6 +261,8 @@ function SidebarThreadTooltip({
   branchMismatch,
   terminalStatus,
   terminalProcessCount,
+  employeeParticipants,
+  employeeRosterAppliesNextTurn,
 }: {
   thread: SidebarThreadSummary;
   projectTitle: string | null;
@@ -267,6 +278,8 @@ function SidebarThreadTooltip({
   } | null;
   terminalStatus: TerminalStatusIndicator | null;
   terminalProcessCount: number;
+  employeeParticipants: ReadonlyArray<ThreadEmployeeParticipant>;
+  employeeRosterAppliesNextTurn: boolean;
 }) {
   return (
     <TooltipPopup
@@ -320,6 +333,26 @@ function SidebarThreadTooltip({
                 iconClassName="size-3 shrink-0 grayscale opacity-60"
               />
               <div className="min-w-0 truncate text-foreground/75">{modelLabel}</div>
+            </div>
+          ) : null}
+          {employeeParticipants.length > 0 ? (
+            <div className="flex min-w-0 items-start gap-2">
+              <UsersRoundIcon className="mt-0.5 size-3 shrink-0 stroke-muted-foreground" />
+              <div className="min-w-0 wrap-break-word text-foreground/75">
+                <span className="font-medium">
+                  {employeeRosterAppliesNextTurn ? "Next turn:" : "T3 employees:"}
+                </span>{" "}
+                {employeeParticipants
+                  .map((participant) => {
+                    const provider = participant.employee
+                      ? formatProviderDisplayName(participant.employee.providerInstanceId)
+                      : null;
+                    return provider
+                      ? `${participant.displayName} (${provider})`
+                      : participant.displayName;
+                  })
+                  .join(", ")}
+              </div>
             </div>
           ) : null}
           {terminalStatus ? (
@@ -731,6 +764,12 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
     [thread.environmentId, thread.id],
   );
   const threadKey = scopedThreadKey(threadRef);
+  const draftModelSelection = useComposerDraftStore((state) => {
+    const draft = state.draftsByThreadKey[threadKey];
+    if (!draft) return null;
+    const activeProvider = draft.activeProvider ?? thread.modelSelection.instanceId;
+    return draft.modelSelectionByProvider[activeProvider] ?? null;
+  });
   const isRegeneratingTitle = thread.titleRegeneration != null;
   const lastVisitedAt = useUiStateStore((state) => state.threadLastVisitedAtById[threadKey]);
   const isSelected = useThreadSelectionStore((state) => state.selectedThreadKeys.has(threadKey));
@@ -741,6 +780,18 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   });
   const terminalStatus = terminalStatusFromRunningIds(runningTerminalIds);
   const terminalProcessCount = runningTerminalIds.length;
+  const employees = useEnvironmentSettings(thread.environmentId, selectEnvironmentEmployees);
+  const effectiveEmployeeSelection = draftModelSelection ?? thread.modelSelection;
+  const employeeParticipants = useMemo(
+    () => deriveThreadEmployeeParticipants(effectiveEmployeeSelection, employees),
+    [effectiveEmployeeSelection, employees],
+  );
+  const employeeRoutingPending =
+    draftModelSelection !== null &&
+    !employeeRoutingEqual(draftModelSelection, thread.modelSelection);
+  const employeeRosterLabel = employeeParticipants
+    .map((participant) => participant.displayName)
+    .join(", ");
 
   const gitCwd = thread.worktreePath ?? props.projectCwd;
   const gitStatus = useEnvironmentQuery(
@@ -787,6 +838,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
     status === "working" || status === "monitoring" || status === "approval" || status === "input";
   const shouldRecede =
     (status === "ready" || isInFlight) && !isUnread && !isWoke && !props.isActive && !isSelected;
+  const employeeRosterAppliesNextTurn = employeeRoutingPending && isInFlight;
   // Status hues follow the system-wide convention set by sidebar v1 and the
   // mobile Live Activity/widgets (amber approval, indigo input, sky working)
   // so a thread reads the same color everywhere it surfaces.
@@ -883,6 +935,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
       branchMismatch={branchMismatch}
       terminalStatus={terminalStatus}
       terminalProcessCount={terminalProcessCount}
+      employeeParticipants={employeeParticipants}
+      employeeRosterAppliesNextTurn={employeeRosterAppliesNextTurn}
     />
   );
 
@@ -1269,7 +1323,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
       }
       {...(sortable?.listeners ?? {})}
       className={cn(
-        "list-none py-0.5 [content-visibility:auto] [contain-intrinsic-size:auto_96px]",
+        "list-none py-0.5 [content-visibility:auto] [contain-intrinsic-size:auto_104px]",
         sortable?.isDragging && "z-20 opacity-80",
       )}
     >
@@ -1289,7 +1343,12 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
             />
           }
         >
-          <div className="relative z-10 h-[4.875rem] px-[var(--sidebar-row-content-inset)] py-[var(--sidebar-content-inset)]">
+          <div
+            className={cn(
+              "relative z-10 px-[var(--sidebar-row-content-inset)] py-[var(--sidebar-content-inset)]",
+              employeeParticipants.length > 0 ? "h-24" : "h-[4.875rem]",
+            )}
+          >
             <div className="flex h-5 min-w-0 items-center gap-1.5">
               <ProjectFavicon
                 environmentId={thread.environmentId}
@@ -1430,6 +1489,23 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                 </span>
               ) : null}
             </div>
+            {employeeParticipants.length > 0 ? (
+              <div
+                className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs"
+                data-sidebar-t3-employees={employeeParticipants
+                  .map((participant) => participant.employeeId)
+                  .join(",")}
+              >
+                <UsersRoundIcon
+                  aria-hidden
+                  className="size-3.5 shrink-0 text-sky-600 dark:text-sky-400"
+                />
+                <span className="shrink-0 font-medium text-foreground/75">
+                  {employeeRosterAppliesNextTurn ? "Next turn:" : "T3 employees:"}
+                </span>
+                <span className="min-w-0 truncate text-secondary-label">{employeeRosterLabel}</span>
+              </div>
+            ) : null}
             <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-secondary-label text-xs">
               {/* Always the branch. The plan step used to take this slot while
                   working, but it truncated to a half-sentence and dropped the
@@ -1502,6 +1578,13 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
   onSelect: () => void;
 }) {
   const { thread } = props;
+  const threadKey = scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id));
+  const draftModelSelection = useComposerDraftStore((state) => {
+    const draft = state.draftsByThreadKey[threadKey];
+    if (!draft) return null;
+    const activeProvider = draft.activeProvider ?? thread.modelSelection.instanceId;
+    return draft.modelSelectionByProvider[activeProvider] ?? null;
+  });
   // Same details tooltip as the regular rows: a search hit is still a thread,
   // and the hover card is how you disambiguate identically-titled results.
   const gitCwd = thread.worktreePath ?? props.projectCwd;
@@ -1533,6 +1616,19 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
     threadId: thread.id,
   });
   const terminalStatus = terminalStatusFromRunningIds(runningTerminalIds);
+  const employees = useEnvironmentSettings(thread.environmentId, selectEnvironmentEmployees);
+  const effectiveEmployeeSelection = draftModelSelection ?? thread.modelSelection;
+  const employeeParticipants = useMemo(
+    () => deriveThreadEmployeeParticipants(effectiveEmployeeSelection, employees),
+    [effectiveEmployeeSelection, employees],
+  );
+  const status = resolveSidebarThreadStatus(thread);
+  const isInFlight =
+    status === "working" || status === "monitoring" || status === "approval" || status === "input";
+  const employeeRosterAppliesNextTurn =
+    isInFlight &&
+    draftModelSelection !== null &&
+    !employeeRoutingEqual(draftModelSelection, thread.modelSelection);
   return (
     <li role="presentation" className="list-none">
       <Tooltip>
@@ -1585,6 +1681,8 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
           branchMismatch={branchMismatch}
           terminalStatus={terminalStatus}
           terminalProcessCount={runningTerminalIds.length}
+          employeeParticipants={employeeParticipants}
+          employeeRosterAppliesNextTurn={employeeRosterAppliesNextTurn}
         />
       </Tooltip>
     </li>

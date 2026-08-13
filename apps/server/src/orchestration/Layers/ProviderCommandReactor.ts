@@ -1,12 +1,15 @@
 import {
   type ChatAttachment,
   CommandId,
+  DEFAULT_MODEL_BY_PROVIDER,
   EventId,
   type ModelSelection,
   type OrchestrationEvent,
   ProviderDriverKind,
   type ProjectId,
   type OrchestrationSession,
+  type EmployeeId,
+  resolveEmployee,
   ThreadId,
   type ProviderSession,
   type RuntimeMode,
@@ -26,6 +29,7 @@ import * as Stream from "effect/Stream";
 import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
 
 import { resolveThreadWorkspaceCwd } from "../../checkpointing/Utils.ts";
+import { applyEmployeePreamble } from "../../employee/EmployeeInstructions.ts";
 import { increment, orchestrationEventsProcessedTotal } from "../../observability/Metrics.ts";
 import { ProviderAdapterRequestError } from "../../provider/Errors.ts";
 import type { ProviderServiceError } from "../../provider/Errors.ts";
@@ -65,6 +69,19 @@ type ProviderIntentEvent = Extract<
 function toNonEmptyProviderInput(value: string | undefined): string | undefined {
   const normalized = value?.trim();
   return normalized && normalized.length > 0 ? normalized : undefined;
+}
+
+function isEmployeeGroupHandoff(current: ModelSelection, requested: ModelSelection): boolean {
+  const participants = requested.employeeIds;
+  return (
+    current.employeeId !== undefined &&
+    requested.employeeId !== undefined &&
+    current.employeeId !== requested.employeeId &&
+    participants !== undefined &&
+    participants.length >= 2 &&
+    participants.includes(current.employeeId) &&
+    participants.includes(requested.employeeId)
+  );
 }
 
 function mapProviderSessionStatusToOrchestrationStatus(
@@ -337,6 +354,15 @@ const make = Effect.gen(function* () {
     );
 
   const threadModelSelections = new Map<string, ModelSelection>();
+  /**
+   * Which employee last had their persona sent into a thread's live session.
+   *
+   * Lets a handoff work inside one warm session: when a different employee
+   * takes the next turn, they are introduced even though the provider context
+   * was never rebuilt. Purely an optimization ledger — losing it on restart
+   * re-sends a persona, which is harmless.
+   */
+  const threadInjectedEmployees = new Map<string, EmployeeId>();
 
   const appendProviderFailureActivity = (input: {
     readonly threadId: ThreadId;
@@ -484,6 +510,7 @@ const make = Effect.gen(function* () {
     options?: {
       readonly modelSelection?: ModelSelection;
       readonly pendingTurnStart?: boolean;
+      readonly allowProviderChange?: boolean;
     },
   ) {
     const thread = yield* resolveThread(threadId);
@@ -574,7 +601,7 @@ const make = Effect.gen(function* () {
         createdAt,
       });
     }
-    if (thread.session !== null) {
+    if (thread.session !== null && options?.allowProviderChange !== true) {
       yield* rejectStartedThreadModelChangeIfRequired({
         threadId,
         currentModelSelection:
@@ -593,7 +620,10 @@ const make = Effect.gen(function* () {
       requestedModelSelection !== undefined &&
       requestedModelSelection.instanceId !== currentInstanceId
     ) {
-      if (currentInfo.driverKind !== desiredInfo.driverKind) {
+      if (
+        currentInfo.driverKind !== desiredInfo.driverKind &&
+        options?.allowProviderChange !== true
+      ) {
         return yield* new ProviderAdapterRequestError({
           provider: preferredProvider,
           method: "thread.turn.start",
@@ -602,7 +632,8 @@ const make = Effect.gen(function* () {
       }
       if (
         currentInfo.continuationIdentity.continuationKey !==
-        desiredInfo.continuationIdentity.continuationKey
+          desiredInfo.continuationIdentity.continuationKey &&
+        options?.allowProviderChange !== true
       ) {
         return yield* new ProviderAdapterRequestError({
           provider: preferredProvider,
@@ -673,6 +704,10 @@ const make = Effect.gen(function* () {
       const instanceChanged =
         requestedModelSelection !== undefined &&
         activeSession?.providerInstanceId !== requestedModelSelection.instanceId;
+      const providerChanged = currentInfo.driverKind !== desiredInfo.driverKind;
+      const continuationChanged =
+        currentInfo.continuationIdentity.continuationKey !==
+        desiredInfo.continuationIdentity.continuationKey;
       const shouldRestartForModelChange = modelChanged && sessionModelSwitch === "unsupported";
       const previousModelSelection = threadModelSelections.get(threadId);
       const shouldRestartForModelSelectionChange =
@@ -687,12 +722,13 @@ const make = Effect.gen(function* () {
         !shouldRestartForModelChange &&
         !shouldRestartForModelSelectionChange
       ) {
-        return existingSessionThreadId;
+        return { sessionThreadId: existingSessionThreadId, contextReset: false };
       }
 
-      const resumeCursor = shouldRestartForModelChange
-        ? undefined
-        : (activeSession?.resumeCursor ?? undefined);
+      const resumeCursor =
+        shouldRestartForModelChange || providerChanged || continuationChanged
+          ? undefined
+          : (activeSession?.resumeCursor ?? undefined);
       yield* Effect.logInfo("provider command reactor restarting provider session", {
         threadId,
         existingSessionThreadId,
@@ -724,12 +760,19 @@ const make = Effect.gen(function* () {
         cwd: restartedSession.cwd,
       });
       yield* bindSessionToThread(restartedSession);
-      return restartedSession.threadId;
+      // A restart that carried a resume cursor rehydrates the prior
+      // conversation, so anything already established in it (an employee
+      // persona, for one) is still in context. Only a cursorless restart
+      // starts the provider from nothing.
+      return {
+        sessionThreadId: restartedSession.threadId,
+        contextReset: resumeCursor === undefined,
+      };
     }
 
     const startedSession = yield* startProviderSession(undefined);
     yield* bindSessionToThread(startedSession);
-    return startedSession.threadId;
+    return { sessionThreadId: startedSession.threadId, contextReset: true };
   });
 
   const buildSendTurnRequestForThread = Effect.fnUntraced(function* (input: {
@@ -746,14 +789,99 @@ const make = Effect.gen(function* () {
         new Error(`Thread '${input.threadId}' was not found in read model.`),
       );
     }
-    yield* ensureSessionForThread(input.threadId, input.createdAt, {
-      ...(input.modelSelection !== undefined ? { modelSelection: input.modelSelection } : {}),
-      pendingTurnStart: true,
+    const previousModelSelection =
+      threadModelSelections.get(input.threadId) ?? thread.modelSelection;
+    const requestedModelSelection = input.modelSelection ?? previousModelSelection;
+    const selectedEmployeeId = requestedModelSelection.employeeId;
+    const settings =
+      selectedEmployeeId === undefined ? undefined : yield* serverSettingsService.getSettings;
+    const selectedEmployee =
+      settings === undefined ? undefined : resolveEmployee(settings.employees, selectedEmployeeId);
+
+    // Employee selection is authoritative for provider routing. The original
+    // UI only attached an employee id to whichever model happened to be
+    // selected, which could label a Codex turn as a Claude employee. Correct
+    // malformed or older clients here as well as in the picker.
+    const effectiveModelSelection = yield* Effect.gen(function* () {
+      if (selectedEmployee === undefined) return requestedModelSelection;
+      const targetInfo = yield* providerService.getInstanceInfo(
+        selectedEmployee.providerInstanceId,
+      );
+      const targetModel =
+        selectedEmployee.model ??
+        (requestedModelSelection.instanceId === selectedEmployee.providerInstanceId
+          ? requestedModelSelection.model
+          : DEFAULT_MODEL_BY_PROVIDER[targetInfo.driverKind]);
+      if (!targetModel) {
+        return yield* new ProviderAdapterRequestError({
+          provider: targetInfo.driverKind,
+          method: "thread.turn.start",
+          detail: `Employee '${selectedEmployee.displayName}' has no usable model for provider instance '${selectedEmployee.providerInstanceId}'.`,
+        });
+      }
+      const { options, ...selectionWithoutOptions } = requestedModelSelection;
+      return {
+        ...selectionWithoutOptions,
+        instanceId: selectedEmployee.providerInstanceId,
+        model: targetModel,
+        ...(requestedModelSelection.instanceId === selectedEmployee.providerInstanceId &&
+        options !== undefined
+          ? { options }
+          : {}),
+      } satisfies ModelSelection;
     });
-    if (input.modelSelection !== undefined) {
-      threadModelSelections.set(input.threadId, input.modelSelection);
+    const allowProviderChange = isEmployeeGroupHandoff(
+      previousModelSelection,
+      effectiveModelSelection,
+    );
+    const sessionOutcome = yield* ensureSessionForThread(input.threadId, input.createdAt, {
+      modelSelection: effectiveModelSelection,
+      pendingTurnStart: true,
+      ...(allowProviderChange ? { allowProviderChange: true } : {}),
+    });
+    threadModelSelections.set(input.threadId, effectiveModelSelection);
+    // An employee's standing instructions open the conversation they are
+    // working in. They ride the first turn after the provider context was
+    // created, not every turn — the provider keeps the session, so repeating
+    // the persona would spend context on boilerplate the model already has.
+    const employeeSelection = effectiveModelSelection;
+    // Introduce the employee when the provider context was rebuilt, or when a
+    // different employee is taking this turn. The second case is the handoff:
+    // one employee drafts, another reviews, in the same warm session. Without
+    // it, switching employees mid-thread changes the label and nothing else.
+    const shouldIntroduceEmployee =
+      sessionOutcome.contextReset ||
+      threadInjectedEmployees.get(input.threadId) !== selectedEmployeeId;
+    const employees = shouldIntroduceEmployee ? settings?.employees : undefined;
+    const employee =
+      employees === undefined ? undefined : resolveEmployee(employees, selectedEmployeeId);
+    // Everyone else who could take this thread. An employee that is never told
+    // its colleagues exist cannot hand off to them, so the roster travels with
+    // the persona rather than being assumed.
+    const teammateIds = new Set(employeeSelection.employeeIds ?? []);
+    const teammates =
+      employees === undefined || employee === undefined
+        ? []
+        : Object.entries(employees)
+            .filter(
+              ([id, mate]) =>
+                id !== selectedEmployeeId && mate.enabled && teammateIds.has(id as EmployeeId),
+            )
+            .map(([id, mate]) => ({
+              employeeId: id,
+              displayName: mate.displayName,
+              role: mate.role,
+            }));
+    if (selectedEmployeeId === undefined || employee === undefined) {
+      threadInjectedEmployees.delete(input.threadId);
+    } else {
+      threadInjectedEmployees.set(input.threadId, selectedEmployeeId);
     }
-    const normalizedInput = toNonEmptyProviderInput(input.messageText);
+    const messageTextForTurn =
+      employee === undefined
+        ? input.messageText
+        : applyEmployeePreamble({ employee, messageText: input.messageText, teammates });
+    const normalizedInput = toNonEmptyProviderInput(messageTextForTurn);
     const normalizedAttachments = input.attachments ?? [];
     const activeSession = yield* providerService
       .listSessions()
@@ -771,17 +899,15 @@ const make = Effect.gen(function* () {
             })
           : (yield* providerService.getCapabilities(activeSession.providerInstanceId))
               .sessionModelSwitch;
-    const requestedModelSelection =
-      input.modelSelection ?? threadModelSelections.get(input.threadId) ?? thread.modelSelection;
     const modelForTurn =
       sessionModelSwitch === "unsupported" && input.modelSelection === undefined
         ? activeSession?.model !== undefined
           ? {
-              ...requestedModelSelection,
+              ...effectiveModelSelection,
               model: activeSession.model,
             }
-          : requestedModelSelection
-        : input.modelSelection;
+          : effectiveModelSelection
+        : effectiveModelSelection;
 
     return {
       threadId: input.threadId,

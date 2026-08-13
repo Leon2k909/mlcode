@@ -2,6 +2,7 @@ import {
   DEFAULT_MODEL,
   DEFAULT_MODEL_BY_PROVIDER,
   defaultInstanceIdForDriver,
+  EmployeeId,
   type EnvironmentId,
   ModelSelection,
   ProjectId,
@@ -55,6 +56,7 @@ import { UnifiedSettings } from "@t3tools/contracts/settings";
 import { ReviewCommentContextSchema, type ReviewCommentContext } from "./reviewCommentContext";
 const isRuntimeMode = Schema.is(RuntimeMode);
 const isProviderDriverKind = Schema.is(ProviderDriverKind);
+const isEmployeeId = Schema.is(EmployeeId);
 const isReviewCommentContext = Schema.is(ReviewCommentContextSchema);
 
 export const COMPOSER_DRAFT_STORAGE_KEY = "t3code:composer-drafts:v1";
@@ -885,9 +887,18 @@ function normalizeModelSelection(
   if (!model) {
     return null;
   }
+  const employeeId = isEmployeeId(candidate?.employeeId) ? candidate.employeeId : undefined;
+  const employeeIds = Array.isArray(candidate?.employeeIds)
+    ? candidate.employeeIds.filter(isEmployeeId)
+    : undefined;
+  const withEmployeeRouting = (selection: ModelSelection): NormalizedModelSelection => ({
+    ...selection,
+    ...(employeeId !== undefined ? { employeeId } : {}),
+    ...(employeeIds !== undefined ? { employeeIds } : {}),
+  });
   if (Array.isArray(candidate?.options)) {
     const selections = coerceProviderOptionSelections(candidate.options);
-    return createModelSelection(instanceId, model, selections) as NormalizedModelSelection;
+    return withEmployeeRouting(createModelSelection(instanceId, model, selections));
   }
   // Per-kind options were a pre-migration concern; only recover them for a
   // built-in-kind instance. Custom instances don't have a legacy options
@@ -901,12 +912,23 @@ function normalizeModelSelection(
       )
     : null;
   const options = kindForLegacyOptions ? modelOptions?.[kindForLegacyOptions] : undefined;
-  return createModelSelection(instanceId, model, options) as NormalizedModelSelection;
+  return withEmployeeRouting(createModelSelection(instanceId, model, options));
 }
 
 type NormalizedModelSelection = Omit<ModelSelection, "instanceId"> & {
   readonly instanceId: ProviderInstanceId;
 };
+
+function preserveEmployeeRouting(
+  selection: ModelSelection,
+  source: ModelSelection | null | undefined,
+): ModelSelection {
+  return {
+    ...selection,
+    ...(source?.employeeId !== undefined ? { employeeId: source.employeeId } : {}),
+    ...(source?.employeeIds !== undefined ? { employeeIds: source.employeeIds } : {}),
+  };
+}
 
 // ── Legacy sync helpers (used only during migration from v2 storage) ──
 //
@@ -924,10 +946,9 @@ function legacySyncModelSelectionOptions(
   }
   const kind = normalizeProviderDriverKind(modelSelection.instanceId);
   const options = kind ? modelOptions?.[kind] : undefined;
-  return createModelSelection(
-    modelSelection.instanceId,
-    modelSelection.model,
-    options,
+  return preserveEmployeeRouting(
+    createModelSelection(modelSelection.instanceId, modelSelection.model, options),
+    modelSelection,
   ) as NormalizedModelSelection;
 }
 
@@ -2733,11 +2754,10 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
                 nextMap[normalized.instanceId] = normalized as ModelSelection;
               } else {
                 // No options in selection → preserve existing options, update provider+model
-                nextMap[normalized.instanceId] = createModelSelection(
-                  normalized.instanceId,
-                  normalized.model,
-                  current?.options,
-                );
+                nextMap[normalized.instanceId] = {
+                  ...normalized,
+                  ...(current?.options !== undefined ? { options: current.options } : {}),
+                };
               }
             }
             const nextActiveProvider = normalized?.instanceId ?? base.activeProvider;
@@ -2780,10 +2800,13 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
               const instanceKey = defaultInstanceIdForDriver(driverKind);
               const current = nextMap[instanceKey];
               if (opts && opts.length > 0) {
-                nextMap[instanceKey] = createModelSelection(
-                  instanceKey,
-                  current?.model ?? DEFAULT_MODEL_BY_PROVIDER[driverKind] ?? DEFAULT_MODEL,
-                  opts,
+                nextMap[instanceKey] = preserveEmployeeRouting(
+                  createModelSelection(
+                    instanceKey,
+                    current?.model ?? DEFAULT_MODEL_BY_PROVIDER[driverKind] ?? DEFAULT_MODEL,
+                    opts,
+                  ),
+                  current,
                 );
               } else if (current?.options) {
                 const { options: _, ...rest } = current;
@@ -2831,10 +2854,13 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
             const nextMap = { ...base.modelSelectionByProvider };
             const currentForProvider = nextMap[instanceKey];
             if (providerOpts) {
-              nextMap[instanceKey] = createModelSelection(
-                instanceKey,
-                currentForProvider?.model ?? fallbackModel,
-                providerOpts,
+              nextMap[instanceKey] = preserveEmployeeRouting(
+                createModelSelection(
+                  instanceKey,
+                  currentForProvider?.model ?? fallbackModel,
+                  providerOpts,
+                ),
+                currentForProvider,
               );
             } else if (currentForProvider && (currentForProvider.options?.length ?? 0) > 0) {
               const { options: _, ...rest } = currentForProvider;
@@ -2851,10 +2877,9 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
                 base.modelSelectionByProvider[instanceKey] ??
                 createModelSelection(instanceKey, fallbackModel);
               if (providerOpts) {
-                nextStickyMap[instanceKey] = createModelSelection(
-                  instanceKey,
-                  stickyBase.model,
-                  providerOpts,
+                nextStickyMap[instanceKey] = preserveEmployeeRouting(
+                  createModelSelection(instanceKey, stickyBase.model, providerOpts),
+                  stickyBase,
                 );
               } else if ((stickyBase.options?.length ?? 0) > 0) {
                 const { options: _, ...rest } = stickyBase;

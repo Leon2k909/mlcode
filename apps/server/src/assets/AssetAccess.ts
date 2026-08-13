@@ -1,6 +1,7 @@
 import type { AssetResource } from "@t3tools/contracts";
 import {
   AssetAttachmentNotFoundError,
+  AssetPetNotFoundError,
   AssetPreviewTypeValidationError,
   AssetProjectFaviconInspectionError,
   AssetProjectFaviconNotFoundError,
@@ -40,6 +41,7 @@ import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import { resolveAttachmentPathById } from "../attachmentStore.ts";
 import * as ServerConfig from "../config.ts";
 import * as ProjectFaviconResolver from "../project/ProjectFaviconResolver.ts";
+import { resolvePetSpritesheet } from "../pets/PetCatalog.ts";
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
 
 export const ASSET_ROUTE_PREFIX = "/api/assets";
@@ -86,6 +88,12 @@ const AssetClaimsSchema = Schema.Union([
     kind: Schema.Literal("project-favicon"),
     workspaceRoot: Schema.String,
     relativePath: Schema.NullOr(Schema.String),
+    expiresAt: Schema.Number,
+  }),
+  Schema.Struct({
+    version: Schema.Literal(1),
+    kind: Schema.Literal("pet-spritesheet"),
+    key: Schema.String,
     expiresAt: Schema.Number,
   }),
 ]);
@@ -363,6 +371,20 @@ export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (i
       }
       break;
     }
+    case "pet-spritesheet": {
+      const spritesheetPath = resolvePetSpritesheet(input.resource.key);
+      if (!spritesheetPath) {
+        return yield* new AssetPetNotFoundError({ resource: input.resource });
+      }
+      claims = {
+        version: 1,
+        kind: "pet-spritesheet",
+        key: input.resource.key,
+        expiresAt,
+      };
+      fileName = path.basename(spritesheetPath);
+      break;
+    }
   }
 
   const secretStore = yield* ServerSecretStore.ServerSecretStore;
@@ -439,6 +461,16 @@ export const resolveAsset = Effect.fn("AssetAccess.resolveAsset")(function* (
       relativePath: claims.relativePath,
     });
     return faviconPath ? ({ kind: "file", path: faviconPath } satisfies ResolvedAsset) : null;
+  }
+
+  if (claims.kind === "pet-spritesheet") {
+    const spritesheetPath = resolvePetSpritesheet(claims.key);
+    const decodedPath = decodeRelativePath(relativePath);
+    if (!spritesheetPath || decodedPath === null) return null;
+    const path = yield* Path.Path;
+    return decodedPath === path.basename(spritesheetPath)
+      ? ({ kind: "file", path: spritesheetPath } satisfies ResolvedAsset)
+      : null;
   }
 
   const decodedPath = decodeRelativePath(relativePath);

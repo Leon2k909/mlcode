@@ -131,6 +131,7 @@ already dispatch.
 
 ## Related
 
+- [Employees](./employees.md) — named personas layered above provider instances
 - [Workspace layout](./workspace-layout.md), [Glossary](./glossary.md)
 - [Remote environments](./remote.md), [Server updates](./server-updates.md)
 - [Resource telemetry](./resource-telemetry.md)

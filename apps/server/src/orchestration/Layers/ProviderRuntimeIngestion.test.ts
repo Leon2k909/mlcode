@@ -5,6 +5,7 @@ import * as NodePath from "node:path";
 
 import {
   OrchestrationReadModel,
+  type ModelSelection,
   ProviderDriverKind,
   ProviderRuntimeEvent,
   ProviderSession,
@@ -22,6 +23,7 @@ import {
   type ServerSettings,
   ThreadId,
   TurnId,
+  EmployeeId,
 } from "@t3tools/contracts";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
@@ -221,7 +223,10 @@ describe("ProviderRuntimeIngestion", () => {
     }
   });
 
-  async function createHarness(options?: { serverSettings?: Partial<ServerSettings> }) {
+  async function createHarness(options?: {
+    serverSettings?: Partial<ServerSettings>;
+    threadModelSelection?: ModelSelection;
+  }) {
     const workspaceRoot = makeTempDir("t3-provider-project-");
     NodeFS.mkdirSync(NodePath.join(workspaceRoot, ".git"));
     const provider = createProviderServiceHarness();
@@ -258,6 +263,10 @@ describe("ProviderRuntimeIngestion", () => {
     await Effect.runPromise(ingestion.start().pipe(Scope.provide(scope)));
     const drain = () => Effect.runPromise(ingestion.drain);
     const dispatch = (command: OrchestrationCommand) => Effect.runPromise(engine.dispatch(command));
+    const threadModelSelection = options?.threadModelSelection ?? {
+      instanceId: ProviderInstanceId.make("codex"),
+      model: "gpt-5-codex",
+    };
 
     const createdAt = "2026-01-01T00:00:00.000Z";
     await dispatch({
@@ -266,10 +275,7 @@ describe("ProviderRuntimeIngestion", () => {
       projectId: asProjectId("project-1"),
       title: "Provider Project",
       workspaceRoot,
-      defaultModelSelection: {
-        instanceId: ProviderInstanceId.make("codex"),
-        model: "gpt-5-codex",
-      },
+      defaultModelSelection: threadModelSelection,
       createdAt,
     });
     await dispatch({
@@ -278,10 +284,7 @@ describe("ProviderRuntimeIngestion", () => {
       threadId: ThreadId.make("thread-1"),
       projectId: asProjectId("project-1"),
       title: "Thread",
-      modelSelection: {
-        instanceId: ProviderInstanceId.make("codex"),
-        model: "gpt-5-codex",
-      },
+      modelSelection: threadModelSelection,
       interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
       runtimeMode: "approval-required",
       branch: null,
@@ -362,6 +365,110 @@ describe("ProviderRuntimeIngestion", () => {
     );
     expect(thread.session?.status).toBe("error");
     expect(thread.session?.lastError).toBe("turn failed");
+  });
+
+  it("turns an employee handoff into the next group member's turn", async () => {
+    const ceoId = EmployeeId.make("ceo");
+    const reviewerId = EmployeeId.make("reviewer");
+    const harness = await createHarness({
+      serverSettings: {
+        employees: {
+          [ceoId]: {
+            displayName: "Casey",
+            role: "CEO",
+            providerInstanceId: ProviderInstanceId.make("codex"),
+            model: "gpt-5-codex",
+            instructions: "Own the implementation.",
+            enabled: true,
+          },
+          [reviewerId]: {
+            displayName: "Riley",
+            role: "Reviewer",
+            providerInstanceId: ProviderInstanceId.make("claudeAgent"),
+            model: "claude-opus-4-6",
+            instructions: "Review the implementation.",
+            enabled: true,
+          },
+        },
+      },
+      threadModelSelection: {
+        instanceId: ProviderInstanceId.make("codex"),
+        model: "gpt-5-codex",
+        employeeId: ceoId,
+        employeeIds: [ceoId, reviewerId],
+      },
+    });
+    const now = "2026-08-13T10:00:00.000Z";
+    const turnId = asTurnId("turn-employee-handoff");
+
+    harness.emit({
+      type: "turn.started",
+      eventId: asEventId("evt-employee-handoff-started"),
+      provider: ProviderDriverKind.make("codex"),
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId,
+    });
+    await waitForThread(harness.readModel, (thread) => thread.session?.activeTurnId === turnId);
+    harness.emit({
+      type: "content.delta",
+      eventId: asEventId("evt-employee-handoff-delta"),
+      provider: ProviderDriverKind.make("codex"),
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId,
+      itemId: asItemId("item-employee-handoff"),
+      payload: {
+        streamKind: "assistant_text",
+        delta:
+          'Implementation finished.\n\n<handoff to="reviewer">Please review the auth change.</handoff>',
+      },
+    });
+    harness.emit({
+      type: "item.completed",
+      eventId: asEventId("evt-employee-handoff-item-complete"),
+      provider: ProviderDriverKind.make("codex"),
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId,
+      itemId: asItemId("item-employee-handoff"),
+      payload: { itemType: "assistant_message", status: "completed" },
+    });
+    harness.emit({
+      type: "turn.completed",
+      eventId: asEventId("evt-employee-handoff-turn-complete"),
+      provider: ProviderDriverKind.make("codex"),
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId,
+      payload: { state: "completed" },
+    });
+
+    const thread = await waitForThread(
+      harness.readModel,
+      (entry) =>
+        entry.modelSelection.employeeId === reviewerId &&
+        entry.messages.some((message) => message.id.startsWith("employee-handoff:")),
+    );
+    const assistantMessage = thread.messages.find(
+      (message) => message.id === "assistant:item-employee-handoff",
+    );
+    const handoffMessage = thread.messages.find((message) =>
+      message.id.startsWith("employee-handoff:"),
+    );
+
+    expect(assistantMessage?.employeeId).toBe(ceoId);
+    expect(handoffMessage).toMatchObject({
+      role: "user",
+      employeeId: ceoId,
+      text: "To Riley, from Casey:\n\nPlease review the auth change.",
+    });
+    expect(thread.modelSelection).toMatchObject({
+      instanceId: ProviderInstanceId.make("claudeAgent"),
+      model: "claude-opus-4-6",
+      employeeId: reviewerId,
+      employeeIds: [ceoId, reviewerId],
+    });
   });
 
   it("applies provider session.state.changed transitions directly", async () => {

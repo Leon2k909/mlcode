@@ -1,4 +1,6 @@
 import type {
+  EmployeeId,
+  EmployeeMap,
   ModelSelection,
   ProviderInteractionMode,
   ProviderOptionDescriptor,
@@ -27,6 +29,7 @@ import { SymbolView } from "../../components/AppSymbol";
 import { AppText as Text } from "../../components/AppText";
 import { ProviderIcon } from "../../components/ProviderIcon";
 import { cn } from "../../lib/cn";
+import { deriveMobileEmployeeEntries, employeeSelectionLabel } from "../../lib/employees";
 import type { ModelOption, ProviderGroup } from "../../lib/modelOptions";
 import { applyProviderOptionSelection, providerOptionValueLabels } from "../../lib/providerOptions";
 import { useThemeColor } from "../../lib/useThemeColor";
@@ -46,6 +49,7 @@ const PRIMARY_PROVIDER_DRIVERS: ReadonlySet<string> = new Set(["claudeAgent", "c
  * covering model, provider options, runtime mode, and plan mode in one label.
  */
 export function threadSettingsSummaryLabel(input: {
+  readonly employeeLabel?: string;
   readonly modelLabel: string;
   readonly optionDescriptors: ReadonlyArray<ProviderOptionDescriptor>;
   readonly runtimeMode: RuntimeMode;
@@ -53,6 +57,7 @@ export function threadSettingsSummaryLabel(input: {
 }): string {
   const runtime = RUNTIME_MODE_CHOICES.find((choice) => choice.mode === input.runtimeMode);
   return [
+    ...(input.employeeLabel ? [input.employeeLabel] : []),
     input.modelLabel,
     ...providerOptionValueLabels(input.optionDescriptors),
     ...(runtime ? [runtime.shortLabel] : []),
@@ -251,7 +256,8 @@ function SwitchRow(props: {
 
 type SubmenuPage =
   | { readonly kind: "descriptor"; readonly id: string }
-  | { readonly kind: "runtime" };
+  | { readonly kind: "runtime" }
+  | { readonly kind: "employees" };
 
 /**
  * Unified thread settings: the sheet is the provider-grouped model list
@@ -261,9 +267,9 @@ type SubmenuPage =
  * changes size. Model changes stage until Save — while staged, the settings
  * rows edit the staged model's options and Save applies everything together.
  *
- * Callers control which harnesses are offered via providerGroups: an
- * existing thread must pass only its own provider's group, since a session
- * can't switch harness mid-thread.
+ * Callers control which harnesses are offered via providerGroups. Existing
+ * threads keep ordinary model changes on their current provider; an employee
+ * group can still hand work to a teammate assigned to another provider.
  *
  * Rendered through an RN Modal (not the root OverlayPortal) so it also
  * presents above natively-presented form sheets like the new-task draft.
@@ -282,6 +288,11 @@ export function ThreadSettingsSheet(props: {
   readonly providerGroups: ReadonlyArray<ProviderGroup>;
   readonly selectedModel: ModelSelection | null;
   readonly onSelectModel: (option: ModelOption) => void;
+  readonly employees: EmployeeMap | undefined;
+  readonly onUpdateEmployeeSelection: (
+    employeeId: EmployeeId | undefined,
+    employeeIds: ReadonlyArray<EmployeeId> | undefined,
+  ) => void;
   readonly optionDescriptors: ReadonlyArray<ProviderOptionDescriptor>;
   readonly onUpdateOptionSelections: (selections: ReadonlyArray<ProviderOptionSelection>) => void;
   readonly runtimeMode: RuntimeMode;
@@ -345,6 +356,24 @@ export function ThreadSettingsSheet(props: {
   // legacy model is exempted from the filter instead of forcing the whole
   // legacy list visible.
   const showLegacy = showLegacyToggle;
+  const employeeEntries = deriveMobileEmployeeEntries(props.employees);
+  const selectedEmployeeIds =
+    props.selectedModel?.employeeIds && props.selectedModel.employeeIds.length >= 2
+      ? [...props.selectedModel.employeeIds]
+      : props.selectedModel?.employeeId
+        ? [props.selectedModel.employeeId]
+        : [];
+  const employeeSummary = props.selectedModel
+    ? employeeSelectionLabel(props.employees, props.selectedModel)
+    : undefined;
+
+  const applyEmployeeSelection = (
+    employeeId: EmployeeId | undefined,
+    employeeIds: ReadonlyArray<EmployeeId> | undefined,
+  ) => {
+    setPendingModel(null);
+    props.onUpdateEmployeeSelection(employeeId, employeeIds);
+  };
 
   // Stable settings rows: the union of descriptors across the primary
   // harnesses' current models (plus whatever the displayed model advertises)
@@ -417,36 +446,103 @@ export function ThreadSettingsSheet(props: {
         )
       : undefined;
 
-  const submenuContent =
-    submenu?.kind === "runtime"
-      ? {
-          title: "Runtime",
-          rows: RUNTIME_MODE_CHOICES.map((choice) => ({
-            id: choice.mode,
-            label: choice.label,
-            selected: choice.mode === props.runtimeMode,
+  const submenuContent = (() => {
+    if (submenu?.kind === "employees") {
+      const allEmployeeIds = employeeEntries.map((entry) => entry.employeeId);
+      return {
+        title: "Employees",
+        rows: [
+          {
+            id: "no-employee",
+            label: "No employee",
+            selected: selectedEmployeeIds.length === 0,
             onPress: () => {
               void Haptics.selectionAsync();
-              props.onUpdateRuntimeMode(choice.mode);
+              applyEmployeeSelection(undefined, undefined);
+              setSubmenu(null);
+            },
+          },
+          ...(allEmployeeIds.length >= 2
+            ? [
+                {
+                  id: "all-employees",
+                  label: "Start with everyone",
+                  selected:
+                    selectedEmployeeIds.length === allEmployeeIds.length &&
+                    allEmployeeIds.every((employeeId) => selectedEmployeeIds.includes(employeeId)),
+                  onPress: () => {
+                    const activeEmployeeId =
+                      props.selectedModel?.employeeId &&
+                      allEmployeeIds.includes(props.selectedModel.employeeId)
+                        ? props.selectedModel.employeeId
+                        : allEmployeeIds[0];
+                    if (activeEmployeeId === undefined) return;
+                    void Haptics.selectionAsync();
+                    applyEmployeeSelection(activeEmployeeId, allEmployeeIds);
+                  },
+                },
+              ]
+            : []),
+          ...employeeEntries.map((entry) => ({
+            id: entry.employeeId,
+            label: entry.employee.displayName,
+            selected: selectedEmployeeIds.includes(entry.employeeId),
+            onPress: () => {
+              void Haptics.selectionAsync();
+              if (selectedEmployeeIds.length >= 2) {
+                const nextEmployeeIds = selectedEmployeeIds.includes(entry.employeeId)
+                  ? selectedEmployeeIds.filter((employeeId) => employeeId !== entry.employeeId)
+                  : [...selectedEmployeeIds, entry.employeeId];
+                const activeEmployeeId =
+                  props.selectedModel?.employeeId &&
+                  nextEmployeeIds.includes(props.selectedModel.employeeId)
+                    ? props.selectedModel.employeeId
+                    : nextEmployeeIds[0];
+                applyEmployeeSelection(
+                  activeEmployeeId,
+                  nextEmployeeIds.length >= 2 ? nextEmployeeIds : undefined,
+                );
+                return;
+              }
+              applyEmployeeSelection(entry.employeeId, undefined);
               setSubmenu(null);
             },
           })),
-        }
-      : activeDescriptor?.type === "select"
-        ? {
-            title: activeDescriptor.label,
-            rows: selectableChoices(activeDescriptor).map((choice) => ({
-              id: choice.id,
-              label: choice.label,
-              selected: choice.id === getProviderOptionCurrentValue(activeDescriptor),
-              onPress: () => {
-                void Haptics.selectionAsync();
-                handleOptionChange(activeDescriptor.id, choice.id);
-                setSubmenu(null);
-              },
-            })),
-          }
-        : null;
+        ],
+      };
+    }
+    if (submenu?.kind === "runtime") {
+      return {
+        title: "Runtime",
+        rows: RUNTIME_MODE_CHOICES.map((choice) => ({
+          id: choice.mode,
+          label: choice.label,
+          selected: choice.mode === props.runtimeMode,
+          onPress: () => {
+            void Haptics.selectionAsync();
+            props.onUpdateRuntimeMode(choice.mode);
+            setSubmenu(null);
+          },
+        })),
+      };
+    }
+    if (activeDescriptor?.type === "select") {
+      return {
+        title: activeDescriptor.label,
+        rows: selectableChoices(activeDescriptor).map((choice) => ({
+          id: choice.id,
+          label: choice.label,
+          selected: choice.id === getProviderOptionCurrentValue(activeDescriptor),
+          onPress: () => {
+            void Haptics.selectionAsync();
+            handleOptionChange(activeDescriptor.id, choice.id);
+            setSubmenu(null);
+          },
+        })),
+      };
+    }
+    return null;
+  })();
 
   return (
     <Modal
@@ -588,6 +684,13 @@ export function ThreadSettingsSheet(props: {
                 />
               );
             })}
+            {employeeEntries.length > 0 ? (
+              <DisclosureRow
+                label="Employees"
+                value={employeeSummary ?? "No employee"}
+                onPress={() => setSubmenu({ kind: "employees" })}
+              />
+            ) : null}
             <DisclosureRow
               label="Runtime"
               value={

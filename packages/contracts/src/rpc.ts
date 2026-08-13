@@ -19,6 +19,7 @@ import {
   FilesystemBrowseError,
 } from "./filesystem.ts";
 import { AssetAccessError, AssetCreateUrlInput, AssetCreateUrlResult } from "./assets.ts";
+import { PetCatalog, PetListInput } from "./pets.ts";
 import {
   GitActionProgressEvent,
   VcsSwitchRefInput,
@@ -207,6 +208,7 @@ export const WS_METHODS = {
   // Filesystem methods
   filesystemBrowse: "filesystem.browse",
   assetsCreateUrl: "assets.createUrl",
+  petsList: "pets.list",
 
   // VCS methods
   vcsPull: "vcs.pull",
@@ -655,6 +657,12 @@ export const WsAssetsCreateUrlRpc = Rpc.make(WS_METHODS.assetsCreateUrl, {
   error: Schema.Union([AssetAccessError, EnvironmentAuthorizationError]),
 });
 
+export const WsPetsListRpc = Rpc.make(WS_METHODS.petsList, {
+  payload: PetListInput,
+  success: PetCatalog,
+  error: EnvironmentAuthorizationError,
+});
+
 export const WsSubscribeVcsStatusRpc = Rpc.make(WS_METHODS.subscribeVcsStatus, {
   payload: VcsStatusInput,
   success: VcsStatusStreamEvent,
@@ -1021,6 +1029,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsShellOpenInEditorRpc,
   WsFilesystemBrowseRpc,
   WsAssetsCreateUrlRpc,
+  WsPetsListRpc,
   WsSubscribeVcsStatusRpc,
   WsVcsPullRpc,
   WsVcsRefreshStatusRpc,

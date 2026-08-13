@@ -51,12 +51,11 @@ function normalizeSelectionOptions(
       selections: selection.options,
     }),
   );
-  return options
-    ? { ...selection, options }
-    : {
-        instanceId: selection.instanceId,
-        model: selection.model,
-      };
+  if (options) {
+    return { ...selection, options };
+  }
+  const { options: _removedOptions, ...selectionWithoutOptions } = selection;
+  return selectionWithoutOptions;
 }
 
 /**

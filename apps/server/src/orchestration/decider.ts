@@ -954,6 +954,9 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           messageId: command.message.messageId,
           role: "user",
           text: command.message.text,
+          ...(command.message.employeeId !== undefined
+            ? { employeeId: command.message.employeeId }
+            : {}),
           attachments: command.message.attachments,
           turnId: null,
           streaming: false,
@@ -973,6 +976,9 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         payload: {
           threadId: command.threadId,
           messageId: command.message.messageId,
+          ...(command.message.employeeId !== undefined
+            ? { employeeId: command.message.employeeId }
+            : {}),
           ...(command.modelSelection !== undefined
             ? { modelSelection: command.modelSelection }
             : {}),
@@ -1232,6 +1238,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           messageId: command.messageId,
           role: "assistant",
           text: command.delta,
+          ...(command.employeeId !== undefined ? { employeeId: command.employeeId } : {}),
           turnId: command.turnId ?? null,
           streaming: true,
           createdAt: command.createdAt,
@@ -1259,6 +1266,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           messageId: command.messageId,
           role: "assistant",
           text: "",
+          ...(command.employeeId !== undefined ? { employeeId: command.employeeId } : {}),
           turnId: command.turnId ?? null,
           streaming: false,
           createdAt: command.createdAt,

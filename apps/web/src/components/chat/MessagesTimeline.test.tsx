@@ -1,4 +1,12 @@
-import { CheckpointRef, EnvironmentId, MessageId, TurnId } from "@t3tools/contracts";
+import {
+  CheckpointRef,
+  EmployeeId,
+  type EmployeeMap,
+  EnvironmentId,
+  MessageId,
+  ProviderInstanceId,
+  TurnId,
+} from "@t3tools/contracts";
 import { createRef, type ReactNode, type Ref } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeAll, describe, expect, it, vi } from "vite-plus/test";
@@ -172,6 +180,22 @@ beforeAll(async () => {
 
 const ACTIVE_THREAD_ENVIRONMENT_ID = EnvironmentId.make("environment-local");
 const MESSAGE_CREATED_AT = "2026-03-17T19:12:28.000Z";
+const TEST_EMPLOYEES: EmployeeMap = {
+  [EmployeeId.make("ceo")]: {
+    displayName: "Alex",
+    providerInstanceId: ProviderInstanceId.make("codex"),
+    role: "CEO",
+    instructions: "",
+    enabled: true,
+  },
+  [EmployeeId.make("reviewer")]: {
+    displayName: "Riley",
+    providerInstanceId: ProviderInstanceId.make("claudeAgent"),
+    role: "Reviewer",
+    instructions: "",
+    enabled: true,
+  },
+};
 
 function buildProps() {
   return {
@@ -681,5 +705,105 @@ describe("MessagesTimeline", () => {
 
     expect(markup).toContain("lucide-x");
     expect(markup).toContain('aria-label="Tool call failed"');
+  });
+
+  it("labels employee replies and handoffs separately from provider subagents", () => {
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        employees={TEST_EMPLOYEES}
+        timelineEntries={[
+          {
+            id: "employee-response",
+            kind: "message",
+            createdAt: MESSAGE_CREATED_AT,
+            message: {
+              id: MessageId.make("employee-response"),
+              role: "assistant",
+              employeeId: EmployeeId.make("ceo"),
+              text: 'The brief is ready.\n<handoff to="reviewer">Review this.</handoff>',
+              turnId: TurnId.make("turn-employee"),
+              createdAt: MESSAGE_CREATED_AT,
+              updatedAt: MESSAGE_CREATED_AT,
+              streaming: false,
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(markup).toContain('data-t3-worker-kind="employee"');
+    expect(markup).toContain("T3 employee");
+    expect(markup).toContain("via Codex");
+    expect(markup).toContain('data-t3-worker-kind="employee-handoff"');
+    expect(markup).toContain("T3 employee handoff");
+    expect(markup).toContain("Alex to");
+    expect(markup).toContain("Riley");
+    expect(markup).toContain("via Claude");
+    expect(markup).not.toContain("&lt;handoff");
+  });
+
+  it("marks employee names inside provider plans as planned, not running", () => {
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        employees={TEST_EMPLOYEES}
+        timelineEntries={[
+          {
+            id: "turn-plan:turn-employee",
+            kind: "turn-plan",
+            createdAt: MESSAGE_CREATED_AT,
+            turnPlan: {
+              id: "turn-plan:turn-employee",
+              createdAt: MESSAGE_CREATED_AT,
+              turnId: TurnId.make("turn-employee"),
+              plan: {
+                createdAt: MESSAGE_CREATED_AT,
+                turnId: TurnId.make("turn-employee"),
+                steps: [
+                  {
+                    step: "Hand Riley a focused independent product-ideas brief",
+                    status: "inProgress",
+                  },
+                ],
+              },
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(markup).toContain('data-plan-t3-employees="reviewer"');
+    expect(markup).toContain("T3 employee: Riley (planned)");
+    expect(markup).toContain("has not started from this plan item");
+  });
+
+  it("calls temporary spawned workers provider subagents", () => {
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        timelineEntries={[
+          {
+            id: "provider-spawn",
+            kind: "work",
+            createdAt: MESSAGE_CREATED_AT,
+            entry: {
+              id: "provider-spawn",
+              createdAt: MESSAGE_CREATED_AT,
+              label: "Spawned reviewer",
+              tone: "tool",
+              agentSpawn: {
+                workflowId: null,
+                agentTaskIds: ["temporary-agent-1"],
+              },
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(markup).toContain('data-t3-worker-kind="provider-subagent"');
+    expect(markup).toContain("Ran 1 provider subagent");
+    expect(markup).toContain("not T3 employees");
   });
 });

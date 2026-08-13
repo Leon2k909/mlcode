@@ -2,7 +2,10 @@ import {
   ApprovalRequestId,
   type AssistantDeliveryMode,
   CommandId,
+  DEFAULT_MODEL_BY_PROVIDER,
+  type EmployeeId,
   MessageId,
+  type ModelSelection,
   type OrchestrationEvent,
   type OrchestrationMessage,
   type OrchestrationProposedPlanId,
@@ -17,6 +20,7 @@ import {
   type OrchestrationProposedPlan,
   type OrchestrationThread,
   type OrchestrationThreadActivity,
+  resolveEmployee,
   type ProviderRuntimeEvent,
 } from "@t3tools/contracts";
 import * as Cache from "effect/Cache";
@@ -43,6 +47,11 @@ import {
 } from "../Services/ProviderRuntimeIngestion.ts";
 import { forkParked } from "../../serverActivation.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
+import {
+  canContinueHandoffChain,
+  describeHandoffRejection,
+  parseEmployeeHandoff,
+} from "../../employee/EmployeeHandoff.ts";
 
 const providerTurnKey = (threadId: ThreadId, turnId: TurnId) => `${threadId}:${turnId}`;
 const providerTaskKey = (threadId: ThreadId, taskId: string) => `${threadId}:${taskId}`;
@@ -97,6 +106,7 @@ const BUFFERED_PROPOSED_PLAN_BY_ID_TTL = Duration.minutes(120);
 const TASK_DESCRIPTION_BY_TASK_CACHE_CAPACITY = 10_000;
 const TASK_DESCRIPTION_BY_TASK_TTL = Duration.minutes(120);
 const MAX_BUFFERED_ASSISTANT_CHARS = 24_000;
+const MAX_EMPLOYEE_HANDOFF_TEXT_CHARS = 32_000;
 const STRICT_PROVIDER_LIFECYCLE_GUARD = process.env.T3CODE_STRICT_PROVIDER_LIFECYCLE_GUARD !== "0";
 
 type TurnStartRequestedDomainEvent = Extract<
@@ -892,6 +902,19 @@ const make = Effect.gen(function* () {
     lookup: () => Effect.succeed(""),
   });
 
+  // A second, turn-scoped buffer retains the complete employee reply until
+  // turn.completed. The normal message buffer can flush early for streaming
+  // or memory pressure, but handoff parsing must see the final trailing tag.
+  const employeeHandoffTextByTurnKey = yield* Cache.make<string, string>({
+    capacity: TURN_MESSAGE_IDS_BY_TURN_CACHE_CAPACITY,
+    timeToLive: TURN_MESSAGE_IDS_BY_TURN_TTL,
+    lookup: () => Effect.succeed(""),
+  });
+
+  // Number of automatic employee-to-employee turns since the user last
+  // spoke, keyed by thread. The user turn domain event resets it.
+  const consecutiveEmployeeHandoffs = new Map<string, number>();
+
   const assistantSegmentStateByTurnKey = yield* Cache.make<string, AssistantSegmentState>({
     capacity: TURN_MESSAGE_IDS_BY_TURN_CACHE_CAPACITY,
     timeToLive: TURN_MESSAGE_IDS_BY_TURN_TTL,
@@ -927,6 +950,53 @@ const make = Effect.gen(function* () {
         Option.filter(description, (value) => value.length > 0).pipe(Option.getOrUndefined),
       ),
     );
+
+  const appendEmployeeHandoffText = (threadId: ThreadId, turnId: TurnId, delta: string) => {
+    const key = providerTurnKey(threadId, turnId);
+    return Cache.getOption(employeeHandoffTextByTurnKey, key).pipe(
+      Effect.flatMap((existingText) => {
+        const next = `${Option.getOrElse(existingText, () => "")}${delta}`;
+        return Cache.set(
+          employeeHandoffTextByTurnKey,
+          key,
+          next.length <= MAX_EMPLOYEE_HANDOFF_TEXT_CHARS
+            ? next
+            : next.slice(-MAX_EMPLOYEE_HANDOFF_TEXT_CHARS),
+        );
+      }),
+    );
+  };
+
+  const rememberEmployeeHandoffFallbackText = (
+    threadId: ThreadId,
+    turnId: TurnId,
+    fallbackText: string | undefined,
+  ) => {
+    if (!fallbackText) return Effect.void;
+    const key = providerTurnKey(threadId, turnId);
+    return Cache.getOption(employeeHandoffTextByTurnKey, key).pipe(
+      Effect.flatMap((existingText) =>
+        Option.match(existingText, {
+          onNone: () => Cache.set(employeeHandoffTextByTurnKey, key, fallbackText),
+          onSome: (text) =>
+            text.length === 0
+              ? Cache.set(employeeHandoffTextByTurnKey, key, fallbackText)
+              : Effect.void,
+        }),
+      ),
+    );
+  };
+
+  const takeEmployeeHandoffText = (threadId: ThreadId, turnId: TurnId) => {
+    const key = providerTurnKey(threadId, turnId);
+    return Cache.getOption(employeeHandoffTextByTurnKey, key).pipe(
+      Effect.flatMap((text) =>
+        Cache.invalidate(employeeHandoffTextByTurnKey, key).pipe(
+          Effect.as(Option.getOrElse(text, () => "")),
+        ),
+      ),
+    );
+  };
 
   const resolveThreadDetail = Effect.fn("resolveThreadDetail")(function* (threadId: ThreadId) {
     return yield* projectionSnapshotQuery
@@ -1124,6 +1194,7 @@ const make = Effect.gen(function* () {
     event: ProviderRuntimeEvent;
     threadId: ThreadId;
     messageId: MessageId;
+    employeeId?: EmployeeId;
     turnId?: TurnId;
     createdAt: string;
     commandTag: string;
@@ -1140,6 +1211,7 @@ const make = Effect.gen(function* () {
         threadId: input.threadId,
         messageId: input.messageId,
         delta: bufferedText,
+        ...(input.employeeId !== undefined ? { employeeId: input.employeeId } : {}),
         ...(input.turnId ? { turnId: input.turnId } : {}),
         createdAt: input.createdAt,
       });
@@ -1149,6 +1221,7 @@ const make = Effect.gen(function* () {
   const flushBufferedAssistantMessagesForTurn = (input: {
     event: ProviderRuntimeEvent;
     threadId: ThreadId;
+    employeeId?: EmployeeId;
     turnId: TurnId;
     createdAt: string;
     commandTag: string;
@@ -1166,6 +1239,7 @@ const make = Effect.gen(function* () {
             event: input.event,
             threadId: input.threadId,
             messageId,
+            ...(input.employeeId !== undefined ? { employeeId: input.employeeId } : {}),
             turnId: input.turnId,
             createdAt: input.createdAt,
             commandTag: input.commandTag,
@@ -1183,6 +1257,7 @@ const make = Effect.gen(function* () {
     event: ProviderRuntimeEvent;
     threadId: ThreadId;
     messageId: MessageId;
+    employeeId?: EmployeeId;
     turnId?: TurnId;
     createdAt: string;
     commandTag: string;
@@ -1207,6 +1282,7 @@ const make = Effect.gen(function* () {
           threadId: input.threadId,
           messageId: input.messageId,
           delta: text,
+          ...(input.employeeId !== undefined ? { employeeId: input.employeeId } : {}),
           ...(input.turnId ? { turnId: input.turnId } : {}),
           createdAt: input.createdAt,
         });
@@ -1218,6 +1294,7 @@ const make = Effect.gen(function* () {
           commandId: yield* providerCommandId(input.event, input.commandTag),
           threadId: input.threadId,
           messageId: input.messageId,
+          ...(input.employeeId !== undefined ? { employeeId: input.employeeId } : {}),
           ...(input.turnId ? { turnId: input.turnId } : {}),
           createdAt: input.createdAt,
         });
@@ -1228,6 +1305,7 @@ const make = Effect.gen(function* () {
   const finalizeActiveAssistantSegmentForTurn = (input: {
     event: ProviderRuntimeEvent;
     threadId: ThreadId;
+    employeeId?: EmployeeId;
     turnId: TurnId;
     createdAt: string;
     commandTag: string;
@@ -1248,6 +1326,7 @@ const make = Effect.gen(function* () {
         event: input.event,
         threadId: input.threadId,
         messageId: activeMessageId.value,
+        ...(input.employeeId !== undefined ? { employeeId: input.employeeId } : {}),
         turnId: input.turnId,
         createdAt: input.createdAt,
         commandTag: input.commandTag,
@@ -1350,6 +1429,7 @@ const make = Effect.gen(function* () {
       const prefix = `${threadId}:`;
       const proposedPlanPrefix = `plan:${threadId}:`;
       const turnKeys = Array.from(yield* Cache.keys(turnMessageIdsByTurnKey));
+      const employeeHandoffKeys = Array.from(yield* Cache.keys(employeeHandoffTextByTurnKey));
       const assistantSegmentKeys = Array.from(yield* Cache.keys(assistantSegmentStateByTurnKey));
       const proposedPlanKeys = Array.from(yield* Cache.keys(bufferedProposedPlanById));
       const taskDescriptionKeys = Array.from(yield* Cache.keys(taskDescriptionByTaskKey));
@@ -1372,6 +1452,15 @@ const make = Effect.gen(function* () {
           }),
         { concurrency: 1 },
       ).pipe(Effect.asVoid);
+      yield* Effect.forEach(
+        employeeHandoffKeys,
+        (key) =>
+          key.startsWith(prefix)
+            ? Cache.invalidate(employeeHandoffTextByTurnKey, key)
+            : Effect.void,
+        { concurrency: 1 },
+      ).pipe(Effect.asVoid);
+      consecutiveEmployeeHandoffs.delete(threadId);
       yield* Effect.forEach(
         assistantSegmentKeys,
         (key) =>
@@ -1472,6 +1561,173 @@ const make = Effect.gen(function* () {
     },
   );
 
+  const appendEmployeeHandoffActivity = Effect.fn("appendEmployeeHandoffActivity")(
+    function* (input: {
+      readonly event: ProviderRuntimeEvent;
+      readonly threadId: ThreadId;
+      readonly turnId: TurnId | undefined;
+      readonly tone: "info" | "error";
+      readonly summary: string;
+      readonly detail: string;
+    }) {
+      const uuid = yield* crypto.randomUUIDv4;
+      yield* orchestrationEngine.dispatch({
+        type: "thread.activity.append",
+        commandId: yield* providerCommandId(input.event, "employee-handoff-activity"),
+        threadId: input.threadId,
+        activity: {
+          id: EventId.make(`employee-handoff:${uuid}`),
+          tone: input.tone,
+          kind: input.tone === "error" ? "employee.handoff.stopped" : "employee.handoff",
+          summary: input.summary,
+          payload: { detail: input.detail },
+          turnId: input.turnId ?? null,
+          createdAt: input.event.createdAt,
+        },
+        createdAt: input.event.createdAt,
+      });
+    },
+  );
+
+  const processEmployeeHandoff = Effect.fn("processEmployeeHandoff")(function* (input: {
+    readonly event: Extract<ProviderRuntimeEvent, { type: "turn.completed" }>;
+    readonly thread: Pick<
+      OrchestrationThread,
+      "id" | "modelSelection" | "runtimeMode" | "interactionMode"
+    >;
+    readonly turnId: TurnId | undefined;
+    readonly text: string;
+  }) {
+    const selection = input.thread.modelSelection;
+    const fromEmployeeId = selection.employeeId;
+    const groupEmployeeIds = selection.employeeIds ?? [];
+
+    // A private employee thread has no colleagues. Only an explicitly selected
+    // group may cause another provider turn without the user speaking.
+    if (fromEmployeeId === undefined || groupEmployeeIds.length < 2) {
+      consecutiveEmployeeHandoffs.delete(input.thread.id);
+      return;
+    }
+
+    const settings = yield* serverSettingsService.getSettings;
+    const result = parseEmployeeHandoff({
+      text: input.text,
+      employees: settings.employees,
+      fromEmployeeId,
+      allowedEmployeeIds: new Set(groupEmployeeIds),
+    });
+
+    if (result.kind === "none") {
+      consecutiveEmployeeHandoffs.delete(input.thread.id);
+      return;
+    }
+    if (result.kind === "rejected") {
+      consecutiveEmployeeHandoffs.delete(input.thread.id);
+      yield* appendEmployeeHandoffActivity({
+        event: input.event,
+        threadId: input.thread.id,
+        turnId: input.turnId,
+        tone: "error",
+        summary: "Employee handoff stopped",
+        detail: describeHandoffRejection(result.rejection),
+      });
+      return;
+    }
+
+    const completedHandoffs = consecutiveEmployeeHandoffs.get(input.thread.id) ?? 0;
+    if (!canContinueHandoffChain(completedHandoffs)) {
+      consecutiveEmployeeHandoffs.delete(input.thread.id);
+      yield* appendEmployeeHandoffActivity({
+        event: input.event,
+        threadId: input.thread.id,
+        turnId: input.turnId,
+        tone: "error",
+        summary: "Employee handoff limit reached",
+        detail:
+          "The group paused after eight consecutive employee turns. Send a message to continue.",
+      });
+      return;
+    }
+
+    const targetEmployee = resolveEmployee(settings.employees, result.handoff.toEmployeeId);
+    if (targetEmployee === undefined) {
+      consecutiveEmployeeHandoffs.delete(input.thread.id);
+      return;
+    }
+
+    const targetInfo = yield* providerService
+      .getInstanceInfo(targetEmployee.providerInstanceId)
+      .pipe(Effect.option);
+    if (Option.isNone(targetInfo) || !targetInfo.value.enabled) {
+      consecutiveEmployeeHandoffs.delete(input.thread.id);
+      yield* appendEmployeeHandoffActivity({
+        event: input.event,
+        threadId: input.thread.id,
+        turnId: input.turnId,
+        tone: "error",
+        summary: "Employee provider unavailable",
+        detail: `${targetEmployee.displayName} is bound to provider instance '${targetEmployee.providerInstanceId}', which is not available.`,
+      });
+      return;
+    }
+
+    const targetModel =
+      targetEmployee.model ??
+      (selection.instanceId === targetEmployee.providerInstanceId
+        ? selection.model
+        : DEFAULT_MODEL_BY_PROVIDER[targetInfo.value.driverKind]);
+    if (!targetModel) {
+      consecutiveEmployeeHandoffs.delete(input.thread.id);
+      yield* appendEmployeeHandoffActivity({
+        event: input.event,
+        threadId: input.thread.id,
+        turnId: input.turnId,
+        tone: "error",
+        summary: "Employee model unavailable",
+        detail: `No model is configured for ${targetEmployee.displayName}.`,
+      });
+      return;
+    }
+
+    const nextModelSelection: ModelSelection = {
+      instanceId: targetEmployee.providerInstanceId,
+      model: targetModel,
+      employeeId: result.handoff.toEmployeeId,
+      employeeIds: [...groupEmployeeIds],
+      ...(selection.instanceId === targetEmployee.providerInstanceId &&
+      selection.options !== undefined
+        ? { options: selection.options }
+        : {}),
+    };
+    const sourceEmployee = resolveEmployee(settings.employees, fromEmployeeId);
+    const sourceName = sourceEmployee?.displayName ?? String(fromEmployeeId);
+    const uuid = yield* crypto.randomUUIDv4;
+
+    yield* orchestrationEngine.dispatch({
+      type: "thread.meta.update",
+      commandId: yield* providerCommandId(input.event, "employee-handoff-meta"),
+      threadId: input.thread.id,
+      modelSelection: nextModelSelection,
+    });
+    yield* orchestrationEngine.dispatch({
+      type: "thread.turn.start",
+      commandId: yield* providerCommandId(input.event, "employee-handoff-turn"),
+      threadId: input.thread.id,
+      message: {
+        messageId: MessageId.make(`employee-handoff:${input.thread.id}:${uuid}`),
+        role: "user",
+        text: `To ${targetEmployee.displayName}, from ${sourceName}:\n\n${result.handoff.message}`,
+        attachments: [],
+        employeeId: fromEmployeeId,
+      },
+      modelSelection: nextModelSelection,
+      runtimeMode: input.thread.runtimeMode,
+      interactionMode: input.thread.interactionMode,
+      createdAt: input.event.createdAt,
+    });
+    consecutiveEmployeeHandoffs.set(input.thread.id, completedHandoffs + 1);
+  });
+
   const processRuntimeEvent = (event: ProviderRuntimeEvent) =>
     Effect.gen(function* () {
       const thread = yield* resolveThreadShell(event.threadId);
@@ -1489,6 +1745,7 @@ const make = Effect.gen(function* () {
 
       const now = event.createdAt;
       const eventTurnId = toTurnId(event.turnId);
+      const employeeId = thread.modelSelection.employeeId;
       const activeTurnId = thread.session?.activeTurnId ?? null;
       const pendingTurnStart = yield* projectionTurnRepository.getPendingTurnStartByThreadId({
         threadId: thread.id,
@@ -1650,6 +1907,9 @@ const make = Effect.gen(function* () {
 
       if (assistantDelta && assistantDelta.length > 0) {
         const turnId = toTurnId(event.turnId);
+        if (turnId && employeeId !== undefined) {
+          yield* appendEmployeeHandoffText(thread.id, turnId, assistantDelta);
+        }
         const assistantMessageId = yield* getOrCreateAssistantMessageId({
           threadId: thread.id,
           event,
@@ -1672,6 +1932,7 @@ const make = Effect.gen(function* () {
               threadId: thread.id,
               messageId: assistantMessageId,
               delta: spillChunk,
+              ...(employeeId !== undefined ? { employeeId } : {}),
               ...(turnId ? { turnId } : {}),
               createdAt: now,
             });
@@ -1683,6 +1944,7 @@ const make = Effect.gen(function* () {
             threadId: thread.id,
             messageId: assistantMessageId,
             delta: assistantDelta,
+            ...(employeeId !== undefined ? { employeeId } : {}),
             ...(turnId ? { turnId } : {}),
             createdAt: now,
           });
@@ -1704,6 +1966,7 @@ const make = Effect.gen(function* () {
             ? yield* flushBufferedAssistantMessagesForTurn({
                 event,
                 threadId: thread.id,
+                ...(employeeId !== undefined ? { employeeId } : {}),
                 turnId: pauseForUserTurnId,
                 createdAt: now,
                 commandTag:
@@ -1715,6 +1978,7 @@ const make = Effect.gen(function* () {
         yield* finalizeActiveAssistantSegmentForTurn({
           event,
           threadId: thread.id,
+          ...(employeeId !== undefined ? { employeeId } : {}),
           turnId: pauseForUserTurnId,
           createdAt: now,
           commandTag:
@@ -1761,6 +2025,13 @@ const make = Effect.gen(function* () {
         const detailedThread = yield* getLoadedThreadDetail();
         const messages = detailedThread?.messages ?? [];
         const turnId = toTurnId(event.turnId);
+        if (turnId && employeeId !== undefined) {
+          yield* rememberEmployeeHandoffFallbackText(
+            thread.id,
+            turnId,
+            assistantCompletion.fallbackText,
+          );
+        }
         const activeAssistantMessageId = turnId
           ? yield* getActiveAssistantMessageIdForTurn(thread.id, turnId)
           : Option.none<MessageId>();
@@ -1789,6 +2060,7 @@ const make = Effect.gen(function* () {
             event,
             threadId: thread.id,
             messageId: assistantMessageId,
+            ...(employeeId !== undefined ? { employeeId } : {}),
             ...(turnId ? { turnId } : {}),
             createdAt: now,
             commandTag: "assistant-complete",
@@ -1836,6 +2108,7 @@ const make = Effect.gen(function* () {
                 event,
                 threadId: thread.id,
                 messageId: assistantMessageId,
+                ...(employeeId !== undefined ? { employeeId } : {}),
                 turnId,
                 createdAt: now,
                 commandTag: "assistant-complete-finalize",
@@ -1855,11 +2128,29 @@ const make = Effect.gen(function* () {
             turnId,
             updatedAt: now,
           });
+
+          const employeeReplyText = yield* takeEmployeeHandoffText(thread.id, turnId);
+          if (
+            shouldApplyThreadLifecycle &&
+            employeeId !== undefined &&
+            normalizeRuntimeTurnState(event.payload.state) === "completed"
+          ) {
+            yield* processEmployeeHandoff({
+              event,
+              thread: detailedThread ?? thread,
+              turnId,
+              text: employeeReplyText,
+            });
+          }
         }
       }
 
       if (event.type === "session.exited") {
         yield* clearTurnStateForSession(thread.id);
+      }
+      if (event.type === "turn.aborted" && eventTurnId !== undefined) {
+        yield* takeEmployeeHandoffText(thread.id, eventTurnId);
+        consecutiveEmployeeHandoffs.delete(thread.id);
       }
 
       if (event.type === "runtime.error") {
@@ -2020,7 +2311,14 @@ const make = Effect.gen(function* () {
       ).pipe(Effect.asVoid);
     });
 
-  const processDomainEvent = (_event: TurnStartRequestedDomainEvent) => Effect.void;
+  const processDomainEvent = (event: TurnStartRequestedDomainEvent) =>
+    Effect.sync(() => {
+      // A human-authored turn has no employee sender and starts a fresh
+      // conversation burst. Employee handoff turns preserve the running count.
+      if (event.payload.employeeId === undefined) {
+        consecutiveEmployeeHandoffs.delete(event.payload.threadId);
+      }
+    });
 
   const processInput = (input: RuntimeIngestionInput) =>
     input.source === "runtime" ? processRuntimeEvent(input.event) : processDomainEvent(input.event);

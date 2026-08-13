@@ -1,4 +1,6 @@
 import {
+  type EmployeeId,
+  type EmployeeMap,
   type EnvironmentId,
   type MessageId,
   type ScopedThreadRef,
@@ -61,6 +63,7 @@ import {
   SquarePenIcon,
   TerminalIcon,
   Undo2Icon,
+  UsersRoundIcon,
   WrenchIcon,
   XIcon,
   ZapIcon,
@@ -120,6 +123,12 @@ import {
   parseReviewCommentMessageSegments,
   type ReviewCommentContext,
 } from "../../reviewCommentContext";
+import {
+  deriveEmployeeHandoffDisplay,
+  employeeInitials,
+  findMentionedEmployees,
+} from "../../employees";
+import { formatProviderDisplayName } from "../../lib/contextWindow";
 
 // ---------------------------------------------------------------------------
 // Context — shared state consumed by every row component via Context.
@@ -137,6 +146,7 @@ interface TimelineRowSharedState {
   workspaceRoot: string | undefined;
   skills: ReadonlyArray<Pick<ServerProviderSkill, "name" | "displayName">>;
   activeThreadEnvironmentId: EnvironmentId;
+  employees: EmployeeMap;
   onRevertUserMessage: (messageId: MessageId) => void;
   onImageExpand: (preview: ExpandedImagePreview) => void;
   onOpenTurnDiff: (turnId: TurnId, filePath?: string) => void;
@@ -188,6 +198,7 @@ function TimelineLoadEarlierHeader({
 }
 const TIMELINE_LIST_FOOTER = <div className="h-3 sm:h-4" />;
 const EMPTY_TIMELINE_SKILLS: ReadonlyArray<Pick<ServerProviderSkill, "name" | "displayName">> = [];
+const EMPTY_TIMELINE_EMPLOYEES = {} as EmployeeMap;
 const TIMELINE_MAINTAIN_SCROLL_AT_END = {
   animated: false,
   on: {
@@ -210,6 +221,7 @@ interface MessagesTimelineProps {
   activeTurnStartedAt: string | null;
   listRef: React.RefObject<LegendListRef | null>;
   timelineEntries: ReturnType<typeof deriveTimelineEntries>;
+  employees?: EmployeeMap;
   latestTurn: TimelineLatestTurn | null;
   runningTurnId: TurnId | null;
   turnDiffSummaryByAssistantMessageId: Map<MessageId, TurnDiffSummary>;
@@ -256,6 +268,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   onOpenAgents = NOOP_OPEN_AGENTS,
   listRef,
   timelineEntries,
+  employees = EMPTY_TIMELINE_EMPLOYEES,
   latestTurn,
   runningTurnId,
   turnDiffSummaryByAssistantMessageId,
@@ -510,6 +523,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       workspaceRoot,
       skills,
       activeThreadEnvironmentId,
+      employees,
       onRevertUserMessage,
       onImageExpand,
       onOpenTurnDiff,
@@ -526,6 +540,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       workspaceRoot,
       skills,
       activeThreadEnvironmentId,
+      employees,
       onRevertUserMessage,
       onImageExpand,
       onOpenTurnDiff,
@@ -657,7 +672,11 @@ function deriveTimelineMinimapItems(
   const items: TimelineMinimapItem[] = [];
   for (let index = 0; index < rows.length; index += 1) {
     const row = rows[index];
-    if (row?.kind !== "message" || row.message.role !== "user") {
+    if (
+      row?.kind !== "message" ||
+      row.message.role !== "user" ||
+      row.message.employeeId !== undefined
+    ) {
       continue;
     }
 
@@ -681,11 +700,15 @@ function resolveFinalAssistantTextForTurn(
     if (row?.kind !== "message") {
       continue;
     }
-    if (row.message.role === "user") {
+    if (row.message.role === "user" && row.message.employeeId === undefined) {
       break;
     }
     if (row.message.role === "assistant") {
-      finalAssistantText = row.message.text ?? null;
+      const text = row.message.text ?? null;
+      finalAssistantText =
+        text !== null && row.message.employeeId !== undefined
+          ? deriveEmployeeHandoffDisplay(text).visibleText
+          : text;
     }
   }
   return finalAssistantText;
@@ -941,7 +964,16 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
       {row.kind === "work" ? <WorkGroupSection groupedEntries={row.groupedEntries} /> : null}
       {row.kind === "work-toggle" ? <WorkGroupToggleTimelineRow row={row} /> : null}
       {row.kind === "turn-fold" ? <TurnFoldTimelineRow row={row} /> : null}
-      {row.kind === "message" && row.message.role === "user" ? <UserTimelineRow row={row} /> : null}
+      {row.kind === "message" &&
+      row.message.role === "user" &&
+      row.message.employeeId !== undefined ? (
+        <EmployeeMessageTimelineRow row={row} />
+      ) : null}
+      {row.kind === "message" &&
+      row.message.role === "user" &&
+      row.message.employeeId === undefined ? (
+        <UserTimelineRow row={row} />
+      ) : null}
       {row.kind === "message" && row.message.role === "assistant" ? (
         <AssistantTimelineRow row={row} />
       ) : null}
@@ -951,6 +983,86 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
     </div>
   );
 });
+
+function resolveTimelineEmployee(employees: EmployeeMap, employeeId: EmployeeId) {
+  return Object.hasOwn(employees, employeeId) ? employees[employeeId] : undefined;
+}
+
+function EmployeeTimelineIdentity({
+  employeeId,
+  suffix,
+}: {
+  employeeId: EmployeeId;
+  suffix?: string;
+}) {
+  const ctx = use(TimelineRowCtx);
+  const employee = resolveTimelineEmployee(ctx.employees, employeeId);
+  const displayName = employee?.displayName ?? employeeId;
+
+  return (
+    <div
+      className="flex min-w-0 flex-wrap items-center gap-2 text-xs"
+      data-chat-employee-id={employeeId}
+      data-t3-worker-kind="employee"
+    >
+      <span
+        aria-hidden="true"
+        className="flex size-6 shrink-0 items-center justify-center rounded-full border border-border/70 bg-background text-[10px] leading-none"
+        style={employee?.accentColor ? { borderColor: employee.accentColor } : undefined}
+      >
+        {employee?.avatar?.trim() ? employee.avatar : employeeInitials(displayName)}
+      </span>
+      <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-sky-500/30 bg-sky-500/10 px-1.5 py-0.5 font-medium text-sky-700 dark:text-sky-300">
+        <UsersRoundIcon aria-hidden className="size-3" />
+        T3 employee
+      </span>
+      <span className="min-w-0 truncate font-medium text-foreground">{displayName}</span>
+      {employee?.role ? (
+        <span className="min-w-0 truncate text-muted-foreground">{employee.role}</span>
+      ) : null}
+      {employee ? (
+        <span className="shrink-0 text-muted-foreground">
+          via {formatProviderDisplayName(employee.providerInstanceId)}
+        </span>
+      ) : null}
+      {suffix ? <span className="shrink-0 text-muted-foreground">{suffix}</span> : null}
+    </div>
+  );
+}
+
+function EmployeeMessageTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
+  const ctx = use(TimelineRowCtx);
+  const employeeId = row.message.employeeId;
+  if (employeeId === undefined) return null;
+  const text = row.message.text ?? "";
+
+  return (
+    <div className="group flex flex-col items-start gap-1 px-1" data-employee-message="true">
+      <EmployeeTimelineIdentity employeeId={employeeId} suffix="to the group" />
+      <div className="max-w-[80%] rounded-2xl border border-border/70 bg-muted/35 p-3">
+        <ChatMarkdown
+          text={text}
+          cwd={ctx.markdownCwd}
+          threadRef={ctx.threadRef ?? undefined}
+          skills={ctx.skills}
+          className="text-message-foreground"
+          lineBreaks
+        />
+      </div>
+      <div className="flex items-center gap-2 ps-1 text-xs tabular-nums opacity-0 transition-opacity duration-200 focus-within:opacity-100 group-hover:opacity-100">
+        <Tooltip>
+          <TooltipTrigger render={<p className="text-muted-foreground text-xs tabular-nums" />}>
+            {formatShortTimestamp(row.message.createdAt, ctx.timestampFormat)}
+          </TooltipTrigger>
+          <TooltipPopup>
+            {formatChatTimestampTooltip(row.message.createdAt, ctx.timestampFormat)}
+          </TooltipPopup>
+        </Tooltip>
+        {text.length > 0 ? <MessageCopyButton text={text} variant="ghost" /> : null}
+      </div>
+    </div>
+  );
+}
 
 function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
   const ctx = use(TimelineRowCtx);
@@ -1103,18 +1215,58 @@ function TurnFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "turn-
 
 function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
   const ctx = use(TimelineRowCtx);
-  const messageText = row.message.text || (row.message.streaming ? "" : "(empty response)");
+  const employeeId = row.message.employeeId;
+  const rawMessageText = row.message.text ?? "";
+  const handoff =
+    employeeId === undefined
+      ? { visibleText: rawMessageText, toEmployeeId: undefined }
+      : deriveEmployeeHandoffDisplay(rawMessageText);
+  const messageText =
+    handoff.visibleText ||
+    (row.message.streaming || handoff.toEmployeeId !== undefined ? "" : "(empty response)");
+  const targetEmployee =
+    handoff.toEmployeeId === undefined
+      ? undefined
+      : resolveTimelineEmployee(ctx.employees, handoff.toEmployeeId);
+  const sourceEmployee =
+    employeeId === undefined ? undefined : resolveTimelineEmployee(ctx.employees, employeeId);
 
   return (
     <>
       <div className="relative min-w-0 px-1 py-0.5">
-        <ChatMarkdown
-          text={messageText}
-          cwd={ctx.markdownCwd}
-          threadRef={ctx.threadRef ?? undefined}
-          isStreaming={Boolean(row.message.streaming)}
-          skills={ctx.skills}
-        />
+        {employeeId !== undefined ? (
+          <div className="mb-2">
+            <EmployeeTimelineIdentity employeeId={employeeId} />
+          </div>
+        ) : null}
+        {messageText.length > 0 ? (
+          <ChatMarkdown
+            text={messageText}
+            cwd={ctx.markdownCwd}
+            threadRef={ctx.threadRef ?? undefined}
+            isStreaming={Boolean(row.message.streaming)}
+            skills={ctx.skills}
+          />
+        ) : null}
+        {handoff.toEmployeeId !== undefined ? (
+          <div
+            className="mt-2 inline-flex flex-wrap items-center gap-1.5 rounded-lg border border-sky-500/30 bg-sky-500/10 px-2.5 py-1.5 text-xs"
+            data-employee-handoff-to={handoff.toEmployeeId}
+            data-t3-worker-kind="employee-handoff"
+          >
+            <MessageCircleIcon className="size-3 text-sky-700 dark:text-sky-300" />
+            <span className="font-medium text-sky-700 dark:text-sky-300">T3 employee handoff</span>
+            <span className="text-foreground/80">
+              {sourceEmployee?.displayName ?? employeeId} to{` `}
+              {targetEmployee?.displayName ?? handoff.toEmployeeId}
+            </span>
+            {targetEmployee ? (
+              <span className="text-muted-foreground">
+                via {formatProviderDisplayName(targetEmployee.providerInstanceId)}
+              </span>
+            ) : null}
+          </div>
+        ) : null}
         <AssistantChangedFilesSection
           turnSummary={row.assistantTurnDiffSummary}
           routeThreadKey={ctx.routeThreadKey}
@@ -1123,7 +1275,7 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
         />
         {row.showAssistantMeta ? (
           <div className="mt-1.5 flex items-center gap-2 text-xs tabular-nums opacity-0 transition-opacity duration-200 focus-within:opacity-100 group-hover/assistant:opacity-100">
-            <AssistantCopyButton row={row} />
+            <AssistantCopyButton row={row} text={handoff.visibleText} />
             {!row.message.streaming && (
               <Tooltip>
                 <TooltipTrigger
@@ -1143,9 +1295,15 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
   );
 }
 
-function AssistantCopyButton({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
+function AssistantCopyButton({
+  row,
+  text,
+}: {
+  row: Extract<TimelineRow, { kind: "message" }>;
+  text?: string | null;
+}) {
   const assistantCopyState = resolveAssistantMessageCopyState({
-    text: row.message.text ?? null,
+    text: text ?? row.message.text ?? null,
     showCopyButton: row.showAssistantCopyButton,
     streaming: row.assistantCopyStreaming,
   });
@@ -1234,6 +1392,7 @@ const TurnPlanTimelineRow = memo(function TurnPlanTimelineRow({
         >
           {label}
         </span>
+        <PlannedEmployeeReference text={label} />
         {steps.length > 1 ? (
           <span className="shrink-0 text-muted-foreground/50 tabular-nums">
             {completedCount}/{steps.length}
@@ -1268,6 +1427,7 @@ const TurnPlanTimelineRow = memo(function TurnPlanTimelineRow({
                 )}
               >
                 {step.step}
+                <PlannedEmployeeReference text={step.step} className="ml-2 align-middle" />
               </span>
             </div>
           ))}
@@ -1276,6 +1436,32 @@ const TurnPlanTimelineRow = memo(function TurnPlanTimelineRow({
     </div>
   );
 });
+
+function PlannedEmployeeReference({ text, className }: { text: string; className?: string }) {
+  const { employees } = use(TimelineRowCtx);
+  const mentionedEmployees = useMemo(
+    () => findMentionedEmployees(text, employees),
+    [employees, text],
+  );
+  if (mentionedEmployees.length === 0) return null;
+
+  const names = mentionedEmployees.map((entry) => entry.employee.displayName).join(", ");
+  return (
+    <span
+      className={cn(
+        "inline-flex max-w-52 shrink-0 items-center gap-1 rounded-full border border-sky-500/30 bg-sky-500/10 px-1.5 py-0.5 text-[10px] font-medium leading-4 text-sky-700 dark:text-sky-300",
+        className,
+      )}
+      title={`Plan only - ${names} has not started from this plan item.`}
+      data-plan-t3-employees={mentionedEmployees.map((entry) => entry.employeeId).join(",")}
+    >
+      <UsersRoundIcon aria-hidden className="size-2.5 shrink-0" />
+      <span className="truncate">
+        T3 employee{mentionedEmployees.length === 1 ? "" : "s"}: {names} (planned)
+      </span>
+    </span>
+  );
+}
 
 function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "working" }> }) {
   const { workingStepLabel } = use(TimelineRowActivityCtx);
@@ -2170,8 +2356,8 @@ const AgentSpawnCtaRow = memo(function AgentSpawnCtaRow(props: { workEntry: Time
   const working = running + waiting;
   const dotClass = live ? "bg-info" : failed > 0 ? "bg-destructive" : "bg-success";
   const lead = live
-    ? `Kicked off ${agentCount} subagent${agentCount === 1 ? "" : "s"}`
-    : `Ran ${agentCount} subagent${agentCount === 1 ? "" : "s"}`;
+    ? `Kicked off ${agentCount} provider subagent${agentCount === 1 ? "" : "s"}`
+    : `Ran ${agentCount} provider subagent${agentCount === 1 ? "" : "s"}`;
   const status = live
     ? livePhase
       ? `${livePhase.title} · ${livePhase.activeCount} working`
@@ -2186,6 +2372,8 @@ const AgentSpawnCtaRow = memo(function AgentSpawnCtaRow(props: { workEntry: Time
     <button
       type="button"
       onClick={onOpenAgents}
+      data-t3-worker-kind="provider-subagent"
+      title="Temporary Codex/Claude provider subagents, not T3 employees"
       className="-mx-1 flex w-full items-center gap-2 rounded-md border border-border/60 bg-card/50 px-2.5 py-1.5 text-left text-[13px] transition hover:bg-accent/50"
     >
       <span aria-hidden className={cn("size-1.5 shrink-0 rounded-full", dotClass)} />

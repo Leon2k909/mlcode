@@ -1,7 +1,14 @@
 import * as Haptics from "expo-haptics";
 import { KeyboardAwareLegendList } from "@legendapp/list/keyboard";
 import { type LegendListRef } from "@legendapp/list/react-native";
-import type { EnvironmentId, MessageId, ThreadId, TurnId } from "@t3tools/contracts";
+import {
+  resolveEmployee,
+  type EmployeeMap,
+  type EnvironmentId,
+  type MessageId,
+  type ThreadId,
+  type TurnId,
+} from "@t3tools/contracts";
 import { CHAT_LIST_ANCHOR_OFFSET, resolveChatListAnchoredEndSpace } from "@t3tools/shared/chatList";
 import { formatElapsed } from "@t3tools/shared/orchestrationTiming";
 import { SymbolView } from "../../components/AppSymbol";
@@ -50,6 +57,7 @@ import { useThemeColor } from "../../lib/useThemeColor";
 import { useFontFamily } from "../../lib/useFontFamily";
 import { scopedThreadKey } from "../../lib/scopedEntities";
 import { copyTextWithHaptic } from "../../lib/copyTextWithHaptic";
+import { deriveEmployeeHandoffDisplay, employeeInitials } from "../../lib/employees";
 import { hasWideMarkdownBlock } from "../../lib/wideMarkdownBlocks";
 import {
   hasNativeSelectableMarkdownText,
@@ -160,6 +168,7 @@ export interface ThreadFeedProps {
   readonly onHeaderMaterialVisibilityChange?: (visible: boolean) => void;
   readonly onEndFollowEnabledChange?: (enabled: boolean) => void;
   readonly skills?: ReadonlyArray<SelectableMarkdownSkill>;
+  readonly employees?: EmployeeMap;
   /** Non-null when older turns exist beyond the loaded window. */
   readonly loadEarlier?: {
     readonly loading: boolean;
@@ -820,7 +829,7 @@ function useMarkdownStyles(onLinkPress: (href: string) => void): MarkdownStyleSe
 
 function renderFeedEntry(
   info: { item: ThreadFeedEntry; index: number },
-  props: Pick<ThreadFeedProps, "environmentId" | "skills"> & {
+  props: Pick<ThreadFeedProps, "employees" | "environmentId" | "skills"> & {
     readonly copiedRowId: string | null;
     readonly expandedWorkRows: Record<string, boolean>;
     readonly terminalAssistantMessageIds: ReadonlySet<string>;
@@ -882,17 +891,41 @@ function renderFeedEntry(
 
   if (entry.type === "message") {
     const { message } = entry;
-    const isUser = message.role === "user";
-    const styles = isUser ? markdownStyles.user : markdownStyles.assistant;
-    const timestampLabel = formatMessageTime(isUser ? message.createdAt : message.updatedAt);
+    const employee =
+      message.employeeId !== undefined && props.employees !== undefined
+        ? resolveEmployee(props.employees, message.employeeId)
+        : undefined;
+    const employeeName =
+      message.employeeId !== undefined ? (employee?.displayName ?? message.employeeId) : undefined;
+    const handoffDisplay =
+      message.employeeId !== undefined
+        ? deriveEmployeeHandoffDisplay(message.text)
+        : { visibleText: message.text, toEmployeeId: undefined };
+    const handoffEmployee =
+      handoffDisplay.toEmployeeId !== undefined && props.employees !== undefined
+        ? resolveEmployee(props.employees, handoffDisplay.toEmployeeId)
+        : undefined;
+    const handoffEmployeeName =
+      handoffDisplay.toEmployeeId !== undefined
+        ? (handoffEmployee?.displayName ?? handoffDisplay.toEmployeeId)
+        : undefined;
+    const isHumanUser = message.role === "user" && message.employeeId === undefined;
+    const isEmployeeUser = message.role === "user" && message.employeeId !== undefined;
+    const styles = isHumanUser ? markdownStyles.user : markdownStyles.assistant;
+    const timestampLabel = formatMessageTime(
+      message.role === "user" ? message.createdAt : message.updatedAt,
+    );
     const attachments = message.attachments ?? [];
-    const hasReviewCommentContext = message.text.includes("<review_comment");
+    const hasReviewCommentContext = handoffDisplay.visibleText.includes("<review_comment");
     // A bubble that sizes itself from its content cannot lay out a block whose
     // intrinsic width overflows `maxWidth`: Android positions the bubble's
     // children during the unclamped pass and never moves them once the width
     // is clamped, so the paragraphs around the block end up drawn on top of
     // each other. Pinning the width removes that pass.
-    const hasWideBlock = hasWideMarkdownBlock(message.text, WIDE_MARKDOWN_BLOCK_OPTIONS);
+    const hasWideBlock = hasWideMarkdownBlock(
+      handoffDisplay.visibleText,
+      WIDE_MARKDOWN_BLOCK_OPTIONS,
+    );
     const assistantTurnStillInProgress =
       message.role === "assistant" &&
       props.unsettledTurnId !== null &&
@@ -903,7 +936,7 @@ function renderFeedEntry(
       !assistantTurnStillInProgress &&
       !message.streaming;
 
-    if (isUser) {
+    if (isHumanUser) {
       const enterAnimated = isFreshTimestamp(message.createdAt);
       return (
         <Animated.View
@@ -963,55 +996,94 @@ function renderFeedEntry(
 
     // Skip empty assistant messages (no text, no attachments) — they would
     // render as an orphaned timestamp and break adjacent activity-group merging.
-    if (message.text.trim().length === 0 && attachments.length === 0) {
+    if (
+      handoffDisplay.visibleText.trim().length === 0 &&
+      handoffEmployeeName === undefined &&
+      attachments.length === 0
+    ) {
       return null;
     }
 
     const enterAnimated = isFreshTimestamp(message.createdAt);
     return (
       <Animated.View
-        className={cn(showAssistantMeta ? "mb-5 px-1" : "mb-2 px-1")}
+        className={cn(showAssistantMeta || isEmployeeUser ? "mb-5 px-1" : "mb-2 px-1")}
         {...(enterAnimated ? { entering: FadeIn.duration(220) } : {})}
       >
-        {message.text.trim().length > 0 ? (
-          hasNativeSelectableMarkdownText() ? (
-            <SelectableMarkdownText
-              markdown={message.text}
-              skills={props.skills}
-              textStyle={styles.nativeTextStyle}
-              onLinkPress={props.onMarkdownLinkPress}
-            />
-          ) : (
-            <Markdown
-              options={{ gfm: true }}
-              renderers={styles.renderers}
-              styles={styles.styles}
-              theme={styles.theme}
-            >
-              {message.text}
-            </Markdown>
-          )
+        {employeeName !== undefined ? (
+          <View className="mb-2 flex-row items-center gap-2">
+            <View className="h-7 w-7 items-center justify-center rounded-full bg-primary">
+              <Text className="text-2xs font-t3-bold text-primary-foreground">
+                {employeeInitials(employeeName)}
+              </Text>
+            </View>
+            <Text className="font-t3-bold text-sm text-foreground">{employeeName}</Text>
+            {isEmployeeUser ? (
+              <Text className="text-xs text-foreground-muted">to the group</Text>
+            ) : null}
+          </View>
         ) : null}
-        {attachments.map((attachment) => {
-          return (
-            <MessageAttachmentImage
-              key={attachment.id}
-              environmentId={props.environmentId}
-              attachmentId={attachment.id}
-              className="mt-1.5 aspect-[1.3] w-full rounded-[18px] bg-neutral-200 dark:bg-neutral-800"
-              onPressImage={props.onPressImage}
-            />
-          );
-        })}
-        {showAssistantMeta ? (
-          <View className="mt-1 flex-row items-center gap-1">
-            <CopyTextButton
-              accessibilityLabel="Copy message"
-              text={message.text}
+        <View
+          className={cn(
+            isEmployeeUser && "rounded-[16px] border border-border bg-subtle px-3.5 py-2.5",
+          )}
+          style={isEmployeeUser ? { maxWidth: props.userBubbleMaxWidth } : undefined}
+        >
+          {handoffDisplay.visibleText.trim().length > 0 ? (
+            hasNativeSelectableMarkdownText() ? (
+              <SelectableMarkdownText
+                markdown={handoffDisplay.visibleText}
+                skills={props.skills}
+                textStyle={styles.nativeTextStyle}
+                onLinkPress={props.onMarkdownLinkPress}
+              />
+            ) : (
+              <Markdown
+                options={{ gfm: true }}
+                renderers={styles.renderers}
+                styles={styles.styles}
+                theme={styles.theme}
+              >
+                {handoffDisplay.visibleText}
+              </Markdown>
+            )
+          ) : null}
+          {attachments.map((attachment) => {
+            return (
+              <MessageAttachmentImage
+                key={attachment.id}
+                environmentId={props.environmentId}
+                attachmentId={attachment.id}
+                className="mt-1.5 aspect-[1.3] w-full rounded-[18px] bg-neutral-200 dark:bg-neutral-800"
+                onPressImage={props.onPressImage}
+              />
+            );
+          })}
+        </View>
+        {handoffEmployeeName !== undefined ? (
+          <View className="mt-2 flex-row items-center gap-1.5 rounded-lg bg-subtle px-2.5 py-2">
+            <SymbolView
+              name="arrow.right"
+              size={13}
               tintColor={iconSubtleColor}
-              buttonSize={28}
-              iconSize={13}
+              type="monochrome"
             />
+            <Text className="text-xs font-t3-medium text-foreground-muted">
+              Handed off to {handoffEmployeeName}
+            </Text>
+          </View>
+        ) : null}
+        {showAssistantMeta || isEmployeeUser ? (
+          <View className="mt-1 flex-row items-center gap-1">
+            {handoffDisplay.visibleText.trim().length > 0 ? (
+              <CopyTextButton
+                accessibilityLabel="Copy message"
+                text={handoffDisplay.visibleText}
+                tintColor={iconSubtleColor}
+                buttonSize={28}
+                iconSize={13}
+              />
+            ) : null}
             <Text className="font-t3-medium text-xs tabular-nums text-neutral-600 dark:text-neutral-400">
               {timestampLabel}
             </Text>
@@ -1820,6 +1892,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
   const renderItem = useCallback(
     (info: { item: ThreadFeedEntry; index: number }) =>
       renderFeedEntry(info, {
+        employees: props.employees,
         environmentId: props.environmentId,
         copiedRowId,
         expandedWorkRows,
@@ -1857,6 +1930,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       onToggleWorkGroup,
       onToggleWorkRow,
       props.environmentId,
+      props.employees,
       props.skills,
     ],
   );

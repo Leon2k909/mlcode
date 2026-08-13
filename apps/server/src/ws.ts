@@ -88,6 +88,7 @@ import * as TerminalManager from "./terminal/Manager.ts";
 import * as PreviewAutomationBroker from "./mcp/PreviewAutomationBroker.ts";
 import * as PreviewManager from "./preview/Manager.ts";
 import { issueAssetUrl } from "./assets/AssetAccess.ts";
+import { discoverPetCatalog } from "./pets/PetCatalog.ts";
 import * as PortScanner from "./preview/PortScanner.ts";
 import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
 import * as WorkspaceFileSystem from "./workspace/WorkspaceFileSystem.ts";
@@ -1843,7 +1844,10 @@ const makeWsRpcLayer = (
           observeRpcEffect(
             WS_METHODS.assetsCreateUrl,
             Effect.gen(function* () {
-              if (input.resource._tag === "attachment") {
+              if (
+                input.resource._tag === "attachment" ||
+                input.resource._tag === "pet-spritesheet"
+              ) {
                 return yield* issueAssetUrl({ resource: input.resource });
               }
               if (input.resource._tag === "project-favicon") {
@@ -1906,6 +1910,21 @@ const makeWsRpcLayer = (
                 resource: input.resource,
                 workspaceRoot: thread.value.worktreePath ?? project.value.workspaceRoot,
               });
+            }),
+            { "rpc.aggregate": "workspace" },
+          ),
+        [WS_METHODS.petsList]: (_input) =>
+          observeRpcEffect(
+            WS_METHODS.petsList,
+            Effect.sync(() => {
+              const catalog = discoverPetCatalog();
+              return {
+                pets: catalog.pets.map((pet) => {
+                  const { spritesheetPath: _spritesheetPath, ...entry } = pet;
+                  return entry;
+                }),
+                selectedPetKey: catalog.selectedPetKey,
+              };
             }),
             { "rpc.aggregate": "workspace" },
           ),

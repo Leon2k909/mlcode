@@ -55,6 +55,11 @@ import {
 import { ControlPill, ControlPillMenu } from "../../components/ControlPill";
 import { ProviderIcon } from "../../components/ProviderIcon";
 import type { DraftComposerImageAttachment } from "../../lib/composerImages";
+import {
+  employeeSelectionLabel,
+  preserveEmployeeRoutingForProvider,
+  resolveEmployeeModelSelection,
+} from "../../lib/employees";
 import { buildModelOptions, groupByProvider } from "../../lib/modelOptions";
 import { useScaledTextRole } from "../settings/appearance/useScaledTextRole";
 import type { RemoteClientConnectionState } from "../../lib/connection";
@@ -627,6 +632,10 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
     [currentModelOption?.capabilities, currentModelSelection.options],
   );
   const settingsSummaryLabel = threadSettingsSummaryLabel({
+    employeeLabel: employeeSelectionLabel(
+      props.serverConfig?.settings.employees,
+      currentModelSelection,
+    ),
     modelLabel: currentModelOption?.label ?? currentModelSelection.model,
     optionDescriptors: providerOptionDescriptors,
     runtimeMode: currentRuntimeMode,
@@ -651,6 +660,18 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
 
   const onUpdateModelSelection = props.onUpdateModelSelection;
   const onUpdateRuntimeMode = props.onUpdateRuntimeMode;
+  const handleModelSelection = useCallback(
+    (nextSelection: ModelSelection) => {
+      onUpdateModelSelection(
+        preserveEmployeeRoutingForProvider({
+          currentSelection: currentModelSelection,
+          nextSelection,
+          employees: props.serverConfig?.settings.employees,
+        }),
+      );
+    },
+    [currentModelSelection, onUpdateModelSelection, props.serverConfig?.settings.employees],
+  );
   const handleSettingsMenuAction = useCallback(
     (eventId: string) => {
       const event = settingsMenu?.events.get(eventId);
@@ -660,7 +681,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
       switch (event.type) {
         case "select-model":
           void Haptics.selectionAsync();
-          onUpdateModelSelection(event.option.selection);
+          handleModelSelection(event.option.selection);
           return;
         case "set-option": {
           const options = applyProviderOptionSelection(providerOptionDescriptors, {
@@ -681,6 +702,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
     },
     [
       currentModelSelection,
+      handleModelSelection,
       onUpdateModelSelection,
       onUpdateRuntimeMode,
       providerOptionDescriptors,
@@ -921,7 +943,19 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
         onDismissed={settingsSheetPresentation.onDismissed}
         providerGroups={threadProviderGroups}
         selectedModel={currentModelSelection}
-        onSelectModel={(option) => props.onUpdateModelSelection(option.selection)}
+        onSelectModel={(option) => handleModelSelection(option.selection)}
+        employees={props.serverConfig?.settings.employees}
+        onUpdateEmployeeSelection={(employeeId, employeeIds) => {
+          const nextSelection = resolveEmployeeModelSelection({
+            config: props.serverConfig,
+            currentSelection: currentModelSelection,
+            employeeId,
+            employeeIds,
+          });
+          if (nextSelection !== null) {
+            props.onUpdateModelSelection(nextSelection);
+          }
+        }}
         optionDescriptors={providerOptionDescriptors}
         onUpdateOptionSelections={(options) =>
           props.onUpdateModelSelection({ ...currentModelSelection, options })

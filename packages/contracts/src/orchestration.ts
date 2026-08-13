@@ -22,6 +22,7 @@ import {
   TurnId,
 } from "./baseSchemas.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
+import { EmployeeId } from "./employee.ts";
 
 export const ORCHESTRATION_WS_METHODS = {
   dispatchCommand: "orchestration.dispatchCommand",
@@ -67,6 +68,15 @@ const ModelSelectionWire = Schema.Struct({
   instanceId: ProviderInstanceId,
   model: TrimmedNonEmptyString,
   options: Schema.optionalKey(ProviderOptionSelections),
+  // Which employee is doing this work, if any. Optional forever: threads
+  // predating employees, and threads run by nobody in particular, carry no
+  // id. An id naming an employee this build cannot find resolves to "no
+  // persona" at dispatch rather than failing the turn (see employee.ts).
+  employeeId: Schema.optionalKey(EmployeeId),
+  // The employees who share this thread. Omitted for a private employee
+  // thread; two or more ids make the thread a group chat. `employeeId` is the
+  // member currently speaking and must be one of these ids when present.
+  employeeIds: Schema.optionalKey(Schema.Array(EmployeeId)),
 });
 
 // Source shape for persisted legacy payloads. Fields are typed as
@@ -78,6 +88,8 @@ const ModelSelectionSource = Schema.Struct({
   instanceId: Schema.optional(Schema.Unknown),
   model: Schema.Unknown,
   options: Schema.optional(Schema.Unknown),
+  employeeId: Schema.optional(Schema.Unknown),
+  employeeIds: Schema.optional(Schema.Unknown),
 });
 
 export const ModelSelection = ModelSelectionSource.pipe(
@@ -101,6 +113,8 @@ export const ModelSelection = ModelSelectionSource.pipe(
           model: raw.model,
         };
         if (raw.options !== undefined) base.options = raw.options;
+        if (raw.employeeId !== undefined) base.employeeId = raw.employeeId;
+        if (raw.employeeIds !== undefined) base.employeeIds = raw.employeeIds;
         return Effect.succeed(base as typeof ModelSelectionWire.Encoded);
       },
       encode: (value) => {
@@ -109,6 +123,8 @@ export const ModelSelection = ModelSelectionSource.pipe(
           instanceId: value.instanceId,
         };
         if (value.options !== undefined) base.options = value.options;
+        if (value.employeeId !== undefined) base.employeeId = value.employeeId;
+        if (value.employeeIds !== undefined) base.employeeIds = value.employeeIds;
         return Effect.succeed(base as typeof ModelSelectionSource.Encoded);
       },
     }),
@@ -242,6 +258,9 @@ export const OrchestrationMessage = Schema.Struct({
   id: MessageId,
   role: OrchestrationMessageRole,
   text: Schema.String,
+  // Employee-authored messages carry their durable speaker identity. Human
+  // messages omit it.
+  employeeId: Schema.optional(EmployeeId),
   attachments: Schema.optional(Schema.Array(ChatAttachment)),
   turnId: Schema.NullOr(TurnId),
   streaming: Schema.Boolean,
@@ -817,6 +836,9 @@ export const ThreadTurnStartCommand = Schema.Struct({
     role: Schema.Literal("user"),
     text: Schema.String,
     attachments: Schema.Array(ChatAttachment),
+    // Only server-authored employee-to-employee messages set this. The client
+    // command below intentionally omits it.
+    employeeId: Schema.optional(EmployeeId),
   }),
   modelSelection: Schema.optional(ModelSelection),
   titleSeed: Schema.optional(TrimmedNonEmptyString),
@@ -964,6 +986,7 @@ const ThreadMessageAssistantDeltaCommand = Schema.Struct({
   threadId: ThreadId,
   messageId: MessageId,
   delta: Schema.String,
+  employeeId: Schema.optional(EmployeeId),
   turnId: Schema.optional(TurnId),
   createdAt: IsoDateTime,
 });
@@ -973,6 +996,7 @@ const ThreadMessageAssistantCompleteCommand = Schema.Struct({
   commandId: CommandId,
   threadId: ThreadId,
   messageId: MessageId,
+  employeeId: Schema.optional(EmployeeId),
   turnId: Schema.optional(TurnId),
   createdAt: IsoDateTime,
 });
@@ -1223,6 +1247,7 @@ export const ThreadMessageSentPayload = Schema.Struct({
   messageId: MessageId,
   role: OrchestrationMessageRole,
   text: Schema.String,
+  employeeId: Schema.optional(EmployeeId),
   attachments: Schema.optional(Schema.Array(ChatAttachment)),
   turnId: Schema.NullOr(TurnId),
   streaming: Schema.Boolean,
@@ -1233,6 +1258,8 @@ export const ThreadMessageSentPayload = Schema.Struct({
 export const ThreadTurnStartRequestedPayload = Schema.Struct({
   threadId: ThreadId,
   messageId: MessageId,
+  // Present only when another employee requested this turn.
+  employeeId: Schema.optional(EmployeeId),
   modelSelection: Schema.optional(ModelSelection),
   titleSeed: Schema.optional(TrimmedNonEmptyString),
   runtimeMode: RuntimeMode.pipe(Schema.withDecodingDefault(Effect.succeed(DEFAULT_RUNTIME_MODE))),

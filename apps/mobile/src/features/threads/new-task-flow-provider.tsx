@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type {
+  EmployeeId,
   EnvironmentId,
   ModelSelection,
   ProjectReadFileResult,
@@ -28,6 +29,10 @@ import { pipe } from "effect/Function";
 import { useEnvironmentServerConfig, useProjects, useThreadShells } from "../../state/entities";
 import type { TurnCommandMetadata } from "../../lib/commandMetadata";
 import type { DraftComposerImageAttachment } from "../../lib/composerImages";
+import {
+  preserveEmployeeRoutingForProvider,
+  resolveEmployeeModelSelection,
+} from "../../lib/employees";
 import type { ModelOption, ProviderGroup } from "../../lib/modelOptions";
 import {
   buildModelOptions,
@@ -180,6 +185,10 @@ type NewTaskFlowContextValue = {
   readonly setInteractionMode: (value: ProviderInteractionMode) => void;
   readonly setSelectedModelOptions: (
     value: ReadonlyArray<ProviderOptionSelection> | undefined,
+  ) => void;
+  readonly setEmployeeSelection: (
+    employeeId: EmployeeId | undefined,
+    employeeIds: ReadonlyArray<EmployeeId> | undefined,
   ) => void;
   readonly setExpandedProvider: (value: string | null) => void;
 };
@@ -454,11 +463,23 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       if (!option) {
         return;
       }
+      const nextSelection = options ? { ...option.selection, options } : option.selection;
       updateComposerDraftSettings(selectedProjectDraftKey, {
-        modelSelection: options ? { ...option.selection, options } : option.selection,
+        modelSelection: selectedModel
+          ? preserveEmployeeRoutingForProvider({
+              currentSelection: selectedModel,
+              nextSelection,
+              employees: selectedEnvironmentServerConfig?.settings.employees,
+            })
+          : nextSelection,
       });
     },
-    [modelOptions, selectedProjectDraftKey],
+    [
+      modelOptions,
+      selectedEnvironmentServerConfig?.settings.employees,
+      selectedModel,
+      selectedProjectDraftKey,
+    ],
   );
   const setSelectedModelOptions = useCallback(
     (options: ReadonlyArray<ProviderOptionSelection> | undefined) => {
@@ -467,15 +488,30 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       }
       const nextSelection: ModelSelection = options
         ? { ...selectedModel, options }
-        : {
-            instanceId: selectedModel.instanceId,
-            model: selectedModel.model,
-          };
+        : (({ options: _removedOptions, ...selectionWithoutOptions }) => selectionWithoutOptions)(
+            selectedModel,
+          );
       updateComposerDraftSettings(selectedProjectDraftKey, {
         modelSelection: nextSelection,
       });
     },
     [selectedModel, selectedProjectDraftKey],
+  );
+  const setEmployeeSelection = useCallback(
+    (employeeId: EmployeeId | undefined, employeeIds: ReadonlyArray<EmployeeId> | undefined) => {
+      if (!selectedModel || !selectedProjectDraftKey) return;
+      const nextSelection = resolveEmployeeModelSelection({
+        config: selectedEnvironmentServerConfig,
+        currentSelection: selectedModel,
+        employeeId,
+        employeeIds,
+      });
+      if (nextSelection === null) return;
+      updateComposerDraftSettings(selectedProjectDraftKey, {
+        modelSelection: nextSelection,
+      });
+    },
+    [selectedEnvironmentServerConfig, selectedModel, selectedProjectDraftKey],
   );
 
   const providerGroups = useMemo(() => groupByProvider(modelOptions), [modelOptions]);
@@ -938,6 +974,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       setRuntimeMode,
       setInteractionMode,
       setSelectedModelOptions,
+      setEmployeeSelection,
       setExpandedProvider,
     }),
     [
@@ -970,6 +1007,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       selectedProjectDraftKey,
       selectedProviderSkills,
       setSelectedModelOptions,
+      setEmployeeSelection,
       selectedProject,
       selectedProjectKey,
       selectedWorktreePath,

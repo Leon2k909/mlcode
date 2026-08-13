@@ -1,0 +1,207 @@
+/**
+ * Employee contracts.
+ *
+ * An **employee** is a named persona that does work in T3 Code: a display
+ * name, an avatar, a role, and a block of standing instructions, bound to one
+ * configured provider instance. Employees sit *above* the provider layer —
+ * several employees can share a single provider instance (three teammates on
+ * one Claude subscription), and one employee never spans two instances.
+ *
+ * Employees deliberately introduce no employee-specific CRUD commands or
+ * events. The current speaker is carried on `ModelSelection.employeeId`, and
+ * an optional `employeeIds` list scopes a group chat. Message attribution
+ * uses the existing message commands and events. See `orchestration.ts`.
+ *
+ * Forward/backward compatibility invariant
+ * ----------------------------------------
+ * Same rule as `providerInstance.ts`, for the same reasons: settings and
+ * persisted thread state routinely reference records this build does not
+ * have. An employee may name a `providerInstanceId` that is not configured
+ * (deleted instance, fork, rolled-back branch), and a thread may name an
+ * `employeeId` that no longer exists. Parsing must always succeed; the
+ * runtime resolves the reference and degrades to "no employee" rather than
+ * failing the turn. A missing persona must never cost a user their turn.
+ *
+ * @module employee
+ */
+import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
+import { TrimmedNonEmptyString, TrimmedString } from "./baseSchemas.ts";
+import { ProviderInstanceId } from "./providerInstance.ts";
+
+const EMPLOYEE_SLUG_MAX_CHARS = 64;
+/**
+ * Slug pattern shared with provider instances — letters, digits, dashes,
+ * underscores, leading letter. Employee ids appear as object keys in settings
+ * and as log/telemetry fields, so the JS-identifier-friendly shape carries
+ * over unchanged.
+ */
+const EMPLOYEE_SLUG_PATTERN = /^[a-zA-Z][a-zA-Z0-9_-]*$/;
+
+/**
+ * Upper bound on standing instructions. Instructions are prepended to the
+ * first turn of a session, so an unbounded persona would eat the provider's
+ * context before the user's actual request reached it. 8k characters is
+ * roughly two dense pages — far more than a role description needs, and small
+ * enough that it cannot crowd out a turn.
+ */
+export const EMPLOYEE_INSTRUCTIONS_MAX_CHARS = 8_000;
+const EMPLOYEE_DISPLAY_NAME_MAX_CHARS = 64;
+const EMPLOYEE_ROLE_MAX_CHARS = 128;
+/** Wide enough for any single grapheme cluster, including ZWJ emoji sequences. */
+const EMPLOYEE_AVATAR_MAX_CHARS = 16;
+
+/**
+ * `EmployeeId` — user-defined routing key for one configured employee.
+ * Branded separately from `ProviderInstanceId` so the type system cannot
+ * confuse a persona with the provider that runs it.
+ */
+export const EmployeeId = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(EMPLOYEE_SLUG_MAX_CHARS),
+  Schema.isPattern(EMPLOYEE_SLUG_PATTERN),
+).pipe(Schema.brand("EmployeeId"));
+export type EmployeeId = typeof EmployeeId.Type;
+
+const isEmployeeIdValue = Schema.is(EmployeeId);
+export const isEmployeeId = (value: unknown): value is EmployeeId => isEmployeeIdValue(value);
+
+/**
+ * One configured employee.
+ *
+ * `providerInstanceId` is accepted as any well-formed slug — it is not
+ * validated against the configured instance map (see the module docs). The
+ * runtime resolves it and reports an unavailable employee rather than
+ * refusing to parse settings.
+ */
+export const Employee = Schema.Struct({
+  displayName: TrimmedNonEmptyString.check(Schema.isMaxLength(EMPLOYEE_DISPLAY_NAME_MAX_CHARS)),
+  providerInstanceId: ProviderInstanceId,
+  /** Short human title, e.g. "Frontend engineer". Presentation only. */
+  role: Schema.optional(TrimmedNonEmptyString.check(Schema.isMaxLength(EMPLOYEE_ROLE_MAX_CHARS))),
+  /** Standing instructions prepended to the first turn of each session. */
+  instructions: TrimmedString.check(Schema.isMaxLength(EMPLOYEE_INSTRUCTIONS_MAX_CHARS)).pipe(
+    Schema.withDecodingDefault(Effect.succeed("")),
+  ),
+  /** Emoji or short glyph shown wherever the employee is listed. */
+  avatar: Schema.optional(
+    TrimmedNonEmptyString.check(Schema.isMaxLength(EMPLOYEE_AVATAR_MAX_CHARS)),
+  ),
+  accentColor: Schema.optional(TrimmedNonEmptyString),
+  /** Model override. Falls back to the thread's own selection when absent. */
+  model: Schema.optional(TrimmedNonEmptyString),
+  enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+});
+export type Employee = typeof Employee.Type;
+
+/**
+ * Map shape for `ServerSettings.employees`. Keyed by `EmployeeId`.
+ */
+export const EmployeeMap = Schema.Record(EmployeeId, Employee);
+export type EmployeeMap = typeof EmployeeMap.Type;
+
+/**
+ * Provider instance the default roster is bound to.
+ *
+ * Matches the instance id the default model selection already assumes
+ * (`settings.ts`), so a fresh install has a working team without the user
+ * configuring anything first. If that instance is absent the employees stay
+ * in the map and report as unavailable — the documented degradation.
+ */
+const DEFAULT_ROSTER_INSTANCE_ID = "codex";
+
+/** Model the default workers run on. */
+const DEFAULT_WORKER_MODEL = "gpt-5.6-luna";
+/** Model the default decision-maker runs on. */
+const DEFAULT_LEAD_MODEL = "gpt-5.6-sol";
+
+const workerInstructions = (focus: string): string =>
+  [
+    `You are a worker on a small team. Your focus is ${focus}.`,
+    "",
+    "Do the work you are given, end to end, and report what you actually did — files touched, commands run, what you verified and what you did not. Never claim something works because it should.",
+    "If the task is bigger than your focus, do your part in full and hand the rest back to the CEO rather than guessing at someone else's area.",
+    "Prefer reading the code over assuming it. Keep changes scoped to what was asked.",
+  ].join("\n");
+
+/**
+ * Default employee roster shipped with a fresh install.
+ *
+ * One lead who decides and delegates, plus three workers who do the work in
+ * parallel lanes. Seeded as the decoding default for `ServerSettings.employees`
+ * so a new user has a team on first launch; an existing settings file that
+ * already carries an `employees` map is left exactly as it is, including an
+ * empty one (a user who deleted the roster does not get it back).
+ */
+export const DEFAULT_EMPLOYEES: EmployeeMap = Schema.decodeSync(EmployeeMap)({
+  ceo: {
+    displayName: "Ceo",
+    role: "Chief executive — decides and delegates",
+    avatar: "🧠",
+    providerInstanceId: DEFAULT_ROSTER_INSTANCE_ID,
+    model: DEFAULT_LEAD_MODEL,
+    enabled: true,
+    instructions: [
+      "You are the CEO of this team. You own the decision, not the typing.",
+      "",
+      "How you work:",
+      "1. Read the request and decide what actually needs to happen. State the plan in a few lines before any work starts.",
+      "2. Split the work and hand each piece to the teammate whose focus fits it. Hand off one piece at a time and say exactly what you want back.",
+      "3. When work comes back, judge it. If it is wrong, incomplete, or unverified, send it back with specifics rather than accepting it.",
+      "4. You make the final call and give the user the final answer. Never end a thread with 'a teammate will handle it' — either it is done, or you say plainly what is left.",
+      "",
+      "Do small things yourself instead of delegating them; a handoff costs more than a one-line fix. Delegate research, multi-file changes, and anything you would otherwise guess at.",
+    ].join("\n"),
+  },
+  worker_alpha: {
+    displayName: "Alpha",
+    role: "Worker — implementation",
+    avatar: "⚙️",
+    providerInstanceId: DEFAULT_ROSTER_INSTANCE_ID,
+    model: DEFAULT_WORKER_MODEL,
+    enabled: true,
+    instructions: workerInstructions("writing and changing code"),
+  },
+  worker_beta: {
+    displayName: "Beta",
+    role: "Worker — research",
+    avatar: "🔎",
+    providerInstanceId: DEFAULT_ROSTER_INSTANCE_ID,
+    model: DEFAULT_WORKER_MODEL,
+    enabled: true,
+    instructions: workerInstructions(
+      "finding things out — reading the codebase, tracing how something works, and reporting findings with file paths and line numbers",
+    ),
+  },
+  worker_gamma: {
+    displayName: "Gamma",
+    role: "Worker — verification",
+    avatar: "🧪",
+    providerInstanceId: DEFAULT_ROSTER_INSTANCE_ID,
+    model: DEFAULT_WORKER_MODEL,
+    enabled: true,
+    instructions: workerInstructions(
+      "checking work — running tests, type checks, and lints, and reproducing what someone claims to have fixed",
+    ),
+  },
+});
+
+/**
+ * Resolve an employee id against the configured map.
+ *
+ * Returns `undefined` for an unknown id and for a disabled employee, so
+ * callers get one uniform "no persona applies" answer. Turn dispatch treats
+ * both the same way: run the turn without a persona rather than fail it.
+ */
+export const resolveEmployee = (
+  employees: EmployeeMap,
+  employeeId: EmployeeId | undefined,
+): Employee | undefined => {
+  if (employeeId === undefined) return undefined;
+  // Own-property check, not a bare index: employee ids come off the wire, and
+  // `constructor` or `toString` would otherwise resolve to something off the
+  // prototype that is not an employee at all.
+  if (!Object.hasOwn(employees, employeeId)) return undefined;
+  const employee = employees[employeeId];
+  if (employee === undefined || !employee.enabled) return undefined;
+  return employee;
+};

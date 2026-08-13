@@ -25,6 +25,7 @@ import {
   ThreadTurnStartRequestedPayload,
 } from "./orchestration.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
+import { EmployeeId } from "./employee.ts";
 
 const decodeTurnDiffInput = Schema.decodeUnknownEffect(OrchestrationGetTurnDiffInput);
 const decodeFullThreadDiffInput = Schema.decodeUnknownEffect(OrchestrationGetFullThreadDiffInput);
@@ -248,6 +249,37 @@ it.effect("preserves explicit provider and runtime mode in thread.turn.start", (
     assert.strictEqual(parsed.modelSelection?.instanceId, "codex");
     assert.strictEqual(parsed.runtimeMode, "full-access");
     assert.strictEqual(parsed.interactionMode, DEFAULT_PROVIDER_INTERACTION_MODE);
+  }),
+);
+
+it.effect("preserves employee group routing in thread.turn.start", () =>
+  Effect.gen(function* () {
+    const parsed = yield* decodeThreadTurnStartCommand({
+      type: "thread.turn.start",
+      commandId: "cmd-turn-employee-group",
+      threadId: "thread-1",
+      message: {
+        messageId: "msg-employee-group",
+        role: "user",
+        text: "Please review this.",
+        attachments: [],
+        employeeId: "ceo",
+      },
+      modelSelection: {
+        instanceId: "claudeAgent",
+        model: "claude-opus-4-6",
+        employeeId: "reviewer",
+        employeeIds: ["ceo", "reviewer"],
+      },
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
+
+    assert.strictEqual(parsed.message.employeeId, EmployeeId.make("ceo"));
+    assert.strictEqual(parsed.modelSelection?.employeeId, EmployeeId.make("reviewer"));
+    assert.deepStrictEqual(parsed.modelSelection?.employeeIds, [
+      EmployeeId.make("ceo"),
+      EmployeeId.make("reviewer"),
+    ]);
   }),
 );
 
@@ -858,6 +890,30 @@ it.effect("ModelSelection accepts an explicit instanceId routing key", () =>
       model: "gpt-5-codex",
     });
     assert.strictEqual(parsed.instanceId, ProviderInstanceId.make("codex_personal"));
+  }),
+);
+
+it.effect("ModelSelection round-trips private and group employee routing", () =>
+  Effect.gen(function* () {
+    const decoded = yield* decodeModelSelection({
+      instanceId: "codex",
+      model: "gpt-5-codex",
+      employeeId: "ceo",
+      employeeIds: ["ceo", "reviewer"],
+    });
+    const encoded = yield* encodeModelSelection(decoded);
+
+    assert.strictEqual(decoded.employeeId, EmployeeId.make("ceo"));
+    assert.deepStrictEqual(decoded.employeeIds, [
+      EmployeeId.make("ceo"),
+      EmployeeId.make("reviewer"),
+    ]);
+    assert.deepStrictEqual(encoded, {
+      instanceId: "codex",
+      model: "gpt-5-codex",
+      employeeId: "ceo",
+      employeeIds: ["ceo", "reviewer"],
+    });
   }),
 );
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { ProviderInstanceId, type ServerConfig } from "@t3tools/contracts";
+import { EmployeeId, ProviderInstanceId, type ServerConfig } from "@t3tools/contracts";
 
 import {
   buildModelOptions,
@@ -10,6 +10,40 @@ import {
 } from "./modelOptions";
 
 describe("mobile model options", () => {
+  it("preserves employee routing while normalizing model options", () => {
+    const ceoId = EmployeeId.make("ceo");
+    const reviewerId = EmployeeId.make("reviewer");
+    const config = {
+      providers: [
+        {
+          instanceId: "codex",
+          driver: "codex",
+          displayName: "Codex",
+          enabled: true,
+          installed: true,
+          auth: { status: "authenticated" },
+          models: [
+            {
+              slug: "gpt-5.6-sol",
+              name: "GPT-5.6 Sol",
+              isCustom: false,
+              capabilities: { optionDescriptors: [] },
+            },
+          ],
+        },
+      ],
+    } as unknown as ServerConfig;
+
+    const selection = {
+      instanceId: ProviderInstanceId.make("codex"),
+      model: "gpt-5.6-sol",
+      employeeId: ceoId,
+      employeeIds: [ceoId, reviewerId],
+    };
+
+    expect(buildModelOptions(config, selection)[0]?.selection).toEqual(selection);
+  });
+
   it("groups models by provider and flags legacy entries", () => {
     const config = {
       providers: [

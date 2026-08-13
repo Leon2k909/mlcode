@@ -1,5 +1,6 @@
 import type {
   ApprovalRequestId,
+  EmployeeId,
   EnvironmentId,
   ModelSelection,
   PreviewAnnotationPayload,
@@ -85,6 +86,8 @@ import {
 } from "../composerFooterLayout";
 import { type ComposerPromptEditorHandle, ComposerPromptEditor } from "../ComposerPromptEditor";
 import { ProviderModelPicker } from "./ProviderModelPicker";
+import { ComposerEmployeePicker } from "./ComposerEmployeePicker";
+import { employeeRoutingEqual, type EmployeeEntry, withEmployeeRouting } from "../../employees";
 import { type ComposerCommandItem, ComposerCommandMenu } from "./ComposerCommandMenu";
 import { ComposerPendingApprovalActions } from "./ComposerPendingApprovalActions";
 import { CompactComposerControlsMenu } from "./CompactComposerControlsMenu";
@@ -584,7 +587,24 @@ export interface ChatComposerProps {
     cursorAdjacentToMention: boolean,
   ) => void;
 
-  onProviderModelSelect: (instanceId: ProviderInstanceId, model: string) => void;
+  onProviderModelSelect: (
+    instanceId: ProviderInstanceId,
+    model: string,
+    baseSelection: ModelSelection,
+  ) => void;
+  /**
+   * Employees configured on this environment. The active one is resolved here
+   * rather than passed in: the composer resolves its selection draft-first, so
+   * reading the employee off the persisted thread would ignore an unsent pick.
+   * `onEmployeeSelect` receives the resolved base so writing back preserves
+   * the instance and model the user currently has chosen.
+   */
+  employeeEntries: ReadonlyArray<EmployeeEntry>;
+  onEmployeeSelect: (
+    employeeId: EmployeeId | undefined,
+    employeeIds: ReadonlyArray<EmployeeId> | undefined,
+    baseSelection: ModelSelection,
+  ) => void;
   getModelDisabledReason: (instanceId: ProviderInstanceId, model: string) => string | null;
   toggleInteractionMode: () => void;
   handleRuntimeModeChange: (mode: RuntimeMode) => void;
@@ -657,6 +677,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     onPreviousActivePendingUserInputQuestion,
     onChangeActivePendingUserInputCustomAnswer,
     onProviderModelSelect,
+    employeeEntries,
+    onEmployeeSelect,
     getModelDisabledReason,
     toggleInteractionMode,
     handleRuntimeModeChange,
@@ -886,10 +908,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     }),
     [planModeUiEnabled, providerStatuses, selectedProvider],
   );
-  const selectedModelSelection = useMemo<ModelSelection>(
-    () => createModelSelection(selectedInstanceId, selectedModel, selectedModelOptionsForDispatch),
-    [selectedInstanceId, selectedModel, selectedModelOptionsForDispatch],
-  );
   const selectedModelForPicker = selectedModel;
   // Instance-keyed option list so the picker can show each configured
   // instance (built-in + custom) as a first-class sidebar entry. The
@@ -910,6 +928,51 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       ? selectedModelForPicker
       : (normalizeModelSlug(selectedModelForPicker, selectedProvider) ?? selectedModelForPicker);
   }, [modelOptionsByInstance, selectedInstanceId, selectedModelForPicker, selectedProvider]);
+
+  // The selection the employee picker reads from and writes back onto.
+  // Draft-first for the same reason `selectedInstanceId` is: an unsent pick
+  // lives in the draft, keyed by provider instance, and only reaches the
+  // thread when the turn is sent. Reading the thread here would show a stale
+  // employee until send, which reads as the pick silently failing.
+  const activeEmployeeSelection = useMemo<ModelSelection>(() => {
+    const draftSelection = composerDraft.modelSelectionByProvider[selectedInstanceId];
+    const hasDraftSelection = Object.hasOwn(
+      composerDraft.modelSelectionByProvider,
+      selectedInstanceId,
+    );
+    const routingSelection = hasDraftSelection ? draftSelection : activeThreadModelSelection;
+    const employeeId = routingSelection?.employeeId;
+    const employeeIds = routingSelection?.employeeIds;
+    return {
+      instanceId: selectedInstanceId,
+      model: selectedModelForPickerWithCustomFallback,
+      ...(employeeId !== undefined ? { employeeId } : {}),
+      ...(employeeIds !== undefined ? { employeeIds } : {}),
+    };
+  }, [
+    activeThreadModelSelection?.employeeId,
+    activeThreadModelSelection?.employeeIds,
+    composerDraft.modelSelectionByProvider,
+    selectedInstanceId,
+    selectedModelForPickerWithCustomFallback,
+  ]);
+  const employeeSelectionAppliesNextTurn =
+    phase === "running" &&
+    !employeeRoutingEqual(activeEmployeeSelection, activeThreadModelSelection);
+  const selectedModelSelection = useMemo<ModelSelection>(
+    () =>
+      withEmployeeRouting(
+        createModelSelection(selectedInstanceId, selectedModel, selectedModelOptionsForDispatch),
+        activeEmployeeSelection,
+      ),
+    [
+      activeEmployeeSelection.employeeId,
+      activeEmployeeSelection.employeeIds,
+      selectedInstanceId,
+      selectedModel,
+      selectedModelOptionsForDispatch,
+    ],
+  );
 
   // ------------------------------------------------------------------
   // Context window
@@ -3142,7 +3205,22 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       setIsComposerModelPickerOpen(open);
                     }}
                     getModelDisabledReason={getModelDisabledReason}
-                    onInstanceModelChange={onProviderModelSelect}
+                    onInstanceModelChange={(instanceId, model) =>
+                      onProviderModelSelect(instanceId, model, activeEmployeeSelection)
+                    }
+                  />
+                )}
+
+                {noProviderAvailable ? null : (
+                  <ComposerEmployeePicker
+                    compact={isComposerFooterCompact}
+                    entries={employeeEntries}
+                    activeEmployeeId={activeEmployeeSelection.employeeId}
+                    activeEmployeeIds={activeEmployeeSelection.employeeIds}
+                    appliesNextTurn={employeeSelectionAppliesNextTurn}
+                    onEmployeeSelect={(employeeId, employeeIds) =>
+                      onEmployeeSelect(employeeId, employeeIds, activeEmployeeSelection)
+                    }
                   />
                 )}
 

@@ -82,7 +82,7 @@ export interface PullRequestTabStatus {
 }
 
 const SURFACE_DISABLED_REASONS = {
-  browser: "Browser previews are only available in the T3 Code desktop app.",
+  browser: "Browser previews are only available in the ML Code desktop app.",
   terminal: "Terminal surfaces are only available from a project thread.",
   files: "Files are only available when a project is open.",
   diff: "Diff is only available for server threads in Git repositories.",
@@ -219,8 +219,8 @@ function RightPanelEmptyState(props: {
       badgeCount: 0,
     },
     {
-      label: "Agents",
-      description: "Follow subagents and workflows.",
+      label: "Provider subagents",
+      description: "Follow temporary Codex/Claude subagents and workflows, not T3 employees.",
       icon: Bot,
       shortcut: "A",
       available: props.agentsAvailable,
@@ -421,7 +421,7 @@ function surfaceTitle(
     case "pull-request":
       return `#${surface.number}`;
     case "agents":
-      return "Agents";
+      return "Provider subagents";
     case "preview": {
       const snapshot = surface.resourceId ? sessions[surface.resourceId] : null;
       if (!snapshot || snapshot.navStatus._tag === "Idle") return "Browser";

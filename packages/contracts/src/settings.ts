@@ -11,6 +11,7 @@ import {
 } from "./model.ts";
 import { ModelSelection } from "./orchestration.ts";
 import { ProviderInstanceConfig, ProviderInstanceId } from "./providerInstance.ts";
+import { DEFAULT_EMPLOYEES, Employee, EmployeeId } from "./employee.ts";
 
 // ── Client Settings (local-only) ───────────────────────────────
 
@@ -610,6 +611,17 @@ export const ServerSettings = Schema.Struct({
   providerInstances: Schema.Record(ProviderInstanceId, ProviderInstanceConfig).pipe(
     Schema.withDecodingDefault(Effect.succeed({})),
   ),
+  // Named personas that do the work, keyed by `EmployeeId`. Each binds to a
+  // provider instance above; several employees may share one instance. An
+  // employee naming an instance that is not configured stays in the map and
+  // reports as unavailable — same round-trip rule as `providerInstances`.
+  // See employee.ts.
+  // Seeded with the default roster (a lead plus three workers) so a fresh
+  // install has a team without any setup. A settings file that already carries
+  // an `employees` map — including an empty one — is left untouched.
+  employees: Schema.Record(EmployeeId, Employee).pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_EMPLOYEES)),
+  ),
   observability: ObservabilitySettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
 });
 export type ServerSettings = typeof ServerSettings.Type;
@@ -751,6 +763,9 @@ export const ServerSettingsPatch = Schema.Struct({
   // patches risk leaving driver-specific config in a half-merged state.
   // The web UI sends a fully-formed map every time it edits this field.
   providerInstances: Schema.optionalKey(Schema.Record(ProviderInstanceId, ProviderInstanceConfig)),
+  // Whole-map replacement, for the same reason as `providerInstances`: the
+  // map is small and a half-merged persona is worse than a replaced one.
+  employees: Schema.optionalKey(Schema.Record(EmployeeId, Employee)),
 });
 export type ServerSettingsPatch = typeof ServerSettingsPatch.Type;
 

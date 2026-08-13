@@ -7,6 +7,7 @@ import {
 import * as Schema from "effect/Schema";
 import {
   defaultInstanceIdForDriver,
+  EmployeeId,
   EnvironmentId,
   ProjectId,
   ProviderDriverKind,
@@ -1598,6 +1599,50 @@ describe("composerDraftStore setModelSelection", () => {
     expect(
       draftFor(threadId, TEST_ENVIRONMENT_ID)?.modelSelectionByProvider[CODEX_INSTANCE],
     ).toEqual(modelSelection(CODEX_DRIVER, "gpt-5.3-codex"));
+  });
+
+  it("preserves private and group employee routing through draft normalization", () => {
+    const store = useComposerDraftStore.getState();
+    const ceoId = EmployeeId.make("ceo");
+    const reviewerId = EmployeeId.make("reviewer");
+    const selection: ModelSelection = {
+      instanceId: CODEX_INSTANCE,
+      model: "gpt-5.3-codex",
+      employeeId: ceoId,
+      employeeIds: [ceoId, reviewerId],
+    };
+
+    store.setModelSelection(threadRef, selection);
+
+    expect(
+      draftFor(threadId, TEST_ENVIRONMENT_ID)?.modelSelectionByProvider[CODEX_INSTANCE],
+    ).toEqual(selection);
+  });
+
+  it("does not erase employee routing when model options change", () => {
+    const store = useComposerDraftStore.getState();
+    const ceoId = EmployeeId.make("ceo");
+    const reviewerId = EmployeeId.make("reviewer");
+    store.setModelSelection(threadRef, {
+      instanceId: CODEX_INSTANCE,
+      model: "gpt-5.3-codex",
+      employeeId: ceoId,
+      employeeIds: [ceoId, reviewerId],
+    });
+
+    store.setProviderModelOptions(
+      threadRef,
+      CODEX_DRIVER,
+      toSelections({ reasoningEffort: "high" }),
+    );
+
+    expect(
+      draftFor(threadId, TEST_ENVIRONMENT_ID)?.modelSelectionByProvider[CODEX_INSTANCE],
+    ).toMatchObject({
+      employeeId: ceoId,
+      employeeIds: [ceoId, reviewerId],
+      options: [{ id: "reasoningEffort", value: "high" }],
+    });
   });
 });
 
