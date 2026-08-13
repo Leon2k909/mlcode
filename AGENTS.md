@@ -118,6 +118,16 @@ An empty database is a bad test. Seed your worktree's `.t3` with a copy of real 
 - One concern per PR. If the description says "also", split it.
 - When babysitting: poll checks and comments newer than the last push, verify each bot finding against the source, fix real ones, dismiss false positives with a written reason. Stay quiet when nothing is new. Stop when the bots are green on the latest commit.
 
+## ML Code releases
+
+This fork is used through its installed Windows desktop app. A source-only push does not deliver changes to the user.
+
+- After completing and pushing user-requested changes to `Leon2k909/mlcode`, publish the next patch release unless the user explicitly says not to release.
+- Increment the latest released semantic version (`0.1.0` → `0.1.1`), tag the exact intended `main` commit as `vX.Y.Z`, and push the tag so `.github/workflows/release.yml` builds and publishes the Windows installer and updater metadata.
+- Monitor the release workflow through completion. Do not call the task finished merely because the source commit or tag was pushed.
+- Verify the GitHub release contains the installer, blockmap, and `latest.yml`; these assets are what make **Check for updates** work in the installed app.
+- If release publication fails, diagnose and repair it within the task. Report a genuine credential or GitHub-side blocker clearly instead of asking the user to run routine release steps.
+
 ## How it works
 
 Clients send typed WebSocket requests. The server turns them into _commands_, a pure _decider_ turns commands into persisted _events_, and a _projector_ derives the read model the UI renders. Provider CLIs run as subprocesses; per-provider _adapters_ translate their native protocols into orchestration events. Side effects run in queue-backed _reactors_ that emit _receipts_ when milestones land. Each turn ends with a _checkpoint_, a hidden git ref, so the app can diff and restore.
