@@ -13,6 +13,7 @@ import {
   OrchestrationThread,
   OrchestrationThreadDetailSnapshot,
   ProjectScript,
+  RepositoryIdentity,
   TurnId,
   type OrchestrationCheckpointSummary,
   type OrchestrationLatestTurn,
@@ -72,6 +73,7 @@ const decodeShellSnapshot = Schema.decodeUnknownEffect(OrchestrationShellSnapsho
 const decodeThread = Schema.decodeUnknownEffect(OrchestrationThread);
 const ProjectionProjectDbRowSchema = ProjectionProject.mapFields(
   Struct.assign({
+    repositoryIdentity: Schema.NullOr(Schema.fromJsonString(RepositoryIdentity)),
     defaultModelSelection: Schema.NullOr(Schema.fromJsonString(ModelSelection)),
     scripts: Schema.fromJsonString(Schema.Array(ProjectScript)),
   }),
@@ -353,6 +355,60 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   const repositoryIdentityResolver = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
   const repositoryIdentityResolutionConcurrency = 4;
+  const cacheRepositoryIdentityRow = SqlSchema.void({
+    Request: Schema.Struct({
+      projectId: ProjectId,
+      repositoryIdentity: RepositoryIdentity,
+    }),
+    execute: ({ projectId, repositoryIdentity }) =>
+      sql`
+        UPDATE projection_projects
+        SET repository_identity_json = ${JSON.stringify(repositoryIdentity)}
+        WHERE project_id = ${projectId}
+      `,
+  });
+  const cacheRepositoryIdentity = Effect.fn("ProjectionSnapshotQuery.cacheRepositoryIdentity")(
+    function* (
+      row: Schema.Schema.Type<typeof ProjectionProjectDbRowSchema>,
+      repositoryIdentity: RepositoryIdentity,
+    ) {
+      const cached = row.repositoryIdentity;
+      if (
+        cached !== null &&
+        cached.canonicalKey === repositoryIdentity.canonicalKey &&
+        cached.rootPath === repositoryIdentity.rootPath &&
+        cached.locator.remoteName === repositoryIdentity.locator.remoteName &&
+        cached.locator.remoteUrl === repositoryIdentity.locator.remoteUrl &&
+        cached.displayName === repositoryIdentity.displayName &&
+        cached.provider === repositoryIdentity.provider &&
+        cached.owner === repositoryIdentity.owner &&
+        cached.name === repositoryIdentity.name
+      ) {
+        return;
+      }
+      yield* cacheRepositoryIdentityRow({
+        projectId: row.projectId,
+        repositoryIdentity,
+      }).pipe(
+        Effect.mapError(
+          toPersistenceSqlOrDecodeError(
+            "ProjectionSnapshotQuery.cacheRepositoryIdentity:query",
+            "ProjectionSnapshotQuery.cacheRepositoryIdentity:encodeRow",
+          ),
+        ),
+      );
+    },
+  );
+  const resolveRepositoryIdentityForProject = Effect.fn(
+    "ProjectionSnapshotQuery.resolveRepositoryIdentityForProject",
+  )(function* (row: Schema.Schema.Type<typeof ProjectionProjectDbRowSchema>) {
+    const resolved = yield* repositoryIdentityResolver.resolve(row.workspaceRoot);
+    if (resolved !== null) {
+      yield* cacheRepositoryIdentity(row, resolved);
+      return resolved;
+    }
+    return row.repositoryIdentity;
+  });
   const resolveRepositoryIdentitiesForProjects = Effect.fn(
     "ProjectionSnapshotQuery.resolveRepositoryIdentitiesForProjects",
   )(function* (
@@ -377,10 +433,19 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
       ),
     );
 
+    yield* Effect.forEach(
+      filteredProjectRows,
+      (row) => {
+        const resolved = repositoryIdentityByWorkspaceRoot.get(row.workspaceRoot) ?? null;
+        return resolved === null ? Effect.void : cacheRepositoryIdentity(row, resolved);
+      },
+      { concurrency: repositoryIdentityResolutionConcurrency },
+    );
+
     return new Map(
       filteredProjectRows.map((row) => [
         row.projectId,
-        repositoryIdentityByWorkspaceRoot.get(row.workspaceRoot) ?? null,
+        repositoryIdentityByWorkspaceRoot.get(row.workspaceRoot) ?? row.repositoryIdentity,
       ]),
     );
   });
@@ -394,6 +459,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           project_id AS "projectId",
           title,
           workspace_root AS "workspaceRoot",
+          repository_identity_json AS "repositoryIdentity",
           default_model_selection_json AS "defaultModelSelection",
           default_thread_env_mode AS "defaultThreadEnvMode",
           favicon_path AS "faviconPath",
@@ -850,6 +916,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           project_id AS "projectId",
           title,
           workspace_root AS "workspaceRoot",
+          repository_identity_json AS "repositoryIdentity",
           default_model_selection_json AS "defaultModelSelection",
           default_thread_env_mode AS "defaultThreadEnvMode",
           favicon_path AS "faviconPath",
@@ -874,6 +941,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           project_id AS "projectId",
           title,
           workspace_root AS "workspaceRoot",
+          repository_identity_json AS "repositoryIdentity",
           default_model_selection_json AS "defaultModelSelection",
           default_thread_env_mode AS "defaultThreadEnvMode",
           favicon_path AS "faviconPath",
@@ -2172,7 +2240,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         Effect.flatMap((option) =>
           Option.isNone(option)
             ? Effect.succeed(Option.none<OrchestrationProject>())
-            : repositoryIdentityResolver.resolve(option.value.workspaceRoot).pipe(
+            : resolveRepositoryIdentityForProject(option.value).pipe(
                 Effect.map((repositoryIdentity) =>
                   Option.some({
                     id: option.value.projectId,
@@ -2203,13 +2271,11 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
       Effect.flatMap((option) =>
         Option.isNone(option)
           ? Effect.succeed(Option.none<OrchestrationProjectShell>())
-          : repositoryIdentityResolver
-              .resolve(option.value.workspaceRoot)
-              .pipe(
-                Effect.map((repositoryIdentity) =>
-                  Option.some(mapProjectShellRow(option.value, repositoryIdentity)),
-                ),
+          : resolveRepositoryIdentityForProject(option.value).pipe(
+              Effect.map((repositoryIdentity) =>
+                Option.some(mapProjectShellRow(option.value, repositoryIdentity)),
               ),
+            ),
       ),
     );
 

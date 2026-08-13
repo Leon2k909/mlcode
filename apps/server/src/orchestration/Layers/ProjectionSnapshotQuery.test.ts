@@ -11,6 +11,7 @@ import { assert, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import { SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite.ts";
@@ -1841,6 +1842,7 @@ it.effect(
   "ProjectionSnapshotQuery dedupes repository identity resolution by workspace root and skips deleted projects for shell snapshots",
   () => {
     const resolveCalls: string[] = [];
+    let repositoryIdentityAvailable = true;
     const layer = OrchestrationProjectionSnapshotQueryLive.pipe(
       Layer.provide(ThreadBackgroundLiveness.layer),
       Layer.provide(ThreadPlanProgress.layer),
@@ -1849,6 +1851,9 @@ it.effect(
           resolve: (cwd: string) =>
             Effect.sync(() => {
               resolveCalls.push(cwd);
+              if (!repositoryIdentityAvailable) {
+                return null;
+              }
               return {
                 canonicalKey: `github.com/acme${cwd}`,
                 locator: {
@@ -1923,7 +1928,26 @@ it.effect(
       assert.equal(shellSnapshot.projects[0]?.repositoryIdentity?.rootPath, "/tmp/shared-root");
       assert.equal(shellSnapshot.projects[1]?.repositoryIdentity?.rootPath, "/tmp/shared-root");
 
+      repositoryIdentityAvailable = false;
+      const cachedProject = yield* snapshotQuery.getProjectShellById(ProjectId.make("project-1"));
+      assert.equal(
+        Option.getOrNull(cachedProject)?.repositoryIdentity?.canonicalKey,
+        "github.com/acme/tmp/shared-root",
+      );
+
+      const cachedRows = yield* sql<{ readonly repositoryIdentity: string | null }>`
+        SELECT repository_identity_json AS "repositoryIdentity"
+        FROM projection_projects
+        WHERE project_id = 'project-1'
+      `;
+      assert.equal(
+        // @effect-diagnostics-next-line preferSchemaOverJson:off
+        JSON.parse(cachedRows[0]?.repositoryIdentity ?? "null").canonicalKey,
+        "github.com/acme/tmp/shared-root",
+      );
+
       resolveCalls.length = 0;
+      repositoryIdentityAvailable = true;
 
       const fullSnapshot = yield* snapshotQuery.getSnapshot();
       assert.deepStrictEqual(resolveCalls.toSorted(), ["/tmp/deleted-root", "/tmp/shared-root"]);

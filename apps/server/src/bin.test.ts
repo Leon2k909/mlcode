@@ -483,6 +483,41 @@ it.layer(NodeServices.layer)("bin cli parsing", (it) => {
     }),
   );
 
+  it.effect("moves a project after its workspace directory is renamed", () =>
+    Effect.gen(function* () {
+      const baseDir = NodeFS.mkdtempSync(
+        NodePath.join(NodeOS.tmpdir(), "t3-cli-project-move-test-"),
+      );
+      const workspaceParent = NodeFS.mkdtempSync(
+        NodePath.join(NodeOS.tmpdir(), "t3-cli-project-move-workspace-"),
+      );
+      const workspaceRoot = NodePath.join(workspaceParent, "before-move");
+      const movedWorkspaceRoot = NodePath.join(workspaceParent, "after-move");
+      NodeFS.mkdirSync(workspaceRoot);
+
+      yield* runCliWithRuntime(["project", "add", workspaceRoot, "--base-dir", baseDir]);
+      const afterAdd = yield* readPersistedSnapshot(baseDir);
+      const addedProject = afterAdd.projects.find(
+        (project) => project.workspaceRoot === workspaceRoot && project.deletedAt === null,
+      );
+      assert.isTrue(addedProject !== undefined);
+
+      NodeFS.renameSync(workspaceRoot, movedWorkspaceRoot);
+      yield* runCliWithRuntime([
+        "project",
+        "move",
+        workspaceRoot,
+        movedWorkspaceRoot,
+        "--base-dir",
+        baseDir,
+      ]);
+
+      const afterMove = yield* readPersistedSnapshot(baseDir);
+      const movedProject = afterMove.projects.find((project) => project.id === addedProject?.id);
+      assert.equal(movedProject?.workspaceRoot, movedWorkspaceRoot);
+    }),
+  );
+
   it.effect("force removes projects that still contain threads", () =>
     Effect.gen(function* () {
       const baseDir = NodeFS.mkdtempSync(

@@ -673,10 +673,37 @@ const make = Effect.gen(function* () {
       }
     }
     const project = yield* resolveProject(thread.projectId);
-    const effectiveCwd = resolveThreadWorkspaceCwd({
+    let effectiveCwd = resolveThreadWorkspaceCwd({
       thread,
       projects: project ? [project] : [],
     });
+
+    // A project folder can be renamed in Explorer while the app still holds
+    // its old absolute path. When exactly one sibling is the same repository,
+    // repair the project metadata before starting the provider and use the new
+    // path for this turn immediately. Worktree paths are thread-owned and must
+    // never rewrite the project's root.
+    if (project !== undefined && thread.worktreePath === null && effectiveCwd !== undefined) {
+      const workspaceStatus = checkWorkspacePath({
+        workspaceRoot: effectiveCwd,
+        canonicalKey: project.repositoryIdentity?.canonicalKey ?? null,
+      });
+      if (workspaceStatus.status === "missing" && workspaceStatus.movedTo !== null) {
+        const previousWorkspaceRoot = effectiveCwd;
+        effectiveCwd = workspaceStatus.movedTo;
+        yield* orchestrationEngine.dispatch({
+          type: "project.meta.update",
+          commandId: yield* serverCommandId("project-workspace-relocate"),
+          projectId: project.id,
+          workspaceRoot: effectiveCwd,
+        });
+        yield* Effect.logInfo("provider command reactor repaired relocated project workspace", {
+          projectId: project.id,
+          previousWorkspaceRoot,
+          workspaceRoot: effectiveCwd,
+        });
+      }
+    }
 
     const startProviderSession = (input?: {
       readonly resumeCursor?: unknown;

@@ -494,6 +494,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             projectId: event.payload.projectId,
             title: event.payload.title,
             workspaceRoot: event.payload.workspaceRoot,
+            repositoryIdentity: event.payload.repositoryIdentity ?? null,
             defaultModelSelection: event.payload.defaultModelSelection,
             defaultThreadEnvMode: null,
             faviconPath: event.payload.faviconPath ?? null,
@@ -515,7 +516,18 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             ...existingRow.value,
             ...(event.payload.title !== undefined ? { title: event.payload.title } : {}),
             ...(event.payload.workspaceRoot !== undefined
-              ? { workspaceRoot: event.payload.workspaceRoot }
+              ? {
+                  workspaceRoot: event.payload.workspaceRoot,
+                  // A manually selected path may point at a different
+                  // repository. Clear the last-known identity until the new
+                  // path is resolved; relocation detection will already have
+                  // consumed the old value before it dispatches this event.
+                  repositoryIdentity: event.payload.repositoryIdentity ?? null,
+                }
+              : {}),
+            ...(event.payload.workspaceRoot === undefined &&
+            event.payload.repositoryIdentity !== undefined
+              ? { repositoryIdentity: event.payload.repositoryIdentity }
               : {}),
             ...(event.payload.defaultModelSelection !== undefined
               ? { defaultModelSelection: event.payload.defaultModelSelection }

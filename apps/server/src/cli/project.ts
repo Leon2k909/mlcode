@@ -277,6 +277,21 @@ const findActiveProjectTarget = Effect.fn("findActiveProjectTarget")(function* (
     } satisfies ProjectMutationTarget;
   }
 
+  // A move command commonly targets the stale path after that path has
+  // disappeared. Match the persisted spelling before asking WorkspacePaths to
+  // validate the path on disk, otherwise the project cannot be repaired by
+  // its old workspace root.
+  const exactPersistedWorkspaceMatch = activeProjects.find(
+    (project) => project.workspaceRoot === trimmedIdentifier,
+  );
+  if (exactPersistedWorkspaceMatch) {
+    return {
+      id: exactPersistedWorkspaceMatch.id,
+      title: exactPersistedWorkspaceMatch.title,
+      workspaceRoot: exactPersistedWorkspaceMatch.workspaceRoot,
+    } satisfies ProjectMutationTarget;
+  }
+
   const normalizedWorkspaceRootResult = yield* Effect.result(
     normalizeWorkspaceRootForProjectCommand(trimmedIdentifier),
   );
@@ -570,7 +585,55 @@ const projectRenameCommand = Command.make("rename", {
   ),
 );
 
+const projectMoveCommand = Command.make("move", {
+  ...projectLocationFlags,
+  project: Argument.string("project").pipe(
+    Argument.withDescription("Project id or current workspace root to move."),
+  ),
+  workspaceRoot: Argument.string("path").pipe(
+    Argument.withDescription("New workspace root for the project."),
+  ),
+}).pipe(
+  Command.withDescription("Update a project's workspace root after its folder was moved."),
+  Command.withHandler((flags) =>
+    runProjectMutation(
+      flags,
+      Effect.fn("projectMoveMutation")(function* ({
+        snapshot,
+        dispatch,
+      }: {
+        readonly snapshot: OrchestrationReadModel;
+        readonly dispatch: (
+          command: ProjectCliDispatchCommand,
+        ) => Effect.Effect<void, Error, FileSystem.FileSystem | HttpClient.HttpClient | Path.Path>;
+      }) {
+        const project = yield* findActiveProjectTarget({
+          snapshot,
+          identifier: flags.project,
+        });
+        const workspaceRoot = yield* normalizeWorkspaceRootForProjectCommand(flags.workspaceRoot);
+        if (workspaceRoot === project.workspaceRoot) {
+          return `Project ${project.id} is already at ${workspaceRoot}.`;
+        }
+
+        yield* dispatch({
+          type: "project.meta.update",
+          commandId: CommandId.make(yield* projectCommandUuid),
+          projectId: project.id,
+          workspaceRoot,
+        });
+        return `Moved project ${project.id} from ${project.workspaceRoot} to ${workspaceRoot}.`;
+      }),
+    ),
+  ),
+);
+
 export const projectCommand = Command.make("project").pipe(
   Command.withDescription("Manage projects."),
-  Command.withSubcommands([projectAddCommand, projectRemoveCommand, projectRenameCommand]),
+  Command.withSubcommands([
+    projectAddCommand,
+    projectRemoveCommand,
+    projectRenameCommand,
+    projectMoveCommand,
+  ]),
 );

@@ -213,6 +213,7 @@ export function projectEvent(
             id: payload.projectId,
             title: payload.title,
             workspaceRoot: payload.workspaceRoot,
+            repositoryIdentity: payload.repositoryIdentity ?? null,
             defaultModelSelection: payload.defaultModelSelection,
             defaultThreadEnvMode: null,
             faviconPath: payload.faviconPath ?? null,
@@ -243,7 +244,14 @@ export function projectEvent(
                   ...project,
                   ...(payload.title !== undefined ? { title: payload.title } : {}),
                   ...(payload.workspaceRoot !== undefined
-                    ? { workspaceRoot: payload.workspaceRoot }
+                    ? {
+                        workspaceRoot: payload.workspaceRoot,
+                        repositoryIdentity: payload.repositoryIdentity ?? null,
+                      }
+                    : {}),
+                  ...(payload.workspaceRoot === undefined &&
+                  payload.repositoryIdentity !== undefined
+                    ? { repositoryIdentity: payload.repositoryIdentity }
                     : {}),
                   ...(payload.defaultModelSelection !== undefined
                     ? { defaultModelSelection: payload.defaultModelSelection }

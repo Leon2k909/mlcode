@@ -10,6 +10,7 @@ import {
   ProviderSession,
   ProviderDriverKind,
   ProviderInstanceId,
+  type RepositoryIdentity,
   type ServerSettings,
 } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
@@ -153,6 +154,9 @@ describe("ProviderCommandReactor", () => {
     readonly titleRegenerationCompletionDispatchFailures?: number;
     readonly titleRegenerationBeforeStart?: "one" | "two";
     readonly serverSettings?: Partial<ServerSettings>;
+    readonly workspaceRoot?: string;
+    readonly repositoryIdentity?: RepositoryIdentity;
+    readonly repositoryIdentityUnavailableAfterPrime?: boolean;
     readonly startSessionEffect?: (
       session: ProviderSession,
     ) => Effect.Effect<ProviderSession, ProviderAdapterRequestError>;
@@ -348,6 +352,16 @@ describe("ProviderCommandReactor", () => {
       },
     };
 
+    let repositoryIdentityAvailable = true;
+    const repositoryIdentityResolverLayer =
+      input?.repositoryIdentity === undefined
+        ? RepositoryIdentityResolver.layer
+        : Layer.succeed(RepositoryIdentityResolver.RepositoryIdentityResolver, {
+            resolve: () =>
+              Effect.succeed(
+                repositoryIdentityAvailable ? (input.repositoryIdentity ?? null) : null,
+              ),
+          });
     const orchestrationLayer = OrchestrationEngineLive.pipe(
       Layer.provide(OrchestrationProjectionSnapshotQueryLive),
       Layer.provide(ThreadBackgroundLiveness.layer),
@@ -355,13 +369,13 @@ describe("ProviderCommandReactor", () => {
       Layer.provide(OrchestrationProjectionPipelineLive),
       Layer.provide(OrchestrationEventStoreLive),
       Layer.provide(OrchestrationCommandReceiptRepositoryLive),
-      Layer.provide(RepositoryIdentityResolver.layer),
+      Layer.provide(repositoryIdentityResolverLayer),
       Layer.provide(SqlitePersistenceMemory),
     );
     const projectionSnapshotLayer = OrchestrationProjectionSnapshotQueryLive.pipe(
       Layer.provide(ThreadBackgroundLiveness.layer),
       Layer.provide(ThreadPlanProgress.layer),
-      Layer.provide(RepositoryIdentityResolver.layer),
+      Layer.provide(repositoryIdentityResolverLayer),
       Layer.provide(SqlitePersistenceMemory),
     );
     let titleRegenerationCompletionDispatchAttempts = 0;
@@ -432,7 +446,7 @@ describe("ProviderCommandReactor", () => {
         commandId: CommandId.make("cmd-project-create"),
         projectId: asProjectId("project-1"),
         title: "Provider Project",
-        workspaceRoot: "/tmp/provider-project",
+        workspaceRoot: input?.workspaceRoot ?? "/tmp/provider-project",
         defaultModelSelection: modelSelection,
         createdAt: now,
       }),
@@ -486,6 +500,11 @@ describe("ProviderCommandReactor", () => {
           regenerateTitle: true,
         }),
       );
+    }
+
+    if (input?.repositoryIdentityUnavailableAfterPrime === true) {
+      await runtime.runPromise(snapshotQuery.getProjectShellById(asProjectId("project-1")));
+      repositoryIdentityAvailable = false;
     }
 
     scope = await Effect.runPromise(Scope.make("sequential"));
@@ -553,6 +572,61 @@ describe("ProviderCommandReactor", () => {
     expect(thread?.session?.threadId).toBe("thread-1");
     expect(thread?.session?.status).toBe("starting");
     expect(thread?.session?.runtimeMode).toBe("approval-required");
+  });
+
+  it("repairs a uniquely renamed project folder before starting the provider", async () => {
+    const workspaceParent = NodeFS.mkdtempSync(
+      NodePath.join(NodeOS.tmpdir(), "t3code-reactor-relocation-"),
+    );
+    createdBaseDirs.add(workspaceParent);
+    const previousWorkspaceRoot = NodePath.join(workspaceParent, "before-rename");
+    const workspaceRoot = NodePath.join(workspaceParent, "after-rename");
+    NodeFS.mkdirSync(NodePath.join(workspaceRoot, ".git"), { recursive: true });
+    NodeFS.writeFileSync(
+      NodePath.join(workspaceRoot, ".git", "config"),
+      ['[remote "origin"]', "\turl = https://github.com/acme/relocated.git"].join("\n"),
+    );
+
+    const harness = await createHarness({
+      workspaceRoot: previousWorkspaceRoot,
+      repositoryIdentity: {
+        canonicalKey: "github.com/acme/relocated",
+        locator: {
+          source: "git-remote",
+          remoteName: "origin",
+          remoteUrl: "https://github.com/acme/relocated.git",
+        },
+        rootPath: previousWorkspaceRoot,
+      },
+      repositoryIdentityUnavailableAfterPrime: true,
+    });
+    const now = "2026-01-01T00:00:00.000Z";
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-turn-start-relocated-workspace"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-message-relocated-workspace"),
+          role: "user",
+          text: "continue after rename",
+          attachments: [],
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: now,
+      }),
+    );
+
+    await waitFor(() => harness.startSession.mock.calls.length === 1);
+    await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+    expect(harness.startSession.mock.calls[0]?.[1]).toMatchObject({ cwd: workspaceRoot });
+
+    const readModel = await harness.readModel();
+    expect(
+      readModel.projects.find((project) => project.id === asProjectId("project-1")),
+    ).toMatchObject({ workspaceRoot });
   });
 
   effectIt.effect("projects starting before a slow provider session finishes", () =>
