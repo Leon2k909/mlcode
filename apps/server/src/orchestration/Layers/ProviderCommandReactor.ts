@@ -30,6 +30,7 @@ import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
 
 import { resolveThreadWorkspaceCwd } from "../../checkpointing/Utils.ts";
 import { applyEmployeePreamble } from "../../employee/EmployeeInstructions.ts";
+import { checkWorkspacePath, describeMissingWorkspace } from "../../project/WorkspaceRelocation.ts";
 import { increment, orchestrationEventsProcessedTotal } from "../../observability/Metrics.ts";
 import { ProviderAdapterRequestError } from "../../provider/Errors.ts";
 import type { ProviderServiceError } from "../../provider/Errors.ts";
@@ -459,6 +460,35 @@ const make = Effect.gen(function* () {
       createdAt: input.createdAt,
     });
   });
+
+  /**
+   * Explain a thread's failure as a lost workspace, or `null` when the folder
+   * is fine and the failure is about something else.
+   *
+   * Runs only on the failure path, so the filesystem probe costs nothing in
+   * normal operation. Any error while diagnosing is swallowed: a diagnosis
+   * that fails must not replace the real failure the user needs to see.
+   */
+  const describeWorkspaceLossForThread = Effect.fnUntraced(
+    function* (threadId: ThreadId) {
+      const thread = yield* resolveThread(threadId);
+      if (!thread) return null;
+      const project = yield* resolveProject(thread.projectId);
+      const workspaceRoot = resolveThreadWorkspaceCwd({
+        thread,
+        projects: project ? [project] : [],
+      });
+      if (!workspaceRoot) return null;
+      const status = checkWorkspacePath({
+        workspaceRoot,
+        canonicalKey: project?.repositoryIdentity?.canonicalKey ?? null,
+      });
+      return status.status === "missing"
+        ? describeMissingWorkspace({ workspaceRoot, status })
+        : null;
+    },
+    Effect.orElseSucceed(() => null),
+  );
 
   const resolveProject = Effect.fnUntraced(function* (projectId: ProjectId) {
     return yield* projectionSnapshotQuery
@@ -1251,29 +1281,32 @@ const make = Effect.gen(function* () {
       }
     }
 
-    const handleTurnStartFailure = (cause: Cause.Cause<unknown>) => {
+    const handleTurnStartFailure = Effect.fnUntraced(function* (cause: Cause.Cause<unknown>) {
       if (Cause.hasInterruptsOnly(cause)) {
-        return Effect.void;
+        return;
       }
-      const detail = formatFailureDetail(cause);
-      return setThreadSessionErrorOnTurnStartFailure({
+      // A turn that failed because its folder is gone deserves to say so. The
+      // underlying error is kept: the workspace explanation leads because it
+      // is the actionable part, but a raw spawn failure is still the evidence.
+      const workspaceLoss = yield* describeWorkspaceLossForThread(event.payload.threadId);
+      const detail =
+        workspaceLoss === null
+          ? formatFailureDetail(cause)
+          : `${workspaceLoss}\n\n${formatFailureDetail(cause)}`;
+      yield* setThreadSessionErrorOnTurnStartFailure({
         threadId: event.payload.threadId,
         detail,
         createdAt: event.payload.createdAt,
-      }).pipe(
-        Effect.flatMap(() =>
-          appendProviderFailureActivity({
-            threadId: event.payload.threadId,
-            kind: "provider.turn.start.failed",
-            summary: "Provider turn start failed",
-            detail,
-            turnId: null,
-            createdAt: event.payload.createdAt,
-          }),
-        ),
-        Effect.asVoid,
-      );
-    };
+      });
+      yield* appendProviderFailureActivity({
+        threadId: event.payload.threadId,
+        kind: "provider.turn.start.failed",
+        summary: "Provider turn start failed",
+        detail,
+        turnId: null,
+        createdAt: event.payload.createdAt,
+      });
+    });
 
     const recoverTurnStartFailure = (cause: Cause.Cause<unknown>) =>
       handleTurnStartFailure(cause).pipe(
