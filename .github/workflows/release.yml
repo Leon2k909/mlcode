@@ -8,9 +8,9 @@ on:
     inputs:
       version:
         description: "Nightly version, for example 0.1.2-nightly.20260813.1"
-      required: true
-      default: "0.1.2-nightly.20260813.1"
-      type: string
+        required: true
+        default: "0.1.2-nightly.20260813.1"
+        type: string
 
 permissions:
   contents: write
