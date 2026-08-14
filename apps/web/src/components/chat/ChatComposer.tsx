@@ -89,7 +89,12 @@ import {
 import { type ComposerPromptEditorHandle, ComposerPromptEditor } from "../ComposerPromptEditor";
 import { ProviderModelPicker } from "./ProviderModelPicker";
 import { ComposerEmployeePicker } from "./ComposerEmployeePicker";
-import { employeeRoutingEqual, type EmployeeEntry, withEmployeeRouting } from "../../employees";
+import {
+  deriveDefaultEmployeeRouting,
+  employeeRoutingEqual,
+  type EmployeeEntry,
+  withEmployeeRouting,
+} from "../../employees";
 import { type ComposerCommandItem, ComposerCommandMenu } from "./ComposerCommandMenu";
 import { ComposerPendingApprovalActions } from "./ComposerPendingApprovalActions";
 import { CompactComposerControlsMenu } from "./CompactComposerControlsMenu";
@@ -1091,8 +1096,19 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       selectedInstanceId,
     );
     const routingSelection = hasDraftSelection ? draftSelection : activeThreadModelSelection;
-    const employeeId = routingSelection?.employeeId;
-    const employeeIds = routingSelection?.employeeIds;
+    // An empty employeeIds array is the durable "No employee" choice. When
+    // routing is absent entirely, start with the built-in CEO-led group; this
+    // keeps optional hires out of every new chat while letting the user clear
+    // the group without it snapping back on the next render.
+    const hasExplicitNoEmployee =
+      routingSelection?.employeeId === undefined &&
+      routingSelection?.employeeIds !== undefined &&
+      routingSelection.employeeIds.length === 0;
+    const defaultRouting = hasExplicitNoEmployee
+      ? {}
+      : deriveDefaultEmployeeRouting(settings.employees);
+    const employeeId = routingSelection?.employeeId ?? defaultRouting.employeeId;
+    const employeeIds = routingSelection?.employeeIds ?? defaultRouting.employeeIds;
     return {
       instanceId: selectedInstanceId,
       model: selectedModelForPickerWithCustomFallback,
@@ -1103,6 +1119,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     activeThreadModelSelection?.employeeId,
     activeThreadModelSelection?.employeeIds,
     composerDraft.modelSelectionByProvider,
+    settings.employees,
     selectedInstanceId,
     selectedModelForPickerWithCustomFallback,
   ]);

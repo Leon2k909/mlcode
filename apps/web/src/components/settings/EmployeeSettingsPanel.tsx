@@ -11,6 +11,7 @@ import {
   type EmployeeId,
   type EmployeeMap,
   type ProviderInstanceId,
+  type ServerProviderModel,
 } from "@t3tools/contracts";
 
 import { usePrimarySettings, useUpdatePrimarySettings } from "../../hooks/useSettings";
@@ -37,6 +38,8 @@ import { Textarea } from "../ui/textarea";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
 
 const decodeEmployee = Schema.decodeUnknownOption(Employee);
+const EMPLOYEE_MODEL_FOLLOW_THREAD = "__employee_follow_thread__";
+const EMPLOYEE_MODEL_CUSTOM = "__employee_custom_model__";
 
 interface EmployeeDraft {
   readonly employeeId: string;
@@ -94,6 +97,7 @@ function EmployeeForm({
   draft,
   onDraftChange,
   instanceOptions,
+  modelOptions,
   idError,
   saveError,
   onSave,
@@ -103,6 +107,7 @@ function EmployeeForm({
   draft: EmployeeDraft;
   onDraftChange: (next: EmployeeDraft) => void;
   instanceOptions: readonly { readonly instanceId: string; readonly label: string }[];
+  modelOptions: ReadonlyArray<ServerProviderModel>;
   idError: string | null;
   saveError: string | null;
   onSave: () => void;
@@ -114,6 +119,17 @@ function EmployeeForm({
 
   const nameMissing = draft.displayName.trim().length === 0;
   const instructionsOverCap = draft.instructions.length > EMPLOYEE_INSTRUCTIONS_MAX_CHARS;
+  const selectedProviderLabel =
+    instanceOptions.find((option) => option.instanceId === draft.providerInstanceId)?.label ??
+    draft.providerInstanceId;
+  const selectedModelIsKnown = modelOptions.some((model) => model.slug === draft.model);
+  const [customModelMode, setCustomModelMode] = useState(
+    () => draft.model.length > 0 && !selectedModelIsKnown,
+  );
+  const modelPickerValue =
+    customModelMode || (draft.model.length > 0 && !selectedModelIsKnown)
+      ? EMPLOYEE_MODEL_CUSTOM
+      : draft.model || EMPLOYEE_MODEL_FOLLOW_THREAD;
 
   return (
     <div className="space-y-4 rounded-xl border border-border/60 bg-muted/20 p-4">
@@ -171,7 +187,11 @@ function EmployeeForm({
           <span className="font-medium">Default provider</span>
           <Select
             value={draft.providerInstanceId}
-            onValueChange={(next) => next && set("providerInstanceId", next)}
+            onValueChange={(next) => {
+              if (!next || next === draft.providerInstanceId) return;
+              setCustomModelMode(false);
+              onDraftChange({ ...draft, providerInstanceId: next, model: "" });
+            }}
           >
             <SelectTrigger className="w-full">
               <SelectValue placeholder="Default provider instance" />
@@ -188,11 +208,54 @@ function EmployeeForm({
 
         <label className="space-y-1.5 text-sm">
           <span className="font-medium">Model override</span>
-          <Input
-            value={draft.model}
-            placeholder="Thread default"
-            onChange={(event) => set("model", event.target.value)}
-          />
+          <Select
+            value={modelPickerValue}
+            onValueChange={(next) => {
+              if (!next || next === EMPLOYEE_MODEL_FOLLOW_THREAD) {
+                setCustomModelMode(false);
+                set("model", "");
+                return;
+              }
+              if (next === EMPLOYEE_MODEL_CUSTOM) {
+                setCustomModelMode(true);
+                if (selectedModelIsKnown) set("model", "");
+                return;
+              }
+              setCustomModelMode(false);
+              set("model", next);
+            }}
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue placeholder="Follow chat model" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={EMPLOYEE_MODEL_FOLLOW_THREAD}>Follow chat model</SelectItem>
+              {modelOptions.map((model) => (
+                <SelectItem key={model.slug} value={model.slug}>
+                  <span className="flex min-w-0 flex-col">
+                    <span className="truncate">{model.name}</span>
+                    {model.name !== model.slug ? (
+                      <span className="truncate text-xs text-muted-foreground">{model.slug}</span>
+                    ) : null}
+                  </span>
+                </SelectItem>
+              ))}
+              <SelectItem value={EMPLOYEE_MODEL_CUSTOM}>Custom model slug…</SelectItem>
+            </SelectContent>
+          </Select>
+          {customModelMode ? (
+            <Input
+              value={draft.model}
+              placeholder="claude-opus-5"
+              onChange={(event) => set("model", event.target.value)}
+              spellCheck={false}
+            />
+          ) : null}
+          <span className="block text-xs text-muted-foreground">
+            {modelOptions.length > 0
+              ? `Fallbacks for ${selectedProviderLabel}. Other chat providers use the model selected in the composer.`
+              : "Provider models are not available yet. Follow the chat model or enter a custom slug."}
+          </span>
         </label>
       </div>
 
@@ -251,6 +314,13 @@ export function EmployeeSettingsPanel() {
         instanceId: String(provider.instanceId),
         label: provider.displayName ?? String(provider.instanceId),
       })),
+    [serverProviders],
+  );
+  const modelOptionsByInstance = useMemo(
+    () =>
+      new Map(
+        serverProviders.map((provider) => [String(provider.instanceId), provider.models] as const),
+      ),
     [serverProviders],
   );
   const configuredInstanceIds = useMemo(
@@ -372,6 +442,7 @@ export function EmployeeSettingsPanel() {
               draft={draft}
               onDraftChange={setDraft}
               instanceOptions={instanceOptions}
+              modelOptions={modelOptionsByInstance.get(draft.providerInstanceId) ?? []}
               idError={idError}
               saveError={saveError}
               onSave={save}
@@ -460,6 +531,7 @@ export function EmployeeSettingsPanel() {
                     draft={draft}
                     onDraftChange={setDraft}
                     instanceOptions={instanceOptions}
+                    modelOptions={modelOptionsByInstance.get(draft.providerInstanceId) ?? []}
                     idError={idError}
                     saveError={saveError}
                     onSave={save}

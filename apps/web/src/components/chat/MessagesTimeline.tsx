@@ -3,6 +3,7 @@ import {
   type EmployeeMap,
   type EnvironmentId,
   type MessageId,
+  type ModelSelection,
   type ProviderInstanceId,
   type ScopedThreadRef,
   type ServerProviderSkill,
@@ -148,6 +149,7 @@ interface TimelineRowSharedState {
   skills: ReadonlyArray<Pick<ServerProviderSkill, "name" | "displayName">>;
   activeThreadEnvironmentId: EnvironmentId;
   providerInstanceId: ProviderInstanceId | null;
+  modelSelection: ModelSelection | null;
   employees: EmployeeMap;
   onRevertUserMessage: (messageId: MessageId) => void;
   onImageExpand: (preview: ExpandedImagePreview) => void;
@@ -227,6 +229,7 @@ interface MessagesTimelineProps {
   timelineEntries: ReturnType<typeof deriveTimelineEntries>;
   employees?: EmployeeMap;
   providerInstanceId?: ProviderInstanceId | null;
+  modelSelection?: ModelSelection | null;
   latestTurn: TimelineLatestTurn | null;
   runningTurnId: TurnId | null;
   turnDiffSummaryByAssistantMessageId: Map<MessageId, TurnDiffSummary>;
@@ -276,6 +279,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   timelineEntries,
   employees = EMPTY_TIMELINE_EMPLOYEES,
   providerInstanceId = null,
+  modelSelection = null,
   latestTurn,
   runningTurnId,
   turnDiffSummaryByAssistantMessageId,
@@ -531,6 +535,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       skills,
       activeThreadEnvironmentId,
       providerInstanceId,
+      modelSelection,
       employees,
       onRevertUserMessage,
       onImageExpand,
@@ -550,6 +555,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       skills,
       activeThreadEnvironmentId,
       providerInstanceId,
+      modelSelection,
       employees,
       onRevertUserMessage,
       onImageExpand,
@@ -1067,7 +1073,15 @@ function EmployeeTimelineIdentity({
       ) : null}
       {employee ? (
         <span className="shrink-0 text-muted-foreground">
-          via {formatProviderDisplayName(ctx.providerInstanceId ?? employee.providerInstanceId)}
+          via{" "}
+          {formatProviderDisplayName(
+            ctx.modelSelection?.instanceId ?? ctx.providerInstanceId ?? employee.providerInstanceId,
+          )}
+        </span>
+      ) : null}
+      {ctx.modelSelection?.model ? (
+        <span className="shrink-0 rounded-full border border-border/60 bg-muted/35 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+          model {ctx.modelSelection.model}
         </span>
       ) : null}
       {suffix ? <span className="shrink-0 text-muted-foreground">{suffix}</span> : null}
@@ -1313,6 +1327,13 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
           <div className="mb-2">
             <EmployeeTimelineIdentity employeeId={employeeId} />
           </div>
+        ) : ctx.modelSelection?.model ? (
+          <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
+            <span className="rounded-full border border-border/60 bg-muted/35 px-1.5 py-0.5 font-mono text-[10px]">
+              model {ctx.modelSelection.model}
+            </span>
+            <span>via {formatProviderDisplayName(ctx.modelSelection.instanceId)}</span>
+          </div>
         ) : null}
         {messageText.length > 0 ? (
           <ChatMarkdown
@@ -1339,7 +1360,9 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
               <span className="text-muted-foreground">
                 via{" "}
                 {formatProviderDisplayName(
-                  ctx.providerInstanceId ?? targetEmployee.providerInstanceId,
+                  ctx.modelSelection?.instanceId ??
+                    ctx.providerInstanceId ??
+                    targetEmployee.providerInstanceId,
                 )}
               </span>
             ) : null}

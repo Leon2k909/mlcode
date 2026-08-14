@@ -6272,6 +6272,11 @@ function ChatViewContent(props: ChatViewProps) {
       if (employeeId === undefined) {
         const nextModelSelection = {
           ...selectionWithoutEmployee,
+          // An explicit empty list is distinct from an unassigned thread:
+          // the composer uses the latter to opt into the default CEO-led
+          // roster, while this sentinel records the user's choice to remove
+          // every employee from the chat.
+          employeeIds: [],
           ...(options !== undefined ? { options } : {}),
         } satisfies ModelSelection;
         setComposerDraftModelSelection(
@@ -6687,6 +6692,7 @@ function ChatViewContent(props: ChatViewProps) {
                 providerInstanceId={
                   activeThread.session?.providerInstanceId ?? activeThread.modelSelection.instanceId
                 }
+                modelSelection={activeThread.modelSelection}
                 latestTurn={activeLatestTurn}
                 runningTurnId={
                   activeThread.session?.status === "running"

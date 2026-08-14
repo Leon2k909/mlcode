@@ -8,6 +8,7 @@ import {
   buildEmployeeUpsertPatch,
   buildSuggestedEmployeePatch,
   deriveAvailableSuggestions,
+  deriveDefaultEmployeeRouting,
   deriveEmployeeHandoffDisplay,
   deriveEmployeeEntries,
   deriveThreadEmployeeParticipants,
@@ -134,6 +135,37 @@ describe("deriveEmployeeEntries", () => {
 
   it("returns an empty list for no employees", () => {
     expect(deriveEmployeeEntries(decodeEmployeeMap({}))).toEqual([]);
+  });
+});
+
+describe("deriveDefaultEmployeeRouting", () => {
+  it("routes a new chat through the enabled built-in roster in lead-first order", () => {
+    const map = decodeEmployeeMap({
+      ceo: { displayName: "Ceo", providerInstanceId: "codex" },
+      worker_alpha: { displayName: "Alpha", providerInstanceId: "codex" },
+      worker_beta: { displayName: "Beta", providerInstanceId: "codex" },
+      worker_gamma: { displayName: "Gamma", providerInstanceId: "codex" },
+      reviewer: { displayName: "Reviewer", providerInstanceId: "codex" },
+    });
+
+    expect(deriveDefaultEmployeeRouting(map)).toEqual({
+      employeeId: "ceo",
+      employeeIds: ["ceo", "worker_alpha", "worker_beta", "worker_gamma"],
+    });
+  });
+
+  it("omits disabled or removed defaults and does not add optional hires", () => {
+    const map = decodeEmployeeMap({
+      ceo: { displayName: "Ceo", providerInstanceId: "codex", enabled: false },
+      worker_alpha: { displayName: "Alpha", providerInstanceId: "codex" },
+      reviewer: { displayName: "Reviewer", providerInstanceId: "codex" },
+    });
+
+    expect(deriveDefaultEmployeeRouting(map)).toEqual({ employeeId: "worker_alpha" });
+  });
+
+  it("returns no routing when the built-in roster is removed", () => {
+    expect(deriveDefaultEmployeeRouting(decodeEmployeeMap({}))).toEqual({});
   });
 });
 

@@ -7,6 +7,7 @@
  *
  * @module employees
  */
+import { DEFAULT_EMPLOYEES } from "@t3tools/contracts";
 import type {
   Employee,
   EmployeeId,
@@ -127,6 +128,32 @@ export function deriveEmployeeEntries(employees: EmployeeMap): EmployeeEntry[] {
       employee: employee as Employee,
     })),
   );
+}
+
+/**
+ * Default group routing for a new or unassigned chat.
+ *
+ * The built-in roster is intentionally used instead of every configured
+ * employee: optional hires should not silently join every conversation. A
+ * missing or disabled built-in employee is simply omitted, so removing one
+ * from Settings remains authoritative.
+ */
+export function deriveDefaultEmployeeRouting(
+  employees: EmployeeMap,
+): Pick<ModelSelection, "employeeId" | "employeeIds"> {
+  const enabledDefaults = Object.keys(DEFAULT_EMPLOYEES)
+    .map((employeeId) => {
+      const employee = employees[employeeId as EmployeeId];
+      return employee?.enabled === true ? (employeeId as EmployeeId) : undefined;
+    })
+    .filter((employeeId): employeeId is EmployeeId => employeeId !== undefined);
+
+  const employeeId = enabledDefaults[0];
+  if (employeeId === undefined) return {};
+  return {
+    employeeId,
+    ...(enabledDefaults.length >= 2 ? { employeeIds: enabledDefaults } : {}),
+  };
 }
 
 /**
