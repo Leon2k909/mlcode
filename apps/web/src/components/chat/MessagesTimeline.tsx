@@ -1010,6 +1010,20 @@ function resolveTimelineEmployee(employees: EmployeeMap, employeeId: EmployeeId)
   return Object.hasOwn(employees, employeeId) ? employees[employeeId] : undefined;
 }
 
+function resolveTimelineModel(
+  modelSelection: ModelSelection | null,
+  employee: ReturnType<typeof resolveTimelineEmployee>,
+) {
+  if (modelSelection === null) return undefined;
+  // The server applies an employee's saved model only when the requested
+  // provider instance is that employee's default instance. When the chat
+  // explicitly uses another provider, the chat model wins.
+  if (employee?.model !== undefined && employee.providerInstanceId === modelSelection.instanceId) {
+    return employee.model;
+  }
+  return modelSelection.model;
+}
+
 interface ParsedEmployeeHandoffMessage {
   readonly targetName: string;
   readonly sourceName: string;
@@ -1050,6 +1064,7 @@ function EmployeeTimelineIdentity({
   const ctx = use(TimelineRowCtx);
   const employee = resolveTimelineEmployee(ctx.employees, employeeId);
   const displayName = employee?.displayName ?? employeeId;
+  const model = resolveTimelineModel(ctx.modelSelection, employee);
 
   return (
     <div
@@ -1079,9 +1094,9 @@ function EmployeeTimelineIdentity({
           )}
         </span>
       ) : null}
-      {ctx.modelSelection?.model ? (
+      {model ? (
         <span className="shrink-0 rounded-full border border-border/60 bg-muted/35 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
-          model {ctx.modelSelection.model}
+          model {model}
         </span>
       ) : null}
       {suffix ? <span className="shrink-0 text-muted-foreground">{suffix}</span> : null}
