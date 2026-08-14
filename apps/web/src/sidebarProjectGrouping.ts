@@ -1,6 +1,11 @@
 import type { EnvironmentId, ScopedProjectRef } from "@t3tools/contracts";
 import { buildProjectGroups, type ProjectGroupingSettings } from "./logicalProject";
 import type { Project } from "./types";
+import { APP_BASE_NAME } from "./branding";
+
+function displayProjectName(label: string): string {
+  return /^(?:t3\s*code|t3code)$/i.test(label.trim()) ? APP_BASE_NAME : label;
+}
 
 export type EnvironmentPresence = "local-only" | "remote-only" | "mixed";
 
@@ -102,7 +107,7 @@ export function buildSidebarProjectSnapshots(input: {
     return {
       ...representative,
       projectKey: group.key,
-      displayName: group.label,
+      displayName: displayProjectName(group.label),
       groupedProjectCount: members.length,
       environmentPresence:
         hasLocal && hasRemote ? "mixed" : hasRemote ? "remote-only" : "local-only",

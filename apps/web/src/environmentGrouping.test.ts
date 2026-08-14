@@ -354,4 +354,17 @@ describe("environment grouping", () => {
 
     expect(groups.map((group) => group.displayName)).toEqual(["separate", "shared-repo"]);
   });
+
+  it("uses ML Code branding for the legacy t3code project title", () => {
+    const project = makeProject({ title: "t3code", repositoryIdentity: null });
+
+    const [group] = buildSidebarProjectSnapshots({
+      projects: [project],
+      settings: defaultGroupingSettings,
+      primaryEnvironmentId,
+      resolveEnvironmentLabel: () => null,
+    });
+
+    expect(group?.displayName).toBe("ML Code");
+  });
 });

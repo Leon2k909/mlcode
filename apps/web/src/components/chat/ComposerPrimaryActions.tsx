@@ -27,6 +27,7 @@ interface ComposerPrimaryActionsProps {
   isEnvironmentUnavailable: boolean;
   isPreparingWorktree: boolean;
   hasSendableContent: boolean;
+  queuesRunningTurns: boolean;
   preserveComposerFocusOnPointerDown?: boolean;
   onPreviousPendingQuestion: () => void;
   onInterrupt: () => void;
@@ -67,6 +68,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   isEnvironmentUnavailable,
   isPreparingWorktree,
   hasSendableContent,
+  queuesRunningTurns,
   preserveComposerFocusOnPointerDown = false,
   onPreviousPendingQuestion,
   onInterrupt,
@@ -163,10 +165,14 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
             className="flex h-8 items-center gap-1.5 rounded-full bg-message-action px-3 text-message-action-foreground text-xs font-medium shadow-xs transition-all duration-150 enabled:cursor-pointer hover:bg-message-action-hover hover:scale-105 disabled:pointer-events-none disabled:opacity-30"
             {...pointerFocusProps}
             disabled={isSendBusy || isSendDisabled || isConnecting || isEnvironmentUnavailable}
-            aria-label="Steer running turn"
-            title="Send now to steer the running turn"
+            aria-label={queuesRunningTurns ? "Queue next turn" : "Steer running turn"}
+            title={
+              queuesRunningTurns
+                ? "Queue this message for the next turn"
+                : "Send now to steer the running turn"
+            }
           >
-            Steer
+            {queuesRunningTurns ? "Queue" : "Steer"}
             <svg width="12" height="12" viewBox="0 0 14 14" fill="none" aria-hidden="true">
               <path
                 d="M7 11.5V2.5M7 2.5L3 6.5M7 2.5L11 6.5"

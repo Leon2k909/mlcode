@@ -37,6 +37,7 @@ function renderPendingActions(isRunning: boolean) {
       isEnvironmentUnavailable: false,
       isPreparingWorktree: false,
       hasSendableContent: false,
+      queuesRunningTurns: false,
       onPreviousPendingQuestion: () => {},
       onInterrupt: () => {},
       onImplementPlanInNewThread: () => {},
@@ -44,7 +45,7 @@ function renderPendingActions(isRunning: boolean) {
   );
 }
 
-function renderRunningActions(hasSendableContent = false) {
+function renderRunningActions(hasSendableContent = false, queuesRunningTurns = false) {
   return renderToStaticMarkup(
     createElement(ComposerPrimaryActions, {
       compact: true,
@@ -58,6 +59,7 @@ function renderRunningActions(hasSendableContent = false) {
       isEnvironmentUnavailable: false,
       isPreparingWorktree: false,
       hasSendableContent,
+      queuesRunningTurns,
       onPreviousPendingQuestion: () => {},
       onInterrupt: () => {},
       onImplementPlanInNewThread: () => {},
@@ -79,6 +81,7 @@ function renderSendButton() {
       isEnvironmentUnavailable: false,
       isPreparingWorktree: false,
       hasSendableContent: true,
+      queuesRunningTurns: false,
       onPreviousPendingQuestion: () => {},
       onInterrupt: () => {},
       onImplementPlanInNewThread: () => {},
@@ -202,6 +205,14 @@ describe("ComposerPrimaryActions", () => {
     expect(markup).toContain('aria-label="Stop generation"');
     expect(markup).toContain('aria-label="Steer running turn"');
     expect(markup).toContain("Send now to steer the running turn");
+  });
+
+  it("offers queueing for providers that schedule a separate follow-up turn", () => {
+    const markup = renderRunningActions(true, true);
+
+    expect(markup).toContain('aria-label="Queue next turn"');
+    expect(markup).toContain("Queue this message for the next turn");
+    expect(markup).not.toContain('aria-label="Steer running turn"');
   });
 
   it("renders stage artwork inside the send button when artwork identification is active", () => {

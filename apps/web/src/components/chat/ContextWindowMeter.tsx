@@ -1,5 +1,9 @@
+import type { UsageLimitSnapshot, UsageProviderKind } from "@t3tools/contracts";
+import { useMemo, useState } from "react";
+import { makeWindow } from "@t3tools/shared/usageFormat";
 import { cn } from "~/lib/utils";
 import { type ContextWindowSnapshot, formatContextWindowTokens } from "~/lib/contextWindow";
+import { useUsage } from "~/state/usage";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 
 function formatPercentage(value: number | null): string | null {
@@ -17,8 +21,79 @@ export function ContextWindowMeter(props: {
   providerDisplayName?: string | null;
 }) {
   const { usage, providerDisplayName } = props;
+  const usageProvider: UsageProviderKind | null = providerDisplayName
+    ?.toLowerCase()
+    .includes("codex")
+    ? "codex"
+    : providerDisplayName?.toLowerCase().includes("claude")
+      ? "claude"
+      : null;
+  const [open, setOpen] = useState(false);
   const usedPercentage = formatPercentage(usage.usedPercentage);
   const normalizedPercentage = Math.max(0, Math.min(100, usage.usedPercentage ?? 0));
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <ContextWindowMeterContent
+        usage={usage}
+        providerDisplayName={providerDisplayName}
+        usageProvider={usageProvider}
+        usedPercentage={usedPercentage}
+        normalizedPercentage={normalizedPercentage}
+        loadLimits={open}
+      />
+    </Popover>
+  );
+}
+
+function ContextUsageLimits({ provider }: { provider: UsageProviderKind }) {
+  const usageWindow = useMemo(() => makeWindow(1), []);
+  const { environments } = useUsage(usageWindow);
+  const limits = useMemo(() => {
+    const newest = new Map<UsageProviderKind, UsageLimitSnapshot>();
+    for (const environment of environments) {
+      for (const snapshot of environment.summary?.limits ?? []) {
+        const previous = newest.get(snapshot.provider);
+        if (!previous || snapshot.readAt > previous.readAt) newest.set(snapshot.provider, snapshot);
+      }
+    }
+    return newest.get(provider)?.windows ?? [];
+  }, [environments, provider]);
+
+  if (limits.length === 0) return null;
+
+  return (
+    <div className="mt-1 border-t border-border/60 pt-2">
+      <div className="mb-1.5 text-xs font-medium text-muted-foreground">Usage limits</div>
+      <div className="space-y-1.5">
+        {limits.map((limit) => {
+          const remaining = Math.max(0, Math.min(100, 100 - limit.usedPercent));
+          return (
+            <div
+              className="flex items-center justify-between gap-3 text-[11px] leading-4"
+              key={limit.label}
+            >
+              <span className="text-secondary-label">{limit.label}</span>
+              <span className="font-medium tabular-nums text-secondary-label">
+                {remaining.toFixed(0)}% left
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function ContextWindowMeterContent(props: {
+  usage: ContextWindowSnapshot;
+  providerDisplayName: string | null | undefined;
+  usageProvider: UsageProviderKind | null;
+  usedPercentage: string | null;
+  normalizedPercentage: number;
+  loadLimits: boolean;
+}) {
+  const { usage, providerDisplayName, usageProvider, usedPercentage, normalizedPercentage } = props;
   const radius = 9.75;
   const circumference = 2 * Math.PI * radius;
   const dashOffset = circumference * (1 - normalizedPercentage / 100);
@@ -30,7 +105,7 @@ export function ContextWindowMeter(props: {
     : "color-mix(in oklab, var(--color-muted-foreground) 72%, transparent)";
 
   return (
-    <Popover>
+    <>
       <PopoverTrigger
         openOnHover
         delay={150}
@@ -128,6 +203,9 @@ export function ContextWindowMeter(props: {
               </span>
             </div>
           ) : null}
+          {props.loadLimits && usageProvider ? (
+            <ContextUsageLimits provider={usageProvider} />
+          ) : null}
           {usage.compactsAutomatically ? (
             <div className="mt-1 text-pretty text-secondary-label text-[11px] font-medium">
               {providerDisplayName ?? "It"} automatically compacts its context when needed.
@@ -135,6 +213,6 @@ export function ContextWindowMeter(props: {
           ) : null}
         </div>
       </PopoverPopup>
-    </Popover>
+    </>
   );
 }

@@ -16,7 +16,6 @@ import {
   shouldShowArm64IntelBuildWarning,
   shouldToastDesktopUpdateActionResult,
 } from "../desktopUpdate.logic";
-import { showDesktopUpdateDownloadedToast } from "../desktopUpdate.toast";
 import { Alert, AlertDescription, AlertTitle } from "../ui/alert";
 import { Separator } from "../ui/separator";
 import { SidebarMenuItem } from "../ui/sidebar";
@@ -138,9 +137,6 @@ function SidebarUpdateControl() {
       void bridge
         .downloadUpdate()
         .then((result) => {
-          if (result.completed) {
-            showDesktopUpdateDownloadedToast(bridge, result.state);
-          }
           if (!shouldToastDesktopUpdateActionResult(result)) return;
           const actionError = getDesktopUpdateActionError(result);
           if (!actionError) return;
@@ -250,7 +246,11 @@ function SidebarUpdateControl() {
               disabled={disabled || isActionPending}
               className={cn(
                 "relative inline-flex h-8 items-center justify-center overflow-hidden rounded-full outline-hidden ring-ring transition-[width,background-color,color] enabled:cursor-pointer focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-80 motion-reduce:transition-none",
-                isDownloading ? "w-[4.75rem] gap-1.5 px-2" : "w-8",
+                isDownloading
+                  ? "w-[4.75rem] gap-1.5 px-2"
+                  : action === "install"
+                    ? "w-auto gap-1.5 px-2.5"
+                    : "w-8",
                 isUpdateState
                   ? "bg-update-surface text-update-foreground enabled:hover:bg-update/12"
                   : "text-[var(--sidebar-icon-color)] enabled:hover:bg-sidebar-row-hover enabled:hover:text-sidebar-foreground",
@@ -266,6 +266,11 @@ function SidebarUpdateControl() {
                   className={cn("size-4", state?.status === "checking" && "animate-spin")}
                 />
               )}
+              {action === "install" ? (
+                <span className="whitespace-nowrap text-[11px] font-semibold">
+                  Restart to update
+                </span>
+              ) : null}
               {isDownloading ? (
                 <span className="text-[10px] font-semibold tabular-nums">
                   {downloadPercent === null ? "Starting" : `${downloadPercent}%`}
