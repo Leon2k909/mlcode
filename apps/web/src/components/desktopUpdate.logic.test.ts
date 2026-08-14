@@ -232,7 +232,7 @@ describe("desktop update UI helpers", () => {
         availableVersion: "1.1.0",
         downloadedVersion: "1.1.1",
       }),
-    ).toContain("Install update 1.1.1 and restart T3 Code?");
+    ).toContain("Install update 1.1.1 and restart ML Code?");
   });
 
   it("falls back to generic install confirmation copy when no version is available", () => {
@@ -241,10 +241,10 @@ describe("desktop update UI helpers", () => {
         availableVersion: null,
         downloadedVersion: null,
       }),
-    ).toContain("Install update and restart T3 Code?");
+    ).toContain("Install update and restart ML Code?");
   });
 
-  it("warns Windows users that a silent installation can take several minutes", () => {
+  it("tells Windows users that the installer shows progress", () => {
     const message = getDesktopUpdateInstallConfirmationMessage(
       {
         availableVersion: "1.1.0",
@@ -253,12 +253,11 @@ describe("desktop update UI helpers", () => {
       "Win32",
     );
 
-    expect(message).toContain("may remain closed for several minutes");
-    expect(message).toContain("no installer window may appear");
+    expect(message).toContain("show an installer with progress");
     expect(message).toContain("will reopen automatically");
   });
 
-  it("keeps the additional silent installation warning Windows-specific", () => {
+  it("keeps the additional installer progress message Windows-specific", () => {
     const message = getDesktopUpdateInstallConfirmationMessage(
       {
         availableVersion: "1.1.0",
@@ -267,7 +266,7 @@ describe("desktop update UI helpers", () => {
       "MacIntel",
     );
 
-    expect(message).not.toContain("may remain closed for several minutes");
+    expect(message).not.toContain("show an installer with progress");
   });
 });
 

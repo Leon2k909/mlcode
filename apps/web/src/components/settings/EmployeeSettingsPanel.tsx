@@ -22,13 +22,13 @@ import {
   buildSuggestedEmployeePatch,
   deriveAvailableSuggestions,
   deriveEmployeeEntries,
-  employeeInitials,
   slugifyEmployeeName,
   validateEmployeeId,
   type EmployeeEntry,
   type SuggestedEmployee,
 } from "../../employees";
 import { Badge } from "../ui/badge";
+import { EmployeeAvatar } from "../employees/EmployeeAvatar";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
@@ -88,31 +88,6 @@ function decodeDraft(draft: EmployeeDraft): { employee: Employee } | { error: st
   });
   if (Option.isSome(result)) return { employee: result.value };
   return { error: "Check the highlighted fields — this employee could not be saved." };
-}
-
-function EmployeeAvatar({
-  avatar,
-  displayName,
-  accentColor,
-  className,
-}: {
-  avatar: string | undefined;
-  displayName: string;
-  accentColor: string | undefined;
-  className?: string;
-}) {
-  return (
-    <span
-      aria-hidden
-      className={cn(
-        "flex size-9 shrink-0 items-center justify-center rounded-full border border-border/60 bg-muted text-sm font-medium text-foreground",
-        className,
-      )}
-      style={accentColor ? { borderColor: accentColor, color: accentColor } : undefined}
-    >
-      {avatar?.trim() ? avatar : employeeInitials(displayName)}
-    </span>
-  );
 }
 
 function EmployeeForm({
@@ -423,7 +398,7 @@ export function EmployeeSettingsPanel() {
                 title={
                   <span className="flex items-center gap-2.5">
                     <EmployeeAvatar
-                      avatar={entry.employee.avatar}
+                      employeeId={employeeId}
                       displayName={entry.employee.displayName}
                       accentColor={entry.employee.accentColor}
                     />
@@ -509,9 +484,8 @@ export function EmployeeSettingsPanel() {
               title={
                 <span className="flex items-center gap-2.5">
                   <EmployeeAvatar
-                    avatar={suggestion.avatar}
+                    employeeId={String(suggestion.employeeId)}
                     displayName={suggestion.displayName}
-                    accentColor={undefined}
                   />
                   <span className="flex flex-col">
                     <span>{suggestion.displayName}</span>

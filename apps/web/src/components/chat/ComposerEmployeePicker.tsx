@@ -3,7 +3,8 @@ import { UserRoundIcon, UsersRoundIcon } from "lucide-react";
 import type { EmployeeId } from "@t3tools/contracts";
 
 import { cn } from "~/lib/utils";
-import { employeeInitials, type EmployeeEntry } from "../../employees";
+import type { EmployeeEntry } from "../../employees";
+import { EmployeeAvatar } from "../employees/EmployeeAvatar";
 import {
   Menu,
   MenuCheckboxItem,
@@ -18,15 +19,12 @@ import { ComposerControl, ComposerControlChevron } from "./ComposerControl";
 
 function EmployeeGlyph({ entry }: { entry: EmployeeEntry }) {
   return (
-    <span
-      aria-hidden
-      className="flex size-4 shrink-0 items-center justify-center rounded-full border border-border/60 text-[8px] leading-none"
-      style={entry.employee.accentColor ? { borderColor: entry.employee.accentColor } : undefined}
-    >
-      {entry.employee.avatar?.trim()
-        ? entry.employee.avatar
-        : employeeInitials(entry.employee.displayName)}
-    </span>
+    <EmployeeAvatar
+      employeeId={String(entry.employeeId)}
+      displayName={entry.employee.displayName}
+      accentColor={entry.employee.accentColor}
+      className="size-4 rounded-[4px] border-border/60 [&_svg]:size-2.5 [&>span]:text-[7px]"
+    />
   );
 }
 

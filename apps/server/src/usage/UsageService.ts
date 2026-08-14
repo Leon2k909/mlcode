@@ -15,6 +15,8 @@ import * as NodeOS from "node:os";
 
 import {
   USAGE_CONTRACT_VERSION,
+  UsageLimitSnapshot,
+  type UsageLimitSnapshot as UsageLimitSnapshotValue,
   type UsageProviderKind,
   type UsageSource,
   type UsageSummary,
@@ -52,6 +54,7 @@ import {
   type ScanCache,
 } from "./usageScanCache.ts";
 import type { UsageRecord } from "./usageTranscripts.ts";
+import { hydrateUsageLimits, readUsageLimits } from "./usageLimits.ts";
 
 const LITELLM_RATES_URL =
   "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json";
@@ -85,6 +88,13 @@ const encodeRatesCache = Schema.encodeEffect(
 const ScanCacheJson = Schema.fromJsonString(Schema.Unknown as unknown as Schema.Codec<unknown>);
 const decodeScanCacheFile = Schema.decodeUnknownEffect(ScanCacheJson);
 const encodeScanCacheFile = Schema.encodeEffect(ScanCacheJson);
+const UsageLimitsJson = Schema.fromJsonString(
+  Schema.Array(UsageLimitSnapshot) as unknown as Schema.Codec<
+    ReadonlyArray<UsageLimitSnapshotValue>
+  >,
+);
+const decodeUsageLimitsFile = Schema.decodeUnknownEffect(UsageLimitsJson);
+const encodeUsageLimitsFile = Schema.encodeEffect(UsageLimitsJson);
 
 export class UsageService extends Context.Service<
   UsageService,
@@ -112,6 +122,7 @@ export const layerTest = Layer.succeed(
           fetchedAt: null,
           knownModels: 0,
         },
+        limits: [],
         scanDurationMs: 0,
       }),
   }),
@@ -123,6 +134,13 @@ export const make = Effect.gen(function* () {
   const config = yield* ServerConfig;
   const settingsService = yield* ServerSettings.ServerSettingsService;
   const httpClient = yield* HttpClient.HttpClient;
+  const usageLimitsPath = path.join(config.stateDir, "usage-limits.json");
+
+  yield* fileSystem.readFileString(usageLimitsPath).pipe(
+    Effect.flatMap(decodeUsageLimitsFile),
+    Effect.tap((limits) => Effect.sync(() => hydrateUsageLimits(limits))),
+    Effect.catch(() => Effect.void),
+  );
 
   const fileCache: ScanCache = new Map();
   let cacheDirty = false;
@@ -420,6 +438,11 @@ export const make = Effect.gen(function* () {
     const aggregated = aggregator.finish();
     const readAt = yield* DateTime.now;
     const finishedAtMs = yield* Clock.currentTimeMillis;
+    const limits = readUsageLimits();
+    yield* encodeUsageLimitsFile(limits).pipe(
+      Effect.flatMap((contents) => fileSystem.writeFileString(usageLimitsPath, contents)),
+      Effect.catchCause((cause) => Effect.logWarning("Failed to persist usage limits", { cause })),
+    );
 
     return {
       contractVersion: USAGE_CONTRACT_VERSION,
@@ -438,6 +461,7 @@ export const make = Effect.gen(function* () {
             : DateTime.formatIso(DateTime.makeUnsafe(ratesFetchedAtMs)),
         knownModels: rates.size,
       },
+      limits,
       scanDurationMs: Math.max(0, finishedAtMs - startedAtMs),
     } satisfies UsageSummary;
   });

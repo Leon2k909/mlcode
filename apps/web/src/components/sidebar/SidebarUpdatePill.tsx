@@ -113,6 +113,10 @@ function SidebarUpdateControl() {
 
   const action = state ? resolveDesktopUpdateButtonAction(state) : "none";
   const isDownloading = state?.status === "downloading";
+  const downloadPercent =
+    isDownloading && typeof state.downloadPercent === "number"
+      ? Math.max(0, Math.min(100, Math.floor(state.downloadPercent)))
+      : null;
   const isUpdateState = action !== "none" || isDownloading;
   const tooltip = isUpdateState
     ? state
@@ -245,7 +249,8 @@ function SidebarUpdateControl() {
               aria-disabled={disabled || isActionPending || undefined}
               disabled={disabled || isActionPending}
               className={cn(
-                "inline-flex size-8 items-center justify-center rounded-full outline-hidden ring-ring transition-colors enabled:cursor-pointer focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-60",
+                "relative inline-flex h-8 items-center justify-center overflow-hidden rounded-full outline-hidden ring-ring transition-[width,background-color,color] enabled:cursor-pointer focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-80 motion-reduce:transition-none",
+                isDownloading ? "w-[4.75rem] gap-1.5 px-2" : "w-8",
                 isUpdateState
                   ? "bg-update-surface text-update-foreground enabled:hover:bg-update/12"
                   : "text-[var(--sidebar-icon-color)] enabled:hover:bg-sidebar-row-hover enabled:hover:text-sidebar-foreground",
@@ -261,6 +266,22 @@ function SidebarUpdateControl() {
                   className={cn("size-4", state?.status === "checking" && "animate-spin")}
                 />
               )}
+              {isDownloading ? (
+                <span className="text-[10px] font-semibold tabular-nums">
+                  {downloadPercent === null ? "Starting" : `${downloadPercent}%`}
+                </span>
+              ) : null}
+              {isDownloading ? (
+                <span
+                  aria-hidden
+                  className="absolute inset-x-1.5 bottom-1 h-0.5 overflow-hidden rounded-full bg-update/15"
+                >
+                  <span
+                    className="block h-full rounded-full bg-update-foreground transition-[width] duration-300 motion-reduce:transition-none"
+                    style={{ width: `${downloadPercent ?? 6}%` }}
+                  />
+                </span>
+              ) : null}
             </button>
           }
         />

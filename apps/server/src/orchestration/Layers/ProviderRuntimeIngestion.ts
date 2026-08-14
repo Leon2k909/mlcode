@@ -47,6 +47,7 @@ import {
 } from "../Services/ProviderRuntimeIngestion.ts";
 import { forkParked } from "../../serverActivation.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
+import { recordUsageLimits } from "../../usage/usageLimits.ts";
 import {
   canContinueHandoffChain,
   describeHandoffRejection,
@@ -1730,6 +1731,9 @@ const make = Effect.gen(function* () {
 
   const processRuntimeEvent = (event: ProviderRuntimeEvent) =>
     Effect.gen(function* () {
+      if (event.type === "account.rate-limits.updated") {
+        recordUsageLimits(event.provider, event.payload.rateLimits, event.createdAt);
+      }
       const thread = yield* resolveThreadShell(event.threadId);
       if (!thread) return;
 

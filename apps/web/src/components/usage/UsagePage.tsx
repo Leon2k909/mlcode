@@ -1,4 +1,4 @@
-import type { UsageProviderKind } from "@t3tools/contracts";
+import type { UsageLimitSnapshot, UsageProviderKind } from "@t3tools/contracts";
 import { CheckIcon, RefreshCwIcon, XIcon } from "lucide-react";
 import { useMemo, useState } from "react";
 
@@ -43,6 +43,18 @@ export function UsagePage() {
   const { days: windowDays, window } = windowSelection;
   const isPast24Hours = windowDays === 1;
   const { merged, environments, isPending, isPartial, refresh } = useUsage(window);
+  const limits = useMemo(() => {
+    const newest = new Map<UsageProviderKind, UsageLimitSnapshot>();
+    for (const environment of environments) {
+      for (const snapshot of environment.summary?.limits ?? []) {
+        const previous = newest.get(snapshot.provider);
+        if (!previous || snapshot.readAt > previous.readAt) newest.set(snapshot.provider, snapshot);
+      }
+    }
+    return [...newest.values()].toSorted(
+      (a, b) => PROVIDER_ORDER.indexOf(a.provider) - PROVIDER_ORDER.indexOf(b.provider),
+    );
+  }, [environments]);
 
   // Hold the content until every environment is terminal. Rendering merged
   // totals while devices are still answering makes every number on the page
@@ -179,6 +191,8 @@ export function UsagePage() {
                   duplicateSources={merged.duplicateSources}
                   staleEnvironments={merged.staleEnvironments}
                 />
+
+                <UsageLimits limits={limits} />
 
                 {/* Cost first: the financial answer, then the provider split. */}
                 <section className="grid gap-6 lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)]">
@@ -436,6 +450,82 @@ export function UsagePage() {
         </ScrollArea>
       </div>
     </SidebarInset>
+  );
+}
+
+function formatLimitReset(value: number | null): string | null {
+  if (value === null) return null;
+  const milliseconds = value < 10_000_000_000 ? value * 1000 : value;
+  const date = new Date(milliseconds);
+  if (Number.isNaN(date.getTime())) return null;
+  return new Intl.DateTimeFormat(undefined, {
+    weekday: "short",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(date);
+}
+
+function UsageLimits({ limits }: { readonly limits: readonly UsageLimitSnapshot[] }) {
+  return (
+    <section aria-labelledby="usage-limits-title" className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <div>
+          <h2 id="usage-limits-title" className="text-sm font-medium text-foreground">
+            Subscription limits
+          </h2>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            Live provider quotas, refreshed when Codex or Claude reports account usage.
+          </p>
+        </div>
+      </div>
+      {limits.length === 0 ? (
+        <div className="border border-border px-4 py-3 text-xs text-muted-foreground">
+          No limit snapshot yet. Run a Codex or Claude turn, then refresh this page.
+        </div>
+      ) : (
+        <div className="grid gap-x-8 gap-y-5 border border-border px-4 py-4 md:grid-cols-2">
+          {limits.flatMap((snapshot) =>
+            snapshot.windows.map((window) => {
+              const used = Math.max(0, Math.min(100, window.usedPercent));
+              const remaining = Math.max(0, 100 - used);
+              const reset = formatLimitReset(window.resetsAt);
+              return (
+                <div key={`${snapshot.provider}:${window.label}`} className="flex flex-col gap-2">
+                  <div className="flex items-start justify-between gap-4">
+                    <span className="flex items-center gap-2 text-sm text-foreground">
+                      <ProviderMark provider={snapshot.provider} className="size-4" />
+                      {PROVIDER_LABEL[snapshot.provider]} {window.label}
+                    </span>
+                    <span className="text-sm font-medium text-foreground tabular-nums">
+                      {remaining.toFixed(0)}% left
+                    </span>
+                  </div>
+                  <div
+                    className="h-1.5 overflow-hidden rounded-full bg-muted"
+                    role="progressbar"
+                    aria-label={`${PROVIDER_LABEL[snapshot.provider]} ${window.label} usage`}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-valuenow={Math.round(used)}
+                  >
+                    <div
+                      className="h-full rounded-full transition-[width] duration-300 motion-reduce:transition-none"
+                      style={{
+                        width: `${used}%`,
+                        backgroundColor: PROVIDER_COLOR[snapshot.provider],
+                      }}
+                    />
+                  </div>
+                  <span className="text-xs text-muted-foreground tabular-nums">
+                    {used.toFixed(0)}% used{reset ? ` · resets ${reset}` : ""}
+                  </span>
+                </div>
+              );
+            }),
+          )}
+        </div>
+      )}
+    </section>
   );
 }
 

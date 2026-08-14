@@ -21,7 +21,7 @@ import { NonNegativeInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
  * client renders partial coverage when an environment reports an older version
  * rather than failing the whole page.
  */
-export const USAGE_CONTRACT_VERSION = 4 as const;
+export const USAGE_CONTRACT_VERSION = 5 as const;
 
 export const UsageProviderKind = Schema.Literals(["claude", "codex"]);
 export type UsageProviderKind = typeof UsageProviderKind.Type;
@@ -160,6 +160,22 @@ export const UsagePricing = Schema.Struct({
 });
 export type UsagePricing = typeof UsagePricing.Type;
 
+export const UsageLimitWindow = Schema.Struct({
+  label: TrimmedNonEmptyString,
+  usedPercent: Schema.Number,
+  resetsAt: Schema.NullOr(Schema.Number),
+});
+export type UsageLimitWindow = typeof UsageLimitWindow.Type;
+
+/** Latest account quota snapshot reported by a provider runtime. */
+export const UsageLimitSnapshot = Schema.Struct({
+  provider: UsageProviderKind,
+  readAt: Schema.String,
+  status: Schema.NullOr(TrimmedNonEmptyString),
+  windows: Schema.Array(UsageLimitWindow),
+});
+export type UsageLimitSnapshot = typeof UsageLimitSnapshot.Type;
+
 export const UsageSummaryInput = Schema.Struct({
   /** Inclusive first day of the window, in `timeZone`. */
   sinceDay: UsageDay,
@@ -188,6 +204,8 @@ export const UsageSummary = Schema.Struct({
   buckets: Schema.Array(UsageBucket),
   sources: Schema.Array(UsageSource),
   pricing: UsagePricing,
+  /** Empty until that provider has reported subscription quota telemetry. */
+  limits: Schema.optionalKey(Schema.Array(UsageLimitSnapshot)),
   /** Wall-clock cost of the scan, surfaced in diagnostics. */
   scanDurationMs: NonNegativeInt,
 });

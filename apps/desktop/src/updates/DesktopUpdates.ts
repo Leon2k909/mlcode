@@ -480,7 +480,11 @@ export const make = Effect.gen(function* () {
       );
       yield* electronWindow.destroyAll;
       yield* electronUpdater.quitAndInstall({
-        isSilent: true,
+        // A silent NSIS install makes Windows look as if ML Code crashed for
+        // several minutes. Keep the installer visible there so its native
+        // progress bar explains the restart; other platforms retain their
+        // normal unattended handoff.
+        isSilent: environment.platform !== "win32",
         isForceRunAfter: true,
       });
       return { accepted: true, completed: false };

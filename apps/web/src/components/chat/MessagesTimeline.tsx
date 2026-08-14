@@ -123,12 +123,9 @@ import {
   parseReviewCommentMessageSegments,
   type ReviewCommentContext,
 } from "../../reviewCommentContext";
-import {
-  deriveEmployeeHandoffDisplay,
-  employeeInitials,
-  findMentionedEmployees,
-} from "../../employees";
+import { deriveEmployeeHandoffDisplay, findMentionedEmployees } from "../../employees";
 import { formatProviderDisplayName } from "../../lib/contextWindow";
+import { EmployeeAvatar } from "../employees/EmployeeAvatar";
 
 // ---------------------------------------------------------------------------
 // Context — shared state consumed by every row component via Context.
@@ -1005,13 +1002,12 @@ function EmployeeTimelineIdentity({
       data-chat-employee-id={employeeId}
       data-t3-worker-kind="employee"
     >
-      <span
-        aria-hidden="true"
-        className="flex size-6 shrink-0 items-center justify-center rounded-full border border-border/70 bg-background text-[10px] leading-none"
-        style={employee?.accentColor ? { borderColor: employee.accentColor } : undefined}
-      >
-        {employee?.avatar?.trim() ? employee.avatar : employeeInitials(displayName)}
-      </span>
+      <EmployeeAvatar
+        employeeId={String(employeeId)}
+        displayName={displayName}
+        accentColor={employee?.accentColor}
+        className="size-6 rounded-md [&_svg]:size-3.5 [&>span]:text-[8px]"
+      />
       <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-sky-500/30 bg-sky-500/10 px-1.5 py-0.5 font-medium text-sky-700 dark:text-sky-300">
         <UsersRoundIcon aria-hidden className="size-3" />
         T3 employee
