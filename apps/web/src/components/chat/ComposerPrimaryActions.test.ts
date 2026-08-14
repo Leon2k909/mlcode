@@ -202,15 +202,20 @@ describe("ComposerPrimaryActions", () => {
     expect(renderRunningActions()).not.toContain("sm:size-7");
   });
 
-  it("offers steering alongside Stop when a running turn has a follow-up message", () => {
+  it("shows Queue as the primary action while a turn is running", () => {
     const markup = renderRunningActions(true);
 
     expect(markup).toContain('aria-label="Stop generation"');
+    expect(markup).toContain('aria-label="Queue next turn"');
+    expect(markup).toContain("Hold this message for the next turn");
     expect(markup).toContain('aria-label="Steer running turn"');
     expect(markup).toContain("Send now to steer the running turn");
+    expect(markup.indexOf('aria-label="Queue next turn"')).toBeLessThan(
+      markup.indexOf('aria-label="Steer running turn"'),
+    );
   });
 
-  it("reveals queueing beside steering for providers that schedule a separate follow-up turn", () => {
+  it("keeps steering as the hover action beside Queue", () => {
     const markup = renderRunningActions(true, true);
 
     expect(markup).toContain('aria-label="Queue next turn"');

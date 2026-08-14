@@ -197,6 +197,8 @@ import { Select, SelectItem, SelectPopup, SelectValue } from "../ui/select";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { toastManager } from "../ui/toast";
 import {
+  ArrowDownIcon,
+  ArrowUpIcon,
   BotIcon,
   CircleAlertIcon,
   PencilRulerIcon,
@@ -500,9 +502,20 @@ export interface QueuedComposerMessage {
   readonly id: MessageId;
   readonly text: string;
   readonly createdAt: string;
+  readonly status?: "queued" | "sending" | "failed";
 }
 
-function QueuedMessagesPanel({ messages }: { messages: ReadonlyArray<QueuedComposerMessage> }) {
+function QueuedMessagesPanel({
+  messages,
+  onCancel,
+  onMove,
+  onRetry,
+}: {
+  messages: ReadonlyArray<QueuedComposerMessage>;
+  onCancel: (messageId: MessageId) => void;
+  onMove: (messageId: MessageId, direction: "up" | "down") => void;
+  onRetry: (messageId: MessageId) => void;
+}) {
   if (messages.length === 0) return null;
 
   return (
@@ -530,6 +543,59 @@ function QueuedMessagesPanel({ messages }: { messages: ReadonlyArray<QueuedCompo
             <p className="min-w-0 flex-1 truncate text-xs leading-5 text-foreground/85">
               {message.text.trim() || "Image attachment"}
             </p>
+            <div className="flex shrink-0 items-center gap-0.5">
+              {message.status === "failed" ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="xs"
+                  className="text-[11px] text-destructive hover:text-destructive"
+                  onClick={() => onRetry(message.id)}
+                  aria-label="Retry queued message"
+                  title="Retry queued message"
+                >
+                  Retry
+                </Button>
+              ) : null}
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-xs"
+                className="text-muted-foreground hover:text-foreground disabled:opacity-35"
+                onClick={() => onMove(message.id, "up")}
+                disabled={message.status === "sending" || messages.indexOf(message) === 0}
+                aria-label="Move queued message up"
+                title="Move up"
+              >
+                <ArrowUpIcon className="size-3" />
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-xs"
+                className="text-muted-foreground hover:text-foreground disabled:opacity-35"
+                onClick={() => onMove(message.id, "down")}
+                disabled={
+                  message.status === "sending" || messages.indexOf(message) === messages.length - 1
+                }
+                aria-label="Move queued message down"
+                title="Move down"
+              >
+                <ArrowDownIcon className="size-3" />
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-xs"
+                className="text-muted-foreground hover:text-destructive"
+                onClick={() => onCancel(message.id)}
+                disabled={message.status === "sending"}
+                aria-label="Cancel queued message"
+                title="Cancel queued message"
+              >
+                <XIcon className="size-3" />
+              </Button>
+            </div>
           </div>
         ))}
       </div>
@@ -618,6 +684,9 @@ export interface ChatComposerProps {
 
   // Callbacks
   queuedMessages: ReadonlyArray<QueuedComposerMessage>;
+  onCancelQueuedMessage: (messageId: MessageId) => void;
+  onMoveQueuedMessage: (messageId: MessageId, direction: "up" | "down") => void;
+  onRetryQueuedMessage: (messageId: MessageId) => void;
   onSend: (
     e?: { preventDefault: () => void },
     directAnnotation?: {
@@ -725,6 +794,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     composerTerminalContextsRef,
     composerElementContextsRef,
     queuedMessages,
+    onCancelQueuedMessage,
+    onMoveQueuedMessage,
+    onRetryQueuedMessage,
     onSend,
     onInterrupt,
     onImplementPlanInNewThread,
@@ -2019,7 +2091,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       key === "Enter" &&
       shouldSubmitComposerOnEnter({ isMobileViewport, shiftKey: event.shiftKey })
     ) {
-      submitComposer();
+      const runningDispatchMode: ThreadTurnDispatchMode | undefined =
+        phase === "running" ? (event.ctrlKey || event.metaKey ? "steer" : "queue") : undefined;
+      submitComposer(undefined, runningDispatchMode);
       return true;
     }
     return false;
@@ -3146,7 +3220,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             !isComposerApprovalState &&
             pendingUserInputs.length === 0 &&
             queuedMessages.length > 0 ? (
-              <QueuedMessagesPanel messages={queuedMessages} />
+              <QueuedMessagesPanel
+                messages={queuedMessages}
+                onCancel={onCancelQueuedMessage}
+                onMove={onMoveQueuedMessage}
+                onRetry={onRetryQueuedMessage}
+              />
             ) : null}
 
             <div className="relative">
