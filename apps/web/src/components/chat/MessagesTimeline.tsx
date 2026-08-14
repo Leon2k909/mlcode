@@ -3,6 +3,7 @@ import {
   type EmployeeMap,
   type EnvironmentId,
   type MessageId,
+  type ProviderInstanceId,
   type ScopedThreadRef,
   type ServerProviderSkill,
   type TurnId,
@@ -146,6 +147,7 @@ interface TimelineRowSharedState {
   workspaceRoot: string | undefined;
   skills: ReadonlyArray<Pick<ServerProviderSkill, "name" | "displayName">>;
   activeThreadEnvironmentId: EnvironmentId;
+  providerInstanceId: ProviderInstanceId | null;
   employees: EmployeeMap;
   onRevertUserMessage: (messageId: MessageId) => void;
   onImageExpand: (preview: ExpandedImagePreview) => void;
@@ -224,6 +226,7 @@ interface MessagesTimelineProps {
   listRef: React.RefObject<LegendListRef | null>;
   timelineEntries: ReturnType<typeof deriveTimelineEntries>;
   employees?: EmployeeMap;
+  providerInstanceId?: ProviderInstanceId | null;
   latestTurn: TimelineLatestTurn | null;
   runningTurnId: TurnId | null;
   turnDiffSummaryByAssistantMessageId: Map<MessageId, TurnDiffSummary>;
@@ -272,6 +275,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   listRef,
   timelineEntries,
   employees = EMPTY_TIMELINE_EMPLOYEES,
+  providerInstanceId = null,
   latestTurn,
   runningTurnId,
   turnDiffSummaryByAssistantMessageId,
@@ -526,6 +530,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       workspaceRoot,
       skills,
       activeThreadEnvironmentId,
+      providerInstanceId,
       employees,
       onRevertUserMessage,
       onImageExpand,
@@ -544,6 +549,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       workspaceRoot,
       skills,
       activeThreadEnvironmentId,
+      providerInstanceId,
       employees,
       onRevertUserMessage,
       onImageExpand,
@@ -1061,7 +1067,7 @@ function EmployeeTimelineIdentity({
       ) : null}
       {employee ? (
         <span className="shrink-0 text-muted-foreground">
-          via {formatProviderDisplayName(employee.providerInstanceId)}
+          via {formatProviderDisplayName(ctx.providerInstanceId ?? employee.providerInstanceId)}
         </span>
       ) : null}
       {suffix ? <span className="shrink-0 text-muted-foreground">{suffix}</span> : null}
@@ -1331,7 +1337,10 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
             </span>
             {targetEmployee ? (
               <span className="text-muted-foreground">
-                via {formatProviderDisplayName(targetEmployee.providerInstanceId)}
+                via{" "}
+                {formatProviderDisplayName(
+                  ctx.providerInstanceId ?? targetEmployee.providerInstanceId,
+                )}
               </span>
             ) : null}
           </div>

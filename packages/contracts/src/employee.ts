@@ -2,10 +2,12 @@
  * Employee contracts.
  *
  * An **employee** is a named persona that does work in T3 Code: a display
- * name, an avatar, a role, and a block of standing instructions, bound to one
- * configured provider instance. Employees sit *above* the provider layer —
+ * name, an avatar, a role, and a block of standing instructions, with a saved
+ * default provider instance. Employees sit *above* the provider layer —
  * several employees can share a single provider instance (three teammates on
- * one Claude subscription), and one employee never spans two instances.
+ * one Claude subscription), and a chat can run any employee on any configured
+ * provider. The saved instance is the fallback for chats without a provider
+ * selection, not a lock on the persona.
  *
  * Employees deliberately introduce no employee-specific CRUD commands or
  * events. The current speaker is carried on `ModelSelection.employeeId`, and
@@ -75,6 +77,7 @@ export const isEmployeeId = (value: unknown): value is EmployeeId => isEmployeeI
  */
 export const Employee = Schema.Struct({
   displayName: TrimmedNonEmptyString.check(Schema.isMaxLength(EMPLOYEE_DISPLAY_NAME_MAX_CHARS)),
+  /** Default/fallback provider instance; the chat may explicitly choose another. */
   providerInstanceId: ProviderInstanceId,
   /** Short human title, e.g. "Frontend engineer". Presentation only. */
   role: Schema.optional(TrimmedNonEmptyString.check(Schema.isMaxLength(EMPLOYEE_ROLE_MAX_CHARS))),
@@ -87,7 +90,7 @@ export const Employee = Schema.Struct({
     TrimmedNonEmptyString.check(Schema.isMaxLength(EMPLOYEE_AVATAR_MAX_CHARS)),
   ),
   accentColor: Schema.optional(TrimmedNonEmptyString),
-  /** Model override. Falls back to the thread's own selection when absent. */
+  /** Model override on the default provider. Other providers follow the thread selection. */
   model: Schema.optional(TrimmedNonEmptyString),
   enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
 });
@@ -100,7 +103,7 @@ export const EmployeeMap = Schema.Record(EmployeeId, Employee);
 export type EmployeeMap = typeof EmployeeMap.Type;
 
 /**
- * Provider instance the default roster is bound to.
+ * Provider instance the default roster uses as its fallback.
  *
  * Matches the instance id the default model selection already assumes
  * (`settings.ts`), so a fresh install has a working team without the user

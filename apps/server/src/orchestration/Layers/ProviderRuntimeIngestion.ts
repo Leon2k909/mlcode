@@ -1656,10 +1656,27 @@ const make = Effect.gen(function* () {
       return;
     }
 
-    const targetInfo = yield* providerService
-      .getInstanceInfo(targetEmployee.providerInstanceId)
+    // Handoffs keep the provider selected for the group chat. The employee's
+    // saved instance is only a fallback for older/malformed selections, so a
+    // CEO running on Claude can hand work to an implementation employee whose
+    // default is still Codex without silently jumping providers.
+    const selectedProviderInfo = yield* providerService
+      .getInstanceInfo(selection.instanceId)
       .pipe(Effect.option);
-    if (Option.isNone(targetInfo) || !targetInfo.value.enabled) {
+    const selectedProvider =
+      Option.isSome(selectedProviderInfo) && selectedProviderInfo.value.enabled
+        ? selectedProviderInfo.value
+        : undefined;
+    const usesSelectedProvider = selectedProvider !== undefined;
+    const targetInstanceId = usesSelectedProvider
+      ? selection.instanceId
+      : targetEmployee.providerInstanceId;
+    const targetInfo = usesSelectedProvider
+      ? selectedProvider
+      : yield* providerService
+          .getInstanceInfo(targetInstanceId)
+          .pipe(Effect.option, Effect.map(Option.getOrUndefined));
+    if (targetInfo === undefined || !targetInfo.enabled) {
       consecutiveEmployeeHandoffs.delete(input.thread.id);
       yield* appendEmployeeHandoffActivity({
         event: input.event,
@@ -1667,16 +1684,16 @@ const make = Effect.gen(function* () {
         turnId: input.turnId,
         tone: "error",
         summary: "Employee provider unavailable",
-        detail: `${targetEmployee.displayName} is bound to provider instance '${targetEmployee.providerInstanceId}', which is not available.`,
+        detail: `${targetEmployee.displayName}'s default provider instance '${targetEmployee.providerInstanceId}' is not available, and the chat provider could not be reused.`,
       });
       return;
     }
 
-    const targetModel =
-      targetEmployee.model ??
-      (selection.instanceId === targetEmployee.providerInstanceId
-        ? selection.model
-        : DEFAULT_MODEL_BY_PROVIDER[targetInfo.value.driverKind]);
+    const targetModel = usesSelectedProvider
+      ? targetInstanceId === targetEmployee.providerInstanceId
+        ? (targetEmployee.model ?? selection.model)
+        : selection.model
+      : (targetEmployee.model ?? DEFAULT_MODEL_BY_PROVIDER[targetInfo.driverKind]);
     if (!targetModel) {
       consecutiveEmployeeHandoffs.delete(input.thread.id);
       yield* appendEmployeeHandoffActivity({
@@ -1691,12 +1708,11 @@ const make = Effect.gen(function* () {
     }
 
     const nextModelSelection: ModelSelection = {
-      instanceId: targetEmployee.providerInstanceId,
+      instanceId: targetInstanceId,
       model: targetModel,
       employeeId: result.handoff.toEmployeeId,
       employeeIds: [...groupEmployeeIds],
-      ...(selection.instanceId === targetEmployee.providerInstanceId &&
-      selection.options !== undefined
+      ...(selection.instanceId === targetInstanceId && selection.options !== undefined
         ? { options: selection.options }
         : {}),
     };

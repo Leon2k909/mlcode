@@ -209,7 +209,8 @@ describe("ComposerPrimaryActions", () => {
     expect(markup).toContain('aria-label="Queue next turn"');
     expect(markup).toContain("Hold this message for the next turn");
     expect(markup).toContain('aria-label="Steer running turn"');
-    expect(markup).toContain("Send now to steer the running turn");
+    expect(markup).toContain('aria-keyshortcuts="Control+Enter"');
+    expect(markup).toContain("Steer now (Ctrl+Enter)");
     expect(markup.indexOf('aria-label="Queue next turn"')).toBeLessThan(
       markup.indexOf('aria-label="Steer running turn"'),
     );
@@ -221,6 +222,7 @@ describe("ComposerPrimaryActions", () => {
     expect(markup).toContain('aria-label="Queue next turn"');
     expect(markup).toContain("Queue this message for the next turn");
     expect(markup).toContain('aria-label="Steer running turn"');
+    expect(markup).toContain("group-hover/turn-actions:max-w-28");
     expect(markup).toContain("group-hover/turn-actions:opacity-100");
   });
 

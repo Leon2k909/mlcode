@@ -181,12 +181,13 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
             </button>
             <button
               type="button"
-              className="pointer-events-none max-w-0 -translate-x-1 overflow-hidden whitespace-nowrap rounded-full border border-border/70 bg-background/60 px-0 text-xs font-medium text-muted-foreground opacity-0 transition-[max-width,opacity,transform,padding] duration-150 group-hover/turn-actions:pointer-events-auto group-hover/turn-actions:max-w-24 group-hover/turn-actions:translate-x-0 group-hover/turn-actions:px-3 group-hover/turn-actions:opacity-100 group-focus-within/turn-actions:pointer-events-auto group-focus-within/turn-actions:max-w-24 group-focus-within/turn-actions:translate-x-0 group-focus-within/turn-actions:px-3 group-focus-within/turn-actions:opacity-100 hover:border-border hover:bg-muted/70 hover:text-foreground disabled:pointer-events-none disabled:opacity-30"
+              className="pointer-events-none flex h-8 max-w-0 translate-x-1 items-center gap-1.5 overflow-hidden whitespace-nowrap rounded-full border border-border bg-muted/40 px-0 text-xs font-medium text-foreground/80 opacity-0 shadow-xs transition-[max-width,opacity,transform,padding,background-color] duration-200 group-hover/turn-actions:pointer-events-auto group-hover/turn-actions:max-w-28 group-hover/turn-actions:translate-x-0 group-hover/turn-actions:px-3 group-hover/turn-actions:opacity-100 group-focus-within/turn-actions:pointer-events-auto group-focus-within/turn-actions:max-w-28 group-focus-within/turn-actions:translate-x-0 group-focus-within/turn-actions:px-3 group-focus-within/turn-actions:opacity-100 hover:border-foreground/20 hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-30 motion-reduce:transition-none"
               {...pointerFocusProps}
               onClick={() => onSubmitMode("steer")}
               disabled={isSendBusy || isSendDisabled || isConnecting || isEnvironmentUnavailable}
               aria-label="Steer running turn"
-              title="Send now to steer the running turn"
+              aria-keyshortcuts="Control+Enter"
+              title="Steer now (Ctrl+Enter)"
             >
               Steer
               <svg width="12" height="12" viewBox="0 0 14 14" fill="none" aria-hidden="true">

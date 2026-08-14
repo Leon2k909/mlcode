@@ -174,11 +174,12 @@ export function employeeRoutingEqual(
 }
 
 /**
- * Employees bound to a provider instance that is not configured here.
+ * Employees whose saved default provider instance is not configured here.
  *
  * These are kept, not dropped — the instance may come back with the next
  * branch or fork — but the panel marks them so a user is not left wondering
- * why a teammate never picks up work.
+ * why their default provider is unavailable. They can still run on another
+ * provider selected in the composer.
  */
 export function findOrphanedEmployees(
   employees: EmployeeMap,
@@ -361,7 +362,7 @@ export function deriveAvailableSuggestions(
 }
 
 /**
- * Patch that hires one suggested employee onto a configured provider instance.
+ * Patch that hires one suggested employee with a configured fallback provider.
  */
 export function buildSuggestedEmployeePatch(input: {
   readonly employees: EmployeeMap;
@@ -392,7 +393,7 @@ export function employeeInitials(displayName: string): string {
   return `${[...words[0]!][0] ?? ""}${[...words[words.length - 1]!][0] ?? ""}`.toUpperCase();
 }
 
-/** Employees bound to one provider instance, for grouped presentation. */
+/** Employees with the same saved fallback provider, for grouped presentation. */
 export function employeesForInstance(
   employees: EmployeeMap,
   instanceId: ProviderInstanceId,

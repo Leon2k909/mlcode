@@ -168,13 +168,13 @@ function EmployeeForm({
         </label>
 
         <div className="space-y-1.5 text-sm">
-          <span className="font-medium">Runs on</span>
+          <span className="font-medium">Default provider</span>
           <Select
             value={draft.providerInstanceId}
             onValueChange={(next) => next && set("providerInstanceId", next)}
           >
             <SelectTrigger className="w-full">
-              <SelectValue placeholder="Provider instance" />
+              <SelectValue placeholder="Default provider instance" />
             </SelectTrigger>
             <SelectContent>
               {instanceOptions.map((option) => (
@@ -363,7 +363,7 @@ export function EmployeeSettingsPanel() {
       >
         <SettingsRow
           title="Named personas that do the work"
-          description="An employee is a name, an avatar, and standing instructions bound to one provider. Several employees can share a provider, and their instructions open each session they work in."
+          description="An employee is a name, an avatar, and standing instructions with a default provider. Pick Claude or another configured provider in the composer for any employee."
         />
 
         {isCreating && draft ? (
@@ -384,7 +384,7 @@ export function EmployeeSettingsPanel() {
         {entries.length === 0 && !isCreating ? (
           <SettingsRow
             title="No employees yet"
-            description="Add one to give a provider a name, a role, and instructions it carries into every session."
+            description="Add one to give a persona a name, a role, and instructions it carries into every session."
           />
         ) : null}
 
@@ -423,7 +423,8 @@ export function EmployeeSettingsPanel() {
                     {orphaned ? (
                       <span className="inline-flex items-center gap-1 text-xs text-amber-600 dark:text-amber-500">
                         <TriangleAlertIcon className="size-3.5" />
-                        Provider not configured here — this employee will not pick up work.
+                        Default provider not configured here — choose another provider in the
+                        composer.
                       </span>
                     ) : null}
                   </span>
@@ -476,7 +477,7 @@ export function EmployeeSettingsPanel() {
         <SettingsSection id="employees-suggested" title="Suggested employees">
           <SettingsRow
             title="People you could add"
-            description="Not part of your team until you add one. Each arrives with instructions you can edit, bound to your first configured provider."
+            description="Not part of your team until you add one. Each arrives with editable instructions and your first configured provider as its fallback."
           />
           {suggestions.map((suggestion) => (
             <SettingsRow

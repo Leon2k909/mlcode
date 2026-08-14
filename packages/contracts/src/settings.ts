@@ -612,9 +612,10 @@ export const ServerSettings = Schema.Struct({
   providerInstances: Schema.Record(ProviderInstanceId, ProviderInstanceConfig).pipe(
     Schema.withDecodingDefault(Effect.succeed({})),
   ),
-  // Named personas that do the work, keyed by `EmployeeId`. Each binds to a
-  // provider instance above; several employees may share one instance. An
-  // employee naming an instance that is not configured stays in the map and
+  // Named personas that do the work, keyed by `EmployeeId`. Each stores a
+  // default/fallback provider instance above; several employees may share one
+  // instance, and a chat may explicitly run any employee on another provider.
+  // An employee naming an instance that is not configured stays in the map and
   // reports as unavailable — same round-trip rule as `providerInstances`.
   // See employee.ts.
   // Seeded with the default roster (a lead plus three workers) so a fresh
