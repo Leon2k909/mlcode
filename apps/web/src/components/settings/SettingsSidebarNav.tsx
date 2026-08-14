@@ -11,6 +11,7 @@ import {
   ArchiveIcon,
   ArrowLeftIcon,
   BotIcon,
+  ChartNoAxesColumnIcon,
   GitBranchIcon,
   KeyboardIcon,
   Link2Icon,
@@ -302,6 +303,20 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                     </SidebarMenuItem>
                   );
                 })}
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                isActive={pathname === "/usage"}
+                onClick={() => {
+                  if (isMobile) {
+                    setOpenMobile(false);
+                  }
+                  void navigate({ to: "/usage" });
+                }}
+              >
+                <ChartNoAxesColumnIcon />
+                <span className="truncate">Usage</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
           </SidebarMenu>
         </SidebarGroup>
       </SidebarContent>

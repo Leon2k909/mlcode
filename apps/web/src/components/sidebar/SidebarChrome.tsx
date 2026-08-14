@@ -1,9 +1,4 @@
-import {
-  ArrowLeftIcon,
-  ChartNoAxesColumnIcon,
-  GitPullRequestIcon,
-  SettingsIcon,
-} from "lucide-react";
+import { ArrowLeftIcon, GitPullRequestIcon, SettingsIcon } from "lucide-react";
 import { memo, useCallback } from "react";
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 
@@ -160,13 +155,6 @@ export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
     void navigate({ to: "/settings" });
   }, [closeMobileSidebar, navigate]);
 
-  const handleUsageClick = useCallback(() => {
-    if (isMobile) {
-      setOpenMobile(false);
-    }
-    void navigate({ to: "/usage" });
-  }, [isMobile, navigate, setOpenMobile]);
-
   return (
     <SidebarFooter className="p-[var(--sidebar-content-inset)]">
       <SidebarProviderUpdatePill />
@@ -207,18 +195,6 @@ export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
               </Tooltip>
             </SidebarMenuItem>
           ) : null}
-          <SidebarMenuItem className="shrink-0">
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <SidebarMenuButton aria-label="Usage" onClick={handleUsageClick} size="icon">
-                    <ChartNoAxesColumnIcon />
-                  </SidebarMenuButton>
-                }
-              />
-              <TooltipPopup side="top">Usage</TooltipPopup>
-            </Tooltip>
-          </SidebarMenuItem>
         </>
         <SidebarUpdatePill />
       </SidebarMenu>
