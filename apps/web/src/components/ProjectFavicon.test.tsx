@@ -143,4 +143,15 @@ describe("ProjectFavicon", () => {
       path: "brand/icon.svg",
     });
   });
+
+  it("uses the ML Code logo for the ML Code workspace", () => {
+    const element = ProjectFavicon({
+      environmentId: "environment-test" as EnvironmentId,
+      cwd: "C:\\Users\\leon2\\Desktop\\mlcode",
+      faviconPath: "legacy/t3-logo.svg",
+    }) as ReactElement<{ src: string }>;
+
+    expect(element.type).toBe("img");
+    expect(element.props.src).toBe("/ml-code-logo.png");
+  });
 });

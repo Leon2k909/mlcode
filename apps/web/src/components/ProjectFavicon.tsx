@@ -19,6 +19,18 @@ export function ProjectFavicon(input: {
   fallbackIcon?: ComponentType<{ className?: string }>;
 }) {
   const state = useProjectFaviconAsset(input);
+  const isMlCodeWorkspace = /(?:^|[\\/])mlcode[\\/]?$/i.test(input.cwd.trim());
+
+  if (isMlCodeWorkspace) {
+    return (
+      <img
+        src="/ml-code-logo.png"
+        alt=""
+        className={cn("size-3.5 shrink-0 rounded-sm object-contain", input.className)}
+      />
+    );
+  }
+
   const src = state._tag === "Success" ? state.url : null;
   const FallbackIcon = input.fallbackIcon ?? FolderIcon;
 

@@ -3,7 +3,7 @@ import { buildProjectGroups, type ProjectGroupingSettings } from "./logicalProje
 import type { Project } from "./types";
 import { APP_BASE_NAME } from "./branding";
 
-function displayProjectName(label: string): string {
+export function displayProjectName(label: string): string {
   return /^(?:t3\s*code|t3code)$/i.test(label.trim()) ? APP_BASE_NAME : label;
 }
 
