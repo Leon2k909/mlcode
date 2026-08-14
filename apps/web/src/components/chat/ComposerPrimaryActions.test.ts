@@ -44,7 +44,7 @@ function renderPendingActions(isRunning: boolean) {
   );
 }
 
-function renderStandaloneStop() {
+function renderRunningActions(hasSendableContent = false) {
   return renderToStaticMarkup(
     createElement(ComposerPrimaryActions, {
       compact: true,
@@ -57,7 +57,7 @@ function renderStandaloneStop() {
       isConnecting: false,
       isEnvironmentUnavailable: false,
       isPreparingWorktree: false,
-      hasSendableContent: false,
+      hasSendableContent,
       onPreviousPendingQuestion: () => {},
       onInterrupt: () => {},
       onImplementPlanInNewThread: () => {},
@@ -192,8 +192,16 @@ describe("ComposerPrimaryActions", () => {
 
   it("matches the small pending action size without changing the standalone size", () => {
     expect(renderPendingActions(true)).toContain("size-8 sm:size-7");
-    expect(renderStandaloneStop()).toContain("size-8 sm:h-8 sm:w-8");
-    expect(renderStandaloneStop()).not.toContain("sm:size-7");
+    expect(renderRunningActions()).toContain("size-8 sm:h-8 sm:w-8");
+    expect(renderRunningActions()).not.toContain("sm:size-7");
+  });
+
+  it("offers steering alongside Stop when a running turn has a follow-up message", () => {
+    const markup = renderRunningActions(true);
+
+    expect(markup).toContain('aria-label="Stop generation"');
+    expect(markup).toContain('aria-label="Steer running turn"');
+    expect(markup).toContain("Send now to steer the running turn");
   });
 
   it("renders stage artwork inside the send button when artwork identification is active", () => {

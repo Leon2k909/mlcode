@@ -322,6 +322,11 @@ export const TraitsMenuContent = memo(function TraitsMenuContentImpl({
                   <MenuRadioItem
                     key={option.id}
                     value={option.id}
+                    title={
+                      descriptor.id === "serviceTier" && option.label === "Fast"
+                        ? "Fast uses 1.5× cost and usage."
+                        : undefined
+                    }
                     hideIndicator
                     // Base UI keeps radio menus open by default. Close on pick so
                     // the traits menu behaves like the model picker.

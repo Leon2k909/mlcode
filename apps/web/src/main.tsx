@@ -23,6 +23,10 @@ const history = isElectron ? createHashHistory() : createBrowserHistory();
 
 const router = getRouter(history);
 
+if (isElectron && new URLSearchParams(window.location.search).get("pet-overlay") === "1") {
+  document.documentElement.classList.add("desktop-pet-overlay");
+}
+
 if (isElectron) {
   syncDocumentElectronPlatformClasses(navigator.platform);
   syncDocumentWindowControlsOverlayClass();

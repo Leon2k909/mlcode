@@ -2316,3 +2316,13 @@ label:has(> select#reasoning-effort) select {
   opacity: 0.3;
   pointer-events: none;
 }
+html.desktop-pet-overlay,
+html.desktop-pet-overlay body,
+html.desktop-pet-overlay #root {
+  background: transparent !important;
+}
+
+html.desktop-pet-overlay [data-app-sidebar],
+html.desktop-pet-overlay [data-slot="sidebar-inset"] {
+  display: none !important;
+}

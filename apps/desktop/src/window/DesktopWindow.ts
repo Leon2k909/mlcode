@@ -32,6 +32,8 @@ const DEVELOPMENT_LOAD_RETRY_DELAYS_MS = [100, 250, 500, 1_000, 2_000] as const;
 const RENDERER_RECOVERY_RELOAD_DELAY_MS = 500;
 const RENDERER_RECOVERY_MAX_ATTEMPTS = 3;
 const RENDERER_RECOVERY_WINDOW_MS = 60_000;
+const PET_OVERLAY_SIZE = 128;
+const PET_OVERLAY_EDGE_GAP = 20;
 const DEVELOPMENT_RETRYABLE_LOAD_ERROR_CODES = new Set([
   -2, // ERR_FAILED
   -7, // ERR_TIMED_OUT
@@ -270,6 +272,7 @@ export const make = Effect.gen(function* () {
   // The transient "Connecting to WSL" splash window, tracked separately so it
   // is never mistaken for the real main window.
   const splashWindowRef = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
+  const petOverlayWindowRef = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
   const context = yield* Effect.context<DesktopWindowRuntimeServices>();
   const runFork = Effect.runForkWith(context);
   const runPromise = Effect.runPromiseWith(context);
@@ -289,17 +292,77 @@ export const make = Effect.gen(function* () {
   // open (or retry) the real main. That is the failure the pool's swallowed
   // post-readiness window-open error would otherwise strand the user in:
   // splash up, backend ready, no main, and activation only re-reveals splash.
-  const withoutSplash = (window: Option.Option<Electron.BrowserWindow>) =>
-    Ref.get(splashWindowRef).pipe(
-      Effect.map((splash) =>
-        Option.isSome(splash) && Option.isSome(window) && window.value === splash.value
-          ? Option.none<Electron.BrowserWindow>()
-          : window,
-      ),
+  const withoutAuxiliaryWindows = (window: Option.Option<Electron.BrowserWindow>) =>
+    Effect.all([Ref.get(splashWindowRef), Ref.get(petOverlayWindowRef)]).pipe(
+      Effect.map(([splash, petOverlay]) => {
+        if (Option.isNone(window)) return window;
+        if (Option.isSome(splash) && window.value === splash.value) return Option.none();
+        if (Option.isSome(petOverlay) && window.value === petOverlay.value) return Option.none();
+        return window;
+      }),
     );
 
-  const currentMainWindow = electronWindow.currentMainOrFirst.pipe(Effect.flatMap(withoutSplash));
-  const focusedMainWindow = electronWindow.focusedMainOrFirst.pipe(Effect.flatMap(withoutSplash));
+  const currentMainWindow = electronWindow.currentMainOrFirst.pipe(
+    Effect.flatMap(withoutAuxiliaryWindows),
+  );
+  const focusedMainWindow = electronWindow.focusedMainOrFirst.pipe(
+    Effect.flatMap(withoutAuxiliaryWindows),
+  );
+
+  const createPetOverlay = Effect.fn("desktop.window.createPetOverlay")(function* () {
+    const existing = yield* Ref.get(petOverlayWindowRef);
+    if (Option.isSome(existing) && !existing.value.isDestroyed()) return existing.value;
+
+    const primaryDisplay = Electron.screen.getAllDisplays()[0];
+    const workArea = primaryDisplay?.workArea ??
+      primaryDisplay?.bounds ?? {
+        x: 0,
+        y: 0,
+        width: 1280,
+        height: 720,
+      };
+    const overlay = yield* electronWindow.create({
+      x: workArea.x + workArea.width - PET_OVERLAY_SIZE - PET_OVERLAY_EDGE_GAP,
+      y: workArea.y + workArea.height - PET_OVERLAY_SIZE - PET_OVERLAY_EDGE_GAP,
+      width: PET_OVERLAY_SIZE,
+      height: PET_OVERLAY_SIZE,
+      show: false,
+      frame: false,
+      transparent: true,
+      backgroundColor: "#00000000",
+      alwaysOnTop: true,
+      focusable: false,
+      skipTaskbar: true,
+      hasShadow: false,
+      resizable: false,
+      maximizable: false,
+      fullscreenable: false,
+      title: "ML Code pet",
+      webPreferences: {
+        preload: environment.preloadPath,
+        backgroundThrottling: true,
+        sandbox: false,
+        contextIsolation: true,
+        nodeIntegration: false,
+      },
+    });
+    // Lightweight ElectronWindow test doubles may return the registered main
+    // window for every create call. Never navigate that window as an overlay.
+    const mainWindow = yield* electronWindow.main;
+    if (Option.isSome(mainWindow) && mainWindow.value === overlay) return overlay;
+    yield* Ref.set(petOverlayWindowRef, Option.some(overlay));
+    overlay.setAlwaysOnTop?.(true, "floating");
+    overlay.once("ready-to-show", () => {
+      if (!overlay.isDestroyed()) overlay.showInactive?.();
+    });
+    overlay.once("closed", () => {
+      void runPromise(Ref.set(petOverlayWindowRef, Option.none()));
+    });
+    const overlayUrl = new URL(getDesktopUrl(environment.isDevelopment));
+    overlayUrl.searchParams.set("pet-overlay", "1");
+    void overlay.loadURL(overlayUrl.href).catch(() => undefined);
+    return overlay;
+  });
 
   const createWindow = Effect.fn("desktop.window.createWindow")(function* (): Effect.fn.Return<
     Electron.BrowserWindow,
@@ -618,6 +681,13 @@ export const make = Effect.gen(function* () {
       clearDevelopmentLoadRetry();
       developmentLoadRetryIndex = 0;
       window.setTitle(environment.displayName);
+      void runPromise(
+        createPetOverlay().pipe(
+          Effect.catch((error) =>
+            logWindowWarning("failed to create pet overlay", { message: error.message }),
+          ),
+        ),
+      );
     });
     window.webContents.on(
       "did-fail-load",
@@ -704,6 +774,15 @@ export const make = Effect.gen(function* () {
     window.on("closed", () => {
       clearDevelopmentLoadRetry();
       clearBoundsPersist();
+      void runPromise(
+        Ref.getAndSet(petOverlayWindowRef, Option.none()).pipe(
+          Effect.tap((overlay) =>
+            Effect.sync(() => {
+              if (Option.isSome(overlay) && !overlay.value.isDestroyed()) overlay.value.destroy();
+            }),
+          ),
+        ),
+      );
       void runPromise(electronWindow.clearMain(Option.some(window)));
     });
 
@@ -858,9 +937,11 @@ export const make = Effect.gen(function* () {
     }),
     syncAppearance: Effect.gen(function* () {
       const shouldUseDarkColors = yield* electronTheme.shouldUseDarkColors;
-      yield* electronWindow.syncAllAppearance((window) =>
-        syncWindowAppearance(window, shouldUseDarkColors, environment.platform),
-      );
+      const petOverlay = yield* Ref.get(petOverlayWindowRef);
+      yield* electronWindow.syncAllAppearance((window) => {
+        if (Option.isSome(petOverlay) && window === petOverlay.value) return Effect.void;
+        return syncWindowAppearance(window, shouldUseDarkColors, environment.platform);
+      });
     }).pipe(Effect.withSpan("desktop.window.syncAppearance")),
   });
 });

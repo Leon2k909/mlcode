@@ -1,10 +1,13 @@
 import { usePetSelection, usePrimaryPetCatalog } from "../../pets";
+import { isElectron } from "../../env";
 import { PetSprite } from "./PetSprite";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 
 const PET_POSITION_KEY = "t3code:pet-position:v1";
 const PET_SIZE = 104;
 const EDGE_GAP = 12;
+const isDesktopOverlay =
+  isElectron && new URLSearchParams(window.location.search).get("pet-overlay") === "1";
 
 type Position = { x: number; y: number };
 
@@ -56,6 +59,7 @@ export function PetMascot() {
   }, []);
 
   if (environmentId === null || selectedPet === null) return null;
+  if (isElectron && !isDesktopOverlay) return null;
 
   const updatePosition = (next: Position) => {
     const clamped = clampPosition(next);
@@ -69,10 +73,15 @@ export function PetMascot() {
 
   return (
     <div
-      className="fixed z-30 hidden cursor-grab touch-none select-none drop-shadow-[0_8px_10px_rgba(0,0,0,0.22)] active:cursor-grabbing lg:block"
+      className={`fixed z-30 cursor-grab touch-none select-none drop-shadow-[0_8px_10px_rgba(0,0,0,0.22)] active:cursor-grabbing ${isDesktopOverlay ? "block" : "hidden lg:block"}`}
       data-pet-mascot={selectedPet.key}
-      style={{ left: position.x, top: position.y }}
+      style={
+        isDesktopOverlay
+          ? ({ left: EDGE_GAP, top: EDGE_GAP, WebkitAppRegion: "drag" } as CSSProperties)
+          : { left: position.x, top: position.y }
+      }
       onPointerDown={(event) => {
+        if (isDesktopOverlay) return;
         event.currentTarget.setPointerCapture(event.pointerId);
         drag.current = {
           pointerId: event.pointerId,
@@ -81,6 +90,7 @@ export function PetMascot() {
         };
       }}
       onPointerMove={(event) => {
+        if (isDesktopOverlay) return;
         if (drag.current?.pointerId !== event.pointerId) return;
         updatePosition({
           x: event.clientX - drag.current.offsetX,
@@ -88,10 +98,12 @@ export function PetMascot() {
         });
       }}
       onPointerUp={(event) => {
+        if (isDesktopOverlay) return;
         if (drag.current?.pointerId === event.pointerId) drag.current = null;
         event.currentTarget.releasePointerCapture(event.pointerId);
       }}
       onPointerCancel={() => {
+        if (isDesktopOverlay) return;
         drag.current = null;
       }}
     >

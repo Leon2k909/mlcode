@@ -29,6 +29,10 @@ interface DraftHeroHeadlineProps {
   readonly activeProjectTitle: string | null;
 }
 
+function mlCodeProjectDisplayName(name: string | null): string | null {
+  return name !== null && /^(?:t3\s*code|ml\s*code)$/i.test(name.trim()) ? "ML Code" : name;
+}
+
 export function DraftHeroHeadline({
   activeProjectRef,
   activeProjectTitle,
@@ -92,7 +96,9 @@ export function DraftHeroHeadline({
           ),
         ) ?? null);
   const activeProjectKey = activeProjectGroup?.projectKey ?? "";
-  const activeProjectDisplayName = activeProjectGroup?.displayName ?? activeProjectTitle;
+  const activeProjectDisplayName = mlCodeProjectDisplayName(
+    activeProjectGroup?.displayName ?? activeProjectTitle,
+  );
   const hasResolvedProject = activeProjectTitle !== null;
   const canChooseProject = projectPickerEntries.length > 0;
   const shouldShowProjectMenu = canChooseProject;
@@ -146,7 +152,7 @@ export function DraftHeroHeadline({
       onClick={openAddProject}
       className="pointer-events-auto inline cursor-pointer border-muted-foreground/35 border-b border-dotted text-muted-foreground/60 transition-colors hover:border-muted-foreground/60 hover:text-muted-foreground/80 focus-visible:rounded-sm focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
     >
-      {activeProjectTitle ?? "Add a project"}
+      {mlCodeProjectDisplayName(activeProjectTitle) ?? "Add a project"}
     </button>
   );
 
