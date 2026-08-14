@@ -5,19 +5,16 @@ import {
   useColorScheme,
   View,
   type ColorValue,
-  type StyleProp,
   type ViewProps,
   type ViewStyle,
 } from "react-native";
 import { useThemeColor } from "../lib/useThemeColor";
 
-interface GlassSurfaceProps extends Omit<ViewProps, "className"> {
+export interface GlassSurfaceProps extends Omit<ViewProps, "className"> {
   readonly children: ReactNode;
   readonly glassEffectStyle?: "clear" | "regular" | "none";
   readonly tintColor?: ColorValue;
   readonly chrome?: "default" | "none";
-  /** Styling used only when native Liquid Glass is unavailable. */
-  readonly fallbackStyle?: StyleProp<ViewStyle>;
 }
 
 export function GlassSurface({
@@ -25,7 +22,6 @@ export function GlassSurface({
   glassEffectStyle = "regular",
   chrome = "default",
   tintColor,
-  fallbackStyle,
   style,
   ...props
 }: GlassSurfaceProps) {
@@ -71,7 +67,7 @@ export function GlassSurface({
   }
 
   return (
-    <View {...props} style={[surfaceStyle, fallbackStyle, style]}>
+    <View {...props} style={[surfaceStyle, style]}>
       {children}
     </View>
   );
