@@ -43,6 +43,8 @@ import {
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 
 const MACOS_TRAFFIC_LIGHTS_LEFT_INSET = "90px";
+const isDesktopPetOverlay =
+  isElectron && new URLSearchParams(window.location.search).get("pet-overlay") === "1";
 
 function subscribeToViewportWidth(onChange: () => void): () => void {
   window.addEventListener("resize", onChange);
@@ -238,7 +240,7 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
       </Sidebar>
       {children}
       <PetMascot />
-      <SidebarControl />
+      {!isDesktopPetOverlay ? <SidebarControl /> : null}
     </SidebarProvider>
   );
 }
