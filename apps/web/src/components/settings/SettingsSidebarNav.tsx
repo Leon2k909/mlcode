@@ -305,12 +305,12 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                 })}
             <SidebarMenuItem>
               <SidebarMenuButton
-                isActive={pathname === "/usage"}
+                isActive={pathname === "/settings/usage"}
                 onClick={() => {
                   if (isMobile) {
                     setOpenMobile(false);
                   }
-                  void navigate({ to: "/usage" });
+                  void navigate({ to: "/settings/usage" });
                 }}
               >
                 <ChartNoAxesColumnIcon />

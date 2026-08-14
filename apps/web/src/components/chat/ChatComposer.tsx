@@ -507,14 +507,18 @@ export interface QueuedComposerMessage {
 
 function QueuedMessagesPanel({
   messages,
+  canSteer,
   onCancel,
   onMove,
   onRetry,
+  onSteer,
 }: {
   messages: ReadonlyArray<QueuedComposerMessage>;
+  canSteer: boolean;
   onCancel: (messageId: MessageId) => void;
   onMove: (messageId: MessageId, direction: "up" | "down") => void;
   onRetry: (messageId: MessageId) => void;
+  onSteer: (messageId: MessageId) => void;
 }) {
   if (messages.length === 0) return null;
 
@@ -557,6 +561,19 @@ function QueuedMessagesPanel({
                   Retry
                 </Button>
               ) : null}
+              <Button
+                type="button"
+                variant="ghost"
+                size="xs"
+                className="gap-1 px-1.5 text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-35"
+                onClick={() => onSteer(message.id)}
+                disabled={message.status === "sending" || !canSteer}
+                aria-label="Steer queued message"
+                title={canSteer ? "Steer this message now" : "Steer while a turn is running"}
+              >
+                <ArrowUpIcon className="size-3" />
+                <span>Steer</span>
+              </Button>
               <Button
                 type="button"
                 variant="ghost"
@@ -684,9 +701,11 @@ export interface ChatComposerProps {
 
   // Callbacks
   queuedMessages: ReadonlyArray<QueuedComposerMessage>;
+  canSteerQueuedMessages: boolean;
   onCancelQueuedMessage: (messageId: MessageId) => void;
   onMoveQueuedMessage: (messageId: MessageId, direction: "up" | "down") => void;
   onRetryQueuedMessage: (messageId: MessageId) => void;
+  onSteerQueuedMessage: (messageId: MessageId) => void;
   onSend: (
     e?: { preventDefault: () => void },
     directAnnotation?: {
@@ -794,9 +813,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     composerTerminalContextsRef,
     composerElementContextsRef,
     queuedMessages,
+    canSteerQueuedMessages,
     onCancelQueuedMessage,
     onMoveQueuedMessage,
     onRetryQueuedMessage,
+    onSteerQueuedMessage,
     onSend,
     onInterrupt,
     onImplementPlanInNewThread,
@@ -3222,9 +3243,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             queuedMessages.length > 0 ? (
               <QueuedMessagesPanel
                 messages={queuedMessages}
+                canSteer={canSteerQueuedMessages}
                 onCancel={onCancelQueuedMessage}
                 onMove={onMoveQueuedMessage}
                 onRetry={onRetryQueuedMessage}
+                onSteer={onSteerQueuedMessage}
               />
             ) : null}
 

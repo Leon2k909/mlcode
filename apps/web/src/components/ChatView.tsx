@@ -5441,7 +5441,7 @@ function ChatViewContent(props: ChatViewProps) {
   };
 
   const dispatchQueuedMessage = useCallback(
-    async (queued: QueuedChatMessage): Promise<boolean> => {
+    async (queued: QueuedChatMessage, mode?: ThreadTurnDispatchMode): Promise<boolean> => {
       const thread = activeThread;
       if (!thread || thread.id !== queued.threadId) return false;
 
@@ -5464,8 +5464,7 @@ function ChatViewContent(props: ChatViewProps) {
         return false;
       }
 
-      // A queued message becomes a normal turn only when the current turn has
-      // settled. Anchor it like any other newly dispatched message.
+      // Anchor the queued message like any other newly dispatched message.
       isAtEndRef.current = true;
       timelineScrollModeRef.current = "anchoring-new-turn";
       liveFollowUserScrollGenerationRef.current = anchorUserScrollGenerationRef.current;
@@ -5526,6 +5525,7 @@ function ChatViewContent(props: ChatViewProps) {
             titleSeed: payload.titleSeed,
             runtimeMode: payload.runtimeMode,
             interactionMode: payload.interactionMode,
+            ...(mode !== undefined ? { mode } : {}),
             createdAt: payload.createdAt,
           },
         });
@@ -5569,6 +5569,44 @@ function ChatViewContent(props: ChatViewProps) {
   );
 
   const queuedDispatchInFlightRef = useRef(false);
+  const runQueuedDispatch = useCallback(
+    (queued: QueuedChatMessage, mode?: ThreadTurnDispatchMode) => {
+      if (queuedDispatchInFlightRef.current || sendInFlightRef.current) return;
+
+      queuedDispatchInFlightRef.current = true;
+      setQueuedMessages((existing) =>
+        existing.map((message) =>
+          message.id === queued.id ? { ...message, status: "sending" as const } : message,
+        ),
+      );
+      void dispatchQueuedMessage(queued, mode)
+        .then((succeeded) => {
+          setQueuedMessages((existing) =>
+            succeeded
+              ? existing.filter((message) => message.id !== queued.id)
+              : existing.map((message) =>
+                  message.id === queued.id ? { ...message, status: "failed" as const } : message,
+                ),
+          );
+        })
+        .catch((error: unknown) => {
+          setQueuedMessages((existing) =>
+            existing.map((message) =>
+              message.id === queued.id ? { ...message, status: "failed" as const } : message,
+            ),
+          );
+          setThreadError(
+            queued.threadId,
+            error instanceof Error ? error.message : "Failed to send queued message.",
+          );
+        })
+        .finally(() => {
+          queuedDispatchInFlightRef.current = false;
+        });
+    },
+    [dispatchQueuedMessage, setThreadError],
+  );
+
   useEffect(() => {
     if (phase !== "ready" || activeThread === undefined || queuedDispatchInFlightRef.current) {
       return;
@@ -5578,37 +5616,20 @@ function ChatViewContent(props: ChatViewProps) {
     );
     if (!next) return;
 
-    queuedDispatchInFlightRef.current = true;
-    setQueuedMessages((existing) =>
-      existing.map((message) =>
-        message.id === next.id ? { ...message, status: "sending" as const } : message,
-      ),
-    );
-    void dispatchQueuedMessage(next)
-      .then((succeeded) => {
-        setQueuedMessages((existing) =>
-          succeeded
-            ? existing.filter((message) => message.id !== next.id)
-            : existing.map((message) =>
-                message.id === next.id ? { ...message, status: "failed" as const } : message,
-              ),
-        );
-      })
-      .catch((error: unknown) => {
-        setQueuedMessages((existing) =>
-          existing.map((message) =>
-            message.id === next.id ? { ...message, status: "failed" as const } : message,
-          ),
-        );
-        setThreadError(
-          next.threadId,
-          error instanceof Error ? error.message : "Failed to send queued message.",
-        );
-      })
-      .finally(() => {
-        queuedDispatchInFlightRef.current = false;
-      });
-  }, [activeThread, dispatchQueuedMessage, phase, queuedMessages, setThreadError]);
+    runQueuedDispatch(next);
+  }, [activeThread, phase, queuedMessages, runQueuedDispatch]);
+
+  const onSteerQueuedMessage = useCallback(
+    (messageId: MessageId) => {
+      if (phase !== "running" || !activeThread) return;
+      const queued = queuedMessages.find(
+        (message) => message.id === messageId && message.threadId === activeThread.id,
+      );
+      if (!queued || queued.status === "sending") return;
+      runQueuedDispatch(queued, "steer");
+    },
+    [activeThread, phase, queuedMessages, runQueuedDispatch],
+  );
 
   const onCancelQueuedMessage = useCallback((messageId: MessageId) => {
     setQueuedMessages((existing) => {
@@ -6824,9 +6845,13 @@ function ChatViewContent(props: ChatViewProps) {
                             queuedMessages={queuedMessages.filter(
                               (message) => message.threadId === activeThread?.id,
                             )}
+                            canSteerQueuedMessages={
+                              phase === "running" && activeThread !== undefined
+                            }
                             onCancelQueuedMessage={onCancelQueuedMessage}
                             onMoveQueuedMessage={onMoveQueuedMessage}
                             onRetryQueuedMessage={onRetryQueuedMessage}
+                            onSteerQueuedMessage={onSteerQueuedMessage}
                             onSend={onSend}
                             onInterrupt={onInterrupt}
                             onImplementPlanInNewThread={onImplementPlanInNewThread}
