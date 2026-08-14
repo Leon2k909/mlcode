@@ -86,10 +86,10 @@ export const ComposerEmployeePicker = memo(function ComposerEmployeePicker(props
           ? `Employees: ${selectionLabel}`
           : `Employee: ${selectionLabel}`;
   const selectionDescription = isGroup
-    ? `T3 employees in this chat: ${groupNames.join(", ")}`
+    ? `Employees in this chat: ${groupNames.join(", ")}`
     : active
-      ? `T3 employee in this chat: ${active.employee.displayName}`
-      : "No T3 employee selected";
+      ? `Employee in this chat: ${active.employee.displayName}`
+      : "No employee selected";
 
   const toggleGroupMember = (employeeId: EmployeeId, checked: boolean) => {
     const next = checked

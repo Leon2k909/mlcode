@@ -10,6 +10,33 @@ function finite(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
+function nonEmptyString(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function displayPlan(value: unknown): string | undefined {
+  const plan = nonEmptyString(value);
+  if (!plan || plan === "unknown") return undefined;
+  const labels: Record<string, string> = {
+    free: "Free",
+    go: "Go",
+    plus: "Plus",
+    pro: "Pro",
+    prolite: "Pro Lite",
+    team: "Team",
+    business: "Business",
+    enterprise: "Enterprise",
+    edu: "Education",
+    self_serve_business_usage_based: "Business",
+    enterprise_cbp_usage_based: "Enterprise",
+  };
+  return (
+    labels[plan] ?? plan.replace(/[_-]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase())
+  );
+}
+
 function codexWindow(label: string, value: unknown) {
   const window = record(value);
   const usedPercent = finite(window?.usedPercent);
@@ -21,16 +48,38 @@ function codexWindow(label: string, value: unknown) {
   };
 }
 
+function codexSpendWindow(value: unknown) {
+  const limit = record(value);
+  const remainingPercent = finite(limit?.remainingPercent);
+  if (remainingPercent === null) return null;
+  return {
+    label: "Spend limit",
+    usedPercent: Math.max(0, Math.min(100, 100 - remainingPercent)),
+    resetsAt: finite(limit?.resetsAt),
+  };
+}
+
 function normalizeCodex(value: unknown, readAt: string): UsageLimitSnapshot | null {
   const event = record(value);
-  const limits = record(event?.rateLimits) ?? event;
-  if (!limits) return null;
+  if (!event) return null;
+  const rootLimits = record(event.rateLimits) ?? event;
+  const limitsById = record(event.rateLimitsByLimitId);
+  const codexLimitOverrides = record(limitsById?.codex);
+  const codexLimits = codexLimitOverrides ? { ...rootLimits, ...codexLimitOverrides } : rootLimits;
+  const plan = displayPlan(codexLimits?.planType ?? rootLimits?.planType ?? event.planType);
   const windows = [
-    codexWindow("Session", limits.primary),
-    codexWindow("Weekly", limits.secondary),
+    codexWindow("Session", codexLimits.primary),
+    codexWindow("Weekly", codexLimits.secondary),
+    codexSpendWindow(codexLimits.individualLimit),
   ].filter((window): window is NonNullable<typeof window> => window !== null);
-  if (windows.length === 0) return null;
-  return { provider: "codex", readAt, status: null, windows };
+  if (windows.length === 0 && plan === undefined) return null;
+  return {
+    provider: "codex",
+    readAt,
+    status: codexLimits.spendControlReached === true ? "Spend limit reached" : null,
+    ...(plan === undefined ? {} : { plan }),
+    windows,
+  };
 }
 
 function normalizeClaude(value: unknown, readAt: string): UsageLimitSnapshot | null {
@@ -60,6 +109,21 @@ function normalizeClaude(value: unknown, readAt: string): UsageLimitSnapshot | n
   };
 }
 
+function mergeSnapshots(
+  previous: UsageLimitSnapshot,
+  next: UsageLimitSnapshot,
+): UsageLimitSnapshot {
+  const windows = new Map(previous.windows.map((window) => [window.label, window]));
+  for (const window of next.windows) windows.set(window.label, window);
+  return {
+    ...previous,
+    ...next,
+    ...(next.plan === undefined && previous.plan !== undefined ? { plan: previous.plan } : {}),
+    ...(next.status === null && previous.status !== null ? { status: previous.status } : {}),
+    windows: [...windows.values()],
+  };
+}
+
 export function normalizeUsageLimits(
   provider: ProviderDriverKind,
   value: unknown,
@@ -78,7 +142,10 @@ export function recordUsageLimits(
   readAt: string,
 ): void {
   const snapshot = normalizeUsageLimits(provider, value, readAt);
-  if (snapshot) snapshots.set(snapshot.provider, snapshot);
+  if (!snapshot) return;
+  const previous = snapshots.get(snapshot.provider);
+  if (previous && snapshot.readAt < previous.readAt) return;
+  snapshots.set(snapshot.provider, previous ? mergeSnapshots(previous, snapshot) : snapshot);
 }
 
 export function readUsageLimits(): UsageLimitSnapshot[] {

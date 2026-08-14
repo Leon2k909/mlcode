@@ -56,13 +56,13 @@ the feature.
 
 ## Employees and provider subagents
 
-T3 employees are durable named teammates that stay in the main chat. Their replies are labeled
-**T3 employee**, and a real transfer is labeled **T3 employee handoff**.
+Employees are durable named teammates that stay in the main chat. Their replies are labeled
+**Employee**, and a real transfer is labeled **Employee handoff**.
 
-Codex and Claude can also create temporary subagents while completing one employee's turn. T3
+Codex and Claude can also create temporary subagents while completing one employee's turn. The app
 labels those workers **provider subagents** and shows them in the Provider subagents panel. A plan
 step that mentions an employee is marked **planned**; the employee has not started until an actual
-T3 employee handoff appears.
+employee handoff appears.
 
 ## How instructions are delivered
 

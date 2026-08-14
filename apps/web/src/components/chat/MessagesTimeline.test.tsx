@@ -733,10 +733,11 @@ describe("MessagesTimeline", () => {
     );
 
     expect(markup).toContain('data-t3-worker-kind="employee"');
-    expect(markup).toContain("T3 employee");
+    expect(markup).toContain("Employee");
+    expect(markup).toContain('aria-label="Mark response as not helpful"');
     expect(markup).toContain("via Codex");
     expect(markup).toContain('data-t3-worker-kind="employee-handoff"');
-    expect(markup).toContain("T3 employee handoff");
+    expect(markup).toContain("Employee handoff");
     expect(markup).toContain("Alex to");
     expect(markup).toContain("Riley");
     expect(markup).toContain("via Claude");
@@ -808,7 +809,7 @@ describe("MessagesTimeline", () => {
     );
 
     expect(markup).toContain('data-plan-t3-employees="reviewer"');
-    expect(markup).toContain("T3 employee: Riley (planned)");
+    expect(markup).toContain("Employee: Riley (planned)");
     expect(markup).toContain("has not started from this plan item");
   });
 
@@ -838,6 +839,6 @@ describe("MessagesTimeline", () => {
 
     expect(markup).toContain('data-t3-worker-kind="provider-subagent"');
     expect(markup).toContain("Ran 1 provider subagent");
-    expect(markup).toContain("not T3 employees");
+    expect(markup).toContain("not workspace employees");
   });
 });

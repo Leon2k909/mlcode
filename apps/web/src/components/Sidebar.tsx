@@ -341,7 +341,7 @@ function SidebarThreadTooltip({
               <UsersRoundIcon className="mt-0.5 size-3 shrink-0 stroke-muted-foreground" />
               <div className="min-w-0 wrap-break-word text-foreground/75">
                 <span className="font-medium">
-                  {employeeRosterAppliesNextTurn ? "Next turn:" : "T3 employees:"}
+                  {employeeRosterAppliesNextTurn ? "Next turn:" : "Employees:"}
                 </span>{" "}
                 {employeeParticipants
                   .map((participant) => {
@@ -1501,7 +1501,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                   className="size-3.5 shrink-0 text-sky-600 dark:text-sky-400"
                 />
                 <span className="shrink-0 font-medium text-foreground/75">
-                  {employeeRosterAppliesNextTurn ? "Next turn:" : "T3 employees:"}
+                  {employeeRosterAppliesNextTurn ? "Next turn:" : "Employees:"}
                 </span>
                 <span className="min-w-0 truncate text-secondary-label">{employeeRosterLabel}</span>
               </div>

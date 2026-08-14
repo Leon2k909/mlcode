@@ -495,6 +495,7 @@ function UsageLimits({ limits }: { readonly limits: readonly UsageLimitSnapshot[
                     <span className="flex items-center gap-2 text-sm text-foreground">
                       <ProviderMark provider={snapshot.provider} className="size-4" />
                       {PROVIDER_LABEL[snapshot.provider]} {window.label}
+                      {snapshot.plan ? ` · ${snapshot.plan}` : ""}
                     </span>
                     <span className="text-sm font-medium text-foreground tabular-nums">
                       {remaining.toFixed(0)}% left

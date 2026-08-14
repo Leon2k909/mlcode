@@ -16,6 +16,19 @@ function formatPercentage(value: number | null): string | null {
   return `${Math.round(value)}%`;
 }
 
+function formatUsageReset(value: number | null): string | null {
+  if (value === null || !Number.isFinite(value)) return null;
+  const milliseconds = value < 10_000_000_000 ? value * 1000 : value;
+  const date = new Date(milliseconds);
+  if (Number.isNaN(date.getTime())) return null;
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(date);
+}
+
 export function ContextWindowMeter(props: {
   usage: ContextWindowSnapshot;
   providerDisplayName?: string | null;
@@ -48,8 +61,8 @@ export function ContextWindowMeter(props: {
 
 function ContextUsageLimits({ provider }: { provider: UsageProviderKind }) {
   const usageWindow = useMemo(() => makeWindow(1), []);
-  const { environments } = useUsage(usageWindow);
-  const limits = useMemo(() => {
+  const { environments, isPending, isPartial } = useUsage(usageWindow);
+  const snapshot = useMemo(() => {
     const newest = new Map<UsageProviderKind, UsageLimitSnapshot>();
     for (const environment of environments) {
       for (const snapshot of environment.summary?.limits ?? []) {
@@ -57,30 +70,51 @@ function ContextUsageLimits({ provider }: { provider: UsageProviderKind }) {
         if (!previous || snapshot.readAt > previous.readAt) newest.set(snapshot.provider, snapshot);
       }
     }
-    return newest.get(provider)?.windows ?? [];
+    return newest.get(provider) ?? null;
   }, [environments, provider]);
-
-  if (limits.length === 0) return null;
 
   return (
     <div className="mt-1 border-t border-border/60 pt-2">
-      <div className="mb-1.5 text-xs font-medium text-muted-foreground">Usage limits</div>
-      <div className="space-y-1.5">
-        {limits.map((limit) => {
-          const remaining = Math.max(0, Math.min(100, 100 - limit.usedPercent));
-          return (
-            <div
-              className="flex items-center justify-between gap-3 text-[11px] leading-4"
-              key={limit.label}
-            >
-              <span className="text-secondary-label">{limit.label}</span>
-              <span className="font-medium tabular-nums text-secondary-label">
-                {remaining.toFixed(0)}% left
-              </span>
-            </div>
-          );
-        })}
+      <div className="mb-1.5 flex items-center justify-between gap-3 text-xs">
+        <span className="font-medium text-muted-foreground">Usage limits</span>
+        {snapshot?.plan ? (
+          <span className="text-secondary-label">Plan: {snapshot.plan}</span>
+        ) : null}
       </div>
+      {snapshot === null ? (
+        <p className="text-secondary-label text-[11px] leading-4">
+          {isPending || isPartial
+            ? "Loading usage limits…"
+            : "Provider account limits are not available yet."}
+        </p>
+      ) : snapshot.windows.length === 0 ? (
+        <p className="text-secondary-label text-[11px] leading-4">
+          The provider reported a plan but no quota windows.
+        </p>
+      ) : (
+        <div className="space-y-1.5">
+          {snapshot.windows.map((limit) => {
+            const used = Math.max(0, Math.min(100, limit.usedPercent));
+            const remaining = 100 - used;
+            const reset = formatUsageReset(limit.resetsAt);
+            return (
+              <div className="flex flex-col gap-0.5 text-[11px] leading-4" key={limit.label}>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-secondary-label">{limit.label}</span>
+                  <span className="font-medium tabular-nums text-secondary-label">
+                    {remaining.toFixed(0)}% remaining
+                  </span>
+                </div>
+                {reset ? (
+                  <span className="text-right text-secondary-label/75 tabular-nums">
+                    resets {reset}
+                  </span>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

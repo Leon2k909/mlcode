@@ -10,6 +10,7 @@ describe("normalizeUsageLimits", () => {
         ProviderDriverKind.make("codex"),
         {
           rateLimits: {
+            planType: "pro",
             primary: { usedPercent: 42, resetsAt: 1_800_000_000 },
             secondary: { usedPercent: 73, resetsAt: 1_800_100_000 },
           },
@@ -20,9 +21,43 @@ describe("normalizeUsageLimits", () => {
       provider: "codex",
       readAt: "2026-08-14T08:00:00.000Z",
       status: null,
+      plan: "Pro",
       windows: [
         { label: "Session", usedPercent: 42, resetsAt: 1_800_000_000 },
         { label: "Weekly", usedPercent: 73, resetsAt: 1_800_100_000 },
+      ],
+    });
+  });
+
+  it("normalizes Codex spend limits from the account snapshot", () => {
+    expect(
+      normalizeUsageLimits(
+        ProviderDriverKind.make("codex"),
+        {
+          rateLimits: { planType: "plus" },
+          rateLimitsByLimitId: {
+            codex: {
+              planType: "plus",
+              primary: { usedPercent: 18, resetsAt: 1_800_000_000 },
+              individualLimit: {
+                limit: "100",
+                remainingPercent: 64,
+                resetsAt: 1_800_200_000,
+                used: "36",
+              },
+            },
+          },
+        },
+        "2026-08-14T08:00:00.000Z",
+      ),
+    ).toEqual({
+      provider: "codex",
+      readAt: "2026-08-14T08:00:00.000Z",
+      status: null,
+      plan: "Plus",
+      windows: [
+        { label: "Session", usedPercent: 18, resetsAt: 1_800_000_000 },
+        { label: "Spend limit", usedPercent: 36, resetsAt: 1_800_200_000 },
       ],
     });
   });

@@ -223,7 +223,8 @@ function RightPanelEmptyState(props: {
     },
     {
       label: "Provider subagents",
-      description: "Follow temporary Codex/Claude subagents and workflows, not T3 employees.",
+      description:
+        "Follow temporary Codex/Claude subagents and workflows, not workspace employees.",
       icon: Bot,
       shortcut: "A",
       available: props.agentsAvailable,

@@ -172,6 +172,8 @@ export const UsageLimitSnapshot = Schema.Struct({
   provider: UsageProviderKind,
   readAt: Schema.String,
   status: Schema.NullOr(TrimmedNonEmptyString),
+  /** Provider-reported subscription tier, when available. */
+  plan: Schema.optional(TrimmedNonEmptyString),
   windows: Schema.Array(UsageLimitWindow),
 });
 export type UsageLimitSnapshot = typeof UsageLimitSnapshot.Type;

@@ -4927,6 +4927,27 @@ function ChatViewContent(props: ChatViewProps) {
     ],
   );
 
+  const onEmployeeFeedback = useCallback(
+    (_messageId: MessageId) => {
+      const inserted = composerRef.current?.insertTextAtEnd(
+        "That response was not helpful. Re-check the request, correct the missing or incorrect parts, and provide a better answer.",
+        { ensureLeadingBoundary: true },
+      );
+      if (inserted) {
+        composerRef.current?.focusAtEnd();
+        return;
+      }
+      toastManager.add(
+        stackedThreadToast({
+          type: "info",
+          title: "Feedback recorded",
+          description: "Finish the current action before sending a correction.",
+        }),
+      );
+    },
+    [composerRef],
+  );
+
   const onSend = async (
     e?: { preventDefault: () => void },
     directAnnotation?: {
@@ -6421,6 +6442,7 @@ function ChatViewContent(props: ChatViewProps) {
               <MessagesTimeline
                 agentPanelModel={agentPanelModel}
                 onOpenAgents={addAgentsSurface}
+                onEmployeeFeedback={onEmployeeFeedback}
                 key={activeThread.id}
                 isWorking={isWorking}
                 workingStepLabel={workingStepLabel}

@@ -1739,6 +1739,30 @@ export const makeCodexSessionRuntime = (
         resumeThreadId: readResumeCursorThreadId(options.resumeCursor),
       });
 
+      // Rate-limit notifications are sparse and may not arrive until the
+      // first turn. Read the authenticated account snapshot once at startup so
+      // the usage panel can show the paid-plan quota immediately. This is
+      // deliberately best effort: older Codex builds and unauthenticated
+      // sessions may not implement or allow the request.
+      yield* client.request("account/rateLimits/read", undefined).pipe(
+        Effect.flatMap((response) =>
+          emitEvent({
+            kind: "notification",
+            threadId: options.threadId,
+            method: "account/rateLimits/updated",
+            payload: {
+              rateLimits: response.rateLimits,
+              ...(response.rateLimitsByLimitId === undefined
+                ? {}
+                : { rateLimitsByLimitId: response.rateLimitsByLimitId }),
+            },
+          }),
+        ),
+        Effect.catch((cause) =>
+          Effect.logWarning("Failed to read Codex account rate limits.", { cause }),
+        ),
+      );
+
       const providerThreadId = opened.thread.id;
       const session = {
         ...(yield* Ref.get(sessionRef)),

@@ -16,6 +16,7 @@ import {
 
 const EMPTY_AGENT_PANEL_MODEL = emptyAgentPanelModel();
 const NOOP_OPEN_AGENTS = () => {};
+const NOOP_EMPLOYEE_FEEDBACK = (_messageId: MessageId) => {};
 import { resolveChatListAnchoredEndSpace } from "@t3tools/shared/chatList";
 import {
   createContext,
@@ -62,6 +63,7 @@ import {
   MinusIcon,
   SquarePenIcon,
   TerminalIcon,
+  ThumbsDownIcon,
   Undo2Icon,
   UsersRoundIcon,
   WrenchIcon,
@@ -126,6 +128,7 @@ import {
 import { deriveEmployeeHandoffDisplay, findMentionedEmployees } from "../../employees";
 import { formatProviderDisplayName } from "../../lib/contextWindow";
 import { EmployeeAvatar } from "../employees/EmployeeAvatar";
+import { useEmployeeFeedbackStore } from "../../employeeFeedbackStore";
 
 // ---------------------------------------------------------------------------
 // Context — shared state consumed by every row component via Context.
@@ -151,6 +154,7 @@ interface TimelineRowSharedState {
   onToggleWorkGroup: (groupId: string, anchorKey: string) => void;
   agentPanelModel: AgentPanelModel;
   onOpenAgents: () => void;
+  onEmployeeFeedback: (messageId: MessageId) => void;
 }
 
 interface TimelineRowActivityState {
@@ -212,6 +216,7 @@ const TIMELINE_MAINTAIN_SCROLL_AT_END = {
 interface MessagesTimelineProps {
   agentPanelModel?: AgentPanelModel;
   onOpenAgents?: () => void;
+  onEmployeeFeedback?: (messageId: MessageId) => void;
   isWorking: boolean;
   workingStepLabel?: string | null;
   activeTurnInProgress: boolean;
@@ -263,6 +268,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   activeTurnStartedAt,
   agentPanelModel = EMPTY_AGENT_PANEL_MODEL,
   onOpenAgents = NOOP_OPEN_AGENTS,
+  onEmployeeFeedback = NOOP_EMPLOYEE_FEEDBACK,
   listRef,
   timelineEntries,
   employees = EMPTY_TIMELINE_EMPLOYEES,
@@ -528,6 +534,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       onToggleWorkGroup,
       agentPanelModel,
       onOpenAgents,
+      onEmployeeFeedback,
     }),
     [
       timestampFormat,
@@ -545,6 +552,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       onToggleWorkGroup,
       agentPanelModel,
       onOpenAgents,
+      onEmployeeFeedback,
     ],
   );
   const activityState = useMemo<TimelineRowActivityState>(
@@ -1045,7 +1053,7 @@ function EmployeeTimelineIdentity({
       />
       <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-sky-500/30 bg-sky-500/10 px-1.5 py-0.5 font-medium text-sky-700 dark:text-sky-300">
         <UsersRoundIcon aria-hidden className="size-3" />
-        T3 employee
+        Employee
       </span>
       <span className="min-w-0 truncate font-medium text-foreground">{displayName}</span>
       {employee?.role ? (
@@ -1316,7 +1324,7 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
             data-t3-worker-kind="employee-handoff"
           >
             <MessageCircleIcon className="size-3 text-sky-700 dark:text-sky-300" />
-            <span className="font-medium text-sky-700 dark:text-sky-300">T3 employee handoff</span>
+            <span className="font-medium text-sky-700 dark:text-sky-300">Employee handoff</span>
             <span className="text-foreground/80">
               {sourceEmployee?.displayName ?? employeeId} to{` `}
               {targetEmployee?.displayName ?? handoff.toEmployeeId}
@@ -1337,6 +1345,13 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
         {row.showAssistantMeta ? (
           <div className="mt-1.5 flex items-center gap-2 text-xs tabular-nums opacity-0 transition-opacity duration-200 focus-within:opacity-100 group-hover/assistant:opacity-100">
             <AssistantCopyButton row={row} text={handoff.visibleText} />
+            {employeeId !== undefined && !row.message.streaming ? (
+              <EmployeeFeedbackButton
+                messageId={row.message.id}
+                threadKey={ctx.routeThreadKey}
+                onFeedback={ctx.onEmployeeFeedback}
+              />
+            ) : null}
             {!row.message.streaming && (
               <Tooltip>
                 <TooltipTrigger
@@ -1374,6 +1389,51 @@ function AssistantCopyButton({
   }
 
   return <MessageCopyButton text={assistantCopyState.text ?? ""} variant="ghost" />;
+}
+
+function EmployeeFeedbackButton({
+  messageId,
+  threadKey,
+  onFeedback,
+}: {
+  messageId: MessageId;
+  threadKey: string;
+  onFeedback: (messageId: MessageId) => void;
+}) {
+  const feedbackKey = `${threadKey}:${messageId}`;
+  const isRecorded = useEmployeeFeedbackStore(
+    (state) => state.negativeByMessageKey[feedbackKey] !== undefined,
+  );
+  const markNegative = useEmployeeFeedbackStore((state) => state.markNegative);
+
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            aria-label="Mark response as not helpful"
+            aria-pressed={isRecorded}
+            onClick={() => {
+              if (isRecorded) return;
+              markNegative(feedbackKey);
+              onFeedback(messageId);
+            }}
+            size="icon-xs"
+            variant="ghost"
+            className={cn(
+              "text-muted-foreground hover:text-foreground",
+              isRecorded && "text-destructive hover:text-destructive",
+            )}
+          />
+        }
+      >
+        <ThumbsDownIcon className="size-3" />
+      </TooltipTrigger>
+      <TooltipPopup>
+        <p>{isRecorded ? "Feedback recorded" : "Mark response as not helpful"}</p>
+      </TooltipPopup>
+    </Tooltip>
+  );
 }
 
 function ProposedPlanTimelineRow({
@@ -1518,7 +1578,7 @@ function PlannedEmployeeReference({ text, className }: { text: string; className
     >
       <UsersRoundIcon aria-hidden className="size-2.5 shrink-0" />
       <span className="truncate">
-        T3 employee{mentionedEmployees.length === 1 ? "" : "s"}: {names} (planned)
+        Employee{mentionedEmployees.length === 1 ? "" : "s"}: {names} (planned)
       </span>
     </span>
   );
@@ -2434,7 +2494,7 @@ const AgentSpawnCtaRow = memo(function AgentSpawnCtaRow(props: { workEntry: Time
       type="button"
       onClick={onOpenAgents}
       data-t3-worker-kind="provider-subagent"
-      title="Temporary Codex/Claude provider subagents, not T3 employees"
+      title="Temporary Codex/Claude provider subagents, not workspace employees"
       className="-mx-1 flex w-full items-center gap-2 rounded-md border border-border/60 bg-card/50 px-2.5 py-1.5 text-left text-[13px] transition hover:bg-accent/50"
     >
       <span aria-hidden className={cn("size-1.5 shrink-0 rounded-full", dotClass)} />
