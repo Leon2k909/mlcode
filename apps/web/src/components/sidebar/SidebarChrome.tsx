@@ -127,7 +127,7 @@ function SidebarBrand({
       <img src="/ml-code-logo.png" alt="" className="size-5 shrink-0 rounded-[5px]" />
       <span
         className={cn(
-          "truncate text-sm font-medium tracking-tight",
+          "-translate-y-px truncate text-sm font-medium tracking-tight",
           onBackdrop ? "text-white/70" : "text-muted-foreground",
         )}
       >
