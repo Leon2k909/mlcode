@@ -14,6 +14,7 @@ import {
   CommandId,
   DEFAULT_PROVIDER_INTERACTION_MODE,
   DEFAULT_RUNTIME_MODE,
+  LEGACY_T3_PROJECT_FILE_NAME,
   MessageId,
   T3_PROJECT_FILE_NAME,
   ThreadId,
@@ -365,8 +366,8 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
   const attachments = selectedProjectDraft.attachments;
   // Default mode until the user picks one explicitly — same resolution web
   // uses for new draft threads: per-project setting, then the repo's
-  // checked-in t3.json, then the server's configured default.
-  const t3ProjectFileQuery = useEnvironmentQuery(
+  // checked-in ml.json (with a legacy t3.json fallback), then the server's configured default.
+  const mlProjectFileQuery = useEnvironmentQuery(
     selectedProject !== null && selectedProject.workspaceRoot !== ""
       ? projectEnvironment.readFile({
           environmentId: selectedProject.environmentId,
@@ -374,23 +375,38 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
         })
       : null,
   );
-  const t3ProjectFileData = t3ProjectFileQuery.data as ProjectReadFileResult | null;
-  const t3ProjectFileDefaultMode = useMemo(() => {
-    if (t3ProjectFileData === null || t3ProjectFileData.truncated) return null;
-    return parseT3ProjectFile(t3ProjectFileData.contents)?.defaultThreadEnvMode ?? null;
-  }, [t3ProjectFileData]);
+  const legacyProjectFileQuery = useEnvironmentQuery(
+    selectedProject !== null && selectedProject.workspaceRoot !== ""
+      ? projectEnvironment.readFile({
+          environmentId: selectedProject.environmentId,
+          input: {
+            cwd: selectedProject.workspaceRoot,
+            relativePath: LEGACY_T3_PROJECT_FILE_NAME,
+          },
+        })
+      : null,
+  );
+  const projectFileData =
+    (mlProjectFileQuery.data as ProjectReadFileResult | null) ??
+    (legacyProjectFileQuery.data as ProjectReadFileResult | null);
+  const projectFileDefaultMode = useMemo(() => {
+    if (projectFileData === null || projectFileData.truncated) return null;
+    return parseT3ProjectFile(projectFileData.contents)?.defaultThreadEnvMode ?? null;
+  }, [projectFileData]);
   const defaultWorkspaceMode: WorkspaceMode = resolveDefaultThreadEnvMode({
     projectSetting: selectedProject?.defaultThreadEnvMode,
-    projectFile: t3ProjectFileDefaultMode,
+    projectFile: projectFileDefaultMode,
     globalDefault: selectedEnvironmentServerConfig?.settings.defaultThreadEnvMode ?? "local",
   });
   // While unsettled the resolved default is provisional. Nothing may write
   // it into the draft during that window (the auto-branch effect does), or
-  // the frozen interim value beats the t3.json default once it loads.
+  // the frozen interim value beats the ml.json default once it loads.
   const defaultWorkspaceModeSettled = isDefaultThreadEnvModeSettled({
     explicitMode: selectedProjectDraft.workspaceSelection?.mode,
     projectSetting: selectedProject?.defaultThreadEnvMode,
-    projectFilePending: t3ProjectFileQuery.isPending,
+    projectFilePending:
+      mlProjectFileQuery.data === null &&
+      (mlProjectFileQuery.isPending || legacyProjectFileQuery.isPending),
   });
   const workspaceMode = selectedProjectDraft.workspaceSelection?.mode ?? defaultWorkspaceMode;
   const selectedBranchName = selectedProjectDraft.workspaceSelection?.branch ?? null;

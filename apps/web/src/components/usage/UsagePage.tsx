@@ -465,6 +465,18 @@ function formatLimitReset(value: number | null): string | null {
   }).format(date);
 }
 
+function formatUsageStatus(value: string | null): string | null {
+  if (value === null) return null;
+  const labels: Record<string, string> = {
+    allowed: "Available",
+    allowed_warning: "Near limit",
+    rejected: "Limit reached",
+  };
+  return (
+    labels[value] ?? value.replace(/[_-]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase())
+  );
+}
+
 function UsageLimits({ limits }: { readonly limits: readonly UsageLimitSnapshot[] }) {
   return (
     <section aria-labelledby="usage-limits-title" className="flex flex-col gap-3">
@@ -486,8 +498,11 @@ function UsageLimits({ limits }: { readonly limits: readonly UsageLimitSnapshot[
         <div className="grid gap-x-8 gap-y-5 border border-border px-4 py-4 md:grid-cols-2">
           {limits.flatMap((snapshot) =>
             snapshot.windows.map((window) => {
-              const used = Math.max(0, Math.min(100, window.usedPercent));
-              const remaining = Math.max(0, 100 - used);
+              const used =
+                window.usedPercent === undefined
+                  ? null
+                  : Math.max(0, Math.min(100, window.usedPercent));
+              const remaining = used === null ? null : Math.max(0, 100 - used);
               const reset = formatLimitReset(window.resetsAt);
               return (
                 <div key={`${snapshot.provider}:${window.label}`} className="flex flex-col gap-2">
@@ -498,28 +513,39 @@ function UsageLimits({ limits }: { readonly limits: readonly UsageLimitSnapshot[
                       {snapshot.plan ? ` · ${snapshot.plan}` : ""}
                     </span>
                     <span className="text-sm font-medium text-foreground tabular-nums">
-                      {remaining.toFixed(0)}% left
+                      {remaining === null
+                        ? (formatUsageStatus(snapshot.status) ?? "Status reported")
+                        : `${remaining.toFixed(0)}% left`}
                     </span>
                   </div>
-                  <div
-                    className="h-1.5 overflow-hidden rounded-full bg-muted"
-                    role="progressbar"
-                    aria-label={`${PROVIDER_LABEL[snapshot.provider]} ${window.label} usage`}
-                    aria-valuemin={0}
-                    aria-valuemax={100}
-                    aria-valuenow={Math.round(used)}
-                  >
-                    <div
-                      className="h-full rounded-full transition-[width] duration-300 motion-reduce:transition-none"
-                      style={{
-                        width: `${used}%`,
-                        backgroundColor: PROVIDER_COLOR[snapshot.provider],
-                      }}
-                    />
-                  </div>
-                  <span className="text-xs text-muted-foreground tabular-nums">
-                    {used.toFixed(0)}% used{reset ? ` · resets ${reset}` : ""}
-                  </span>
+                  {used === null ? (
+                    <span className="text-xs text-muted-foreground">
+                      {formatUsageStatus(snapshot.status) ?? "Utilization not reported"}
+                      {reset ? ` · resets ${reset}` : ""}
+                    </span>
+                  ) : (
+                    <>
+                      <div
+                        className="h-1.5 overflow-hidden rounded-full bg-muted"
+                        role="progressbar"
+                        aria-label={`${PROVIDER_LABEL[snapshot.provider]} ${window.label} usage`}
+                        aria-valuemin={0}
+                        aria-valuemax={100}
+                        aria-valuenow={Math.round(used)}
+                      >
+                        <div
+                          className="h-full rounded-full transition-[width] duration-300 motion-reduce:transition-none"
+                          style={{
+                            width: `${used}%`,
+                            backgroundColor: PROVIDER_COLOR[snapshot.provider],
+                          }}
+                        />
+                      </div>
+                      <span className="text-xs text-muted-foreground tabular-nums">
+                        {used.toFixed(0)}% used{reset ? ` · resets ${reset}` : ""}
+                      </span>
+                    </>
+                  )}
                 </div>
               );
             }),

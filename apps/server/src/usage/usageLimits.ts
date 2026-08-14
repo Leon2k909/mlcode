@@ -22,6 +22,7 @@ function displayPlan(value: unknown): string | undefined {
   const labels: Record<string, string> = {
     free: "Free",
     go: "Go",
+    max: "Max",
     plus: "Plus",
     pro: "Pro",
     prolite: "Pro Lite",
@@ -84,9 +85,9 @@ function normalizeCodex(value: unknown, readAt: string): UsageLimitSnapshot | nu
 
 function normalizeClaude(value: unknown, readAt: string): UsageLimitSnapshot | null {
   const event = record(value);
-  const info = record(event?.rate_limit_info);
+  const info = record(event?.rate_limit_info) ?? record(event?.rateLimitInfo);
+  if (!info) return null;
   const utilization = finite(info?.utilization);
-  if (!info || utilization === null) return null;
   const type = typeof info.rateLimitType === "string" ? info.rateLimitType : "usage";
   const labels: Record<string, string> = {
     five_hour: "5-hour",
@@ -94,18 +95,34 @@ function normalizeClaude(value: unknown, readAt: string): UsageLimitSnapshot | n
     seven_day_opus: "7-day Opus",
     seven_day_sonnet: "7-day Sonnet",
     overage: "Overage",
+    max_plan: "Max plan",
   };
+  const status = nonEmptyString(info.status) ?? nonEmptyString(info.overageStatus);
+  const plan = displayPlan(
+    info.plan ??
+      info.planType ??
+      event?.plan ??
+      event?.planType ??
+      (type === "max_plan" ? "max" : undefined),
+  );
+  const window = {
+    label: labels[type] ?? "Usage",
+    ...(utilization === null
+      ? {}
+      : {
+          usedPercent: Math.max(0, Math.min(100, utilization * (utilization <= 1 ? 100 : 1))),
+        }),
+    resetsAt: finite(info.resetsAt),
+  };
+  if (utilization === null && window.resetsAt === null && status === null && plan === undefined) {
+    return null;
+  }
   return {
     provider: "claude",
     readAt,
-    status: typeof info.status === "string" ? info.status : null,
-    windows: [
-      {
-        label: labels[type] ?? "Usage",
-        usedPercent: Math.max(0, Math.min(100, utilization * (utilization <= 1 ? 100 : 1))),
-        resetsAt: finite(info.resetsAt),
-      },
-    ],
+    status,
+    ...(plan === undefined ? {} : { plan }),
+    windows: [window],
   };
 }
 
@@ -114,7 +131,10 @@ function mergeSnapshots(
   next: UsageLimitSnapshot,
 ): UsageLimitSnapshot {
   const windows = new Map(previous.windows.map((window) => [window.label, window]));
-  for (const window of next.windows) windows.set(window.label, window);
+  for (const window of next.windows) {
+    const previousWindow = windows.get(window.label);
+    windows.set(window.label, previousWindow ? { ...previousWindow, ...window } : window);
+  }
   return {
     ...previous,
     ...next,

@@ -20,15 +20,19 @@ const makeTempDir = Effect.gen(function* () {
   });
 });
 
-const writeProjectFile = Effect.fn("writeProjectFile")(function* (cwd: string, contents: string) {
+const writeProjectFile = Effect.fn("writeProjectFile")(function* (
+  cwd: string,
+  contents: string,
+  fileName = "ml.json",
+) {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  yield* fileSystem.writeFileString(path.join(cwd, "t3.json"), contents).pipe(Effect.orDie);
+  yield* fileSystem.writeFileString(path.join(cwd, fileName), contents).pipe(Effect.orDie);
 });
 
 it.layer(TestLayer)("T3ProjectFileLoader", (it) => {
   describe("load", () => {
-    it.effect("loads and decodes a valid t3.json", () =>
+    it.effect("loads and decodes a valid ml.json", () =>
       Effect.gen(function* () {
         const loader = yield* T3ProjectFileLoader.T3ProjectFileLoader;
         const cwd = yield* makeTempDir;
@@ -51,7 +55,20 @@ it.layer(TestLayer)("T3ProjectFileLoader", (it) => {
       }),
     );
 
-    it.effect("returns none when t3.json is missing", () =>
+    it.effect("loads legacy t3.json when ml.json is missing", () =>
+      Effect.gen(function* () {
+        const loader = yield* T3ProjectFileLoader.T3ProjectFileLoader;
+        const cwd = yield* makeTempDir;
+        yield* writeProjectFile(cwd, '{ "iconPath": "legacy.svg" }', "t3.json");
+
+        const loaded = yield* loader.load(cwd);
+
+        expect(Option.isSome(loaded)).toBe(true);
+        if (Option.isSome(loaded)) expect(loaded.value.iconPath).toBe("legacy.svg");
+      }),
+    );
+
+    it.effect("returns none when both project file names are missing", () =>
       Effect.gen(function* () {
         const loader = yield* T3ProjectFileLoader.T3ProjectFileLoader;
         const cwd = yield* makeTempDir;

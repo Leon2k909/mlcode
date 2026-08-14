@@ -29,6 +29,18 @@ function formatUsageReset(value: number | null): string | null {
   }).format(date);
 }
 
+function formatUsageStatus(value: string | null): string | null {
+  if (value === null) return null;
+  const labels: Record<string, string> = {
+    allowed: "Available",
+    allowed_warning: "Near limit",
+    rejected: "Limit reached",
+  };
+  return (
+    labels[value] ?? value.replace(/[_-]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase())
+  );
+}
+
 export function ContextWindowMeter(props: {
   usage: ContextWindowSnapshot;
   providerDisplayName?: string | null;
@@ -94,18 +106,28 @@ function ContextUsageLimits({ provider }: { provider: UsageProviderKind }) {
       ) : (
         <div className="space-y-1.5">
           {snapshot.windows.map((limit) => {
-            const used = Math.max(0, Math.min(100, limit.usedPercent));
-            const remaining = 100 - used;
+            const used =
+              limit.usedPercent === undefined
+                ? null
+                : Math.max(0, Math.min(100, limit.usedPercent));
+            const remaining = used === null ? null : 100 - used;
             const reset = formatUsageReset(limit.resetsAt);
             return (
               <div className="flex flex-col gap-0.5 text-[11px] leading-4" key={limit.label}>
                 <div className="flex items-center justify-between gap-3">
                   <span className="text-secondary-label">{limit.label}</span>
                   <span className="font-medium tabular-nums text-secondary-label">
-                    {remaining.toFixed(0)}% remaining
+                    {remaining === null
+                      ? (formatUsageStatus(snapshot.status) ?? "Status reported")
+                      : `${remaining.toFixed(0)}% remaining`}
                   </span>
                 </div>
-                {reset ? (
+                {used === null ? (
+                  <span className="text-right text-secondary-label/75">
+                    {formatUsageStatus(snapshot.status) ?? "Utilization not reported"}
+                    {reset ? ` · resets ${reset}` : ""}
+                  </span>
+                ) : reset ? (
                   <span className="text-right text-secondary-label/75 tabular-nums">
                     resets {reset}
                   </span>

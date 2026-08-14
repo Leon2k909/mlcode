@@ -83,4 +83,27 @@ describe("normalizeUsageLimits", () => {
       windows: [{ label: "5-hour", usedPercent: 64, resetsAt: 1_800_000_000 }],
     });
   });
+
+  it("keeps Claude subscription status when utilization is omitted", () => {
+    expect(
+      normalizeUsageLimits(
+        ProviderDriverKind.make("claudeAgent"),
+        {
+          rate_limit_info: {
+            status: "allowed",
+            rateLimitType: "max_plan",
+            overageStatus: "allowed",
+            overageResetsAt: 1_800_100_000,
+          },
+        },
+        "2026-08-14T08:00:00.000Z",
+      ),
+    ).toEqual({
+      provider: "claude",
+      readAt: "2026-08-14T08:00:00.000Z",
+      status: "allowed",
+      plan: "Max",
+      windows: [{ label: "Max plan", resetsAt: null }],
+    });
+  });
 });

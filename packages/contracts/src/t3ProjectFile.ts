@@ -4,11 +4,14 @@ import * as SchemaTransformation from "effect/SchemaTransformation";
 import { ThreadEnvMode } from "./environment.ts";
 import { ProjectScriptIcon } from "./orchestration.ts";
 
-/** File name of the checked-in T3 project file, resolved at the workspace root. */
-export const T3_PROJECT_FILE_NAME = "t3.json";
+/** File name of the checked-in ML Code project file, resolved at the workspace root. */
+export const T3_PROJECT_FILE_NAME = "ml.json";
+
+/** Legacy project file name accepted when migrating an existing checkout. */
+export const LEGACY_T3_PROJECT_FILE_NAME = "t3.json";
 
 /** Public URL of the published JSON Schema for {@link T3ProjectFile}. */
-export const T3_PROJECT_FILE_SCHEMA_URL = "https://t3.codes/schema/t3.json";
+export const T3_PROJECT_FILE_SCHEMA_URL = "https://t3.codes/schema/ml.json";
 
 const T3_PROJECT_FILE_PATH_MAX_LENGTH = 512;
 const T3_PROJECT_FILE_MAX_SCRIPTS = 50;
@@ -90,6 +93,6 @@ export const T3ProjectFile = Schema.Struct({
 }).annotate({
   title: "T3 project file",
   description:
-    "Checked-in project configuration for T3 Code (t3.json at the repository root). See https://t3.codes for documentation.",
+    "Checked-in project configuration for ML Code (ml.json at the repository root). See https://t3.codes for documentation.",
 });
 export type T3ProjectFile = typeof T3ProjectFile.Type;

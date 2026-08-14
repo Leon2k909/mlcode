@@ -21,7 +21,7 @@ import { NonNegativeInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
  * client renders partial coverage when an environment reports an older version
  * rather than failing the whole page.
  */
-export const USAGE_CONTRACT_VERSION = 5 as const;
+export const USAGE_CONTRACT_VERSION = 6 as const;
 
 export const UsageProviderKind = Schema.Literals(["claude", "codex"]);
 export type UsageProviderKind = typeof UsageProviderKind.Type;
@@ -162,7 +162,8 @@ export type UsagePricing = typeof UsagePricing.Type;
 
 export const UsageLimitWindow = Schema.Struct({
   label: TrimmedNonEmptyString,
-  usedPercent: Schema.Number,
+  /** Some subscription events expose status/reset data without utilization. */
+  usedPercent: Schema.optional(Schema.Number),
   resetsAt: Schema.NullOr(Schema.Number),
 });
 export type UsageLimitWindow = typeof UsageLimitWindow.Type;

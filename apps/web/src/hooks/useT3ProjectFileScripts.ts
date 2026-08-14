@@ -1,4 +1,5 @@
 import {
+  LEGACY_T3_PROJECT_FILE_NAME,
   T3_PROJECT_FILE_NAME,
   type EnvironmentId,
   type T3ProjectFile,
@@ -13,10 +14,10 @@ const NO_SCRIPTS: ReadonlyArray<T3ProjectFileScript> = [];
 
 export interface T3ProjectFileState {
   /**
-   * - `valid`: t3.json exists and decoded.
-   * - `invalid`: t3.json exists but fails to decode (the server then ignores
+   * - `valid`: ml.json (or a legacy t3.json) exists and decoded.
+   * - `invalid`: the project file exists but fails to decode (the server then ignores
    *   the whole file, including `iconPath` and every script).
-   * - `missing`: no readable t3.json at the workspace root.
+   * - `missing`: no readable project file at the workspace root.
    * - `loading`: the file query has not settled yet.
    */
   status: "loading" | "missing" | "invalid" | "valid";
@@ -26,16 +27,28 @@ export interface T3ProjectFileState {
 }
 
 /**
- * Decoded state of the project's checked-in `t3.json`, including whether the
+ * Decoded state of the project's checked-in `ml.json`, including whether the
  * file exists but is broken — which the runtime otherwise swallows silently.
  */
 export function useT3ProjectFileState(
   environmentId: EnvironmentId,
   cwd: string | null,
 ): T3ProjectFileState {
-  const query = useProjectFileQuery(environmentId, cwd ?? "", T3_PROJECT_FILE_NAME, cwd !== null);
+  const primaryQuery = useProjectFileQuery(
+    environmentId,
+    cwd ?? "",
+    T3_PROJECT_FILE_NAME,
+    cwd !== null,
+  );
+  const legacyQuery = useProjectFileQuery(
+    environmentId,
+    cwd ?? "",
+    LEGACY_T3_PROJECT_FILE_NAME,
+    cwd !== null,
+  );
+  const query = primaryQuery.data !== null ? primaryQuery : legacyQuery;
   const contents = query.data && !query.data.truncated ? query.data.contents : null;
-  const isPending = query.isPending;
+  const isPending = primaryQuery.data === null && (primaryQuery.isPending || legacyQuery.isPending);
   return useMemo(() => {
     if (contents === null) {
       return {
@@ -53,7 +66,7 @@ export function useT3ProjectFileState(
 }
 
 /**
- * Scripts declared in the project's checked-in `t3.json`, offered in the
+ * Scripts declared in the project's checked-in `ml.json`, offered in the
  * scripts menu for import. Missing, truncated, or invalid files resolve to
  * an empty list.
  */
