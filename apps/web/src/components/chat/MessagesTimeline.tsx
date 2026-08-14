@@ -1065,12 +1065,21 @@ function EmployeeTimelineIdentity({
   const employee = resolveTimelineEmployee(ctx.employees, employeeId);
   const displayName = employee?.displayName ?? employeeId;
   const model = resolveTimelineModel(ctx.modelSelection, employee);
+  const provider = employee
+    ? formatProviderDisplayName(
+        ctx.modelSelection?.instanceId ?? ctx.providerInstanceId ?? employee.providerInstanceId,
+      )
+    : null;
+  const hoverLabel = model
+    ? `${displayName} uses ${model}${provider ? ` via ${provider}` : ""}`
+    : undefined;
 
   return (
     <div
       className="flex min-w-0 flex-wrap items-center gap-2 text-xs"
       data-chat-employee-id={employeeId}
       data-t3-worker-kind="employee"
+      title={hoverLabel}
     >
       <EmployeeAvatar
         employeeId={String(employeeId)}
@@ -1086,14 +1095,7 @@ function EmployeeTimelineIdentity({
       {employee?.role ? (
         <span className="min-w-0 truncate text-muted-foreground">{employee.role}</span>
       ) : null}
-      {employee ? (
-        <span className="shrink-0 text-muted-foreground">
-          via{" "}
-          {formatProviderDisplayName(
-            ctx.modelSelection?.instanceId ?? ctx.providerInstanceId ?? employee.providerInstanceId,
-          )}
-        </span>
-      ) : null}
+      {provider ? <span className="shrink-0 text-muted-foreground">via {provider}</span> : null}
       {model ? (
         <span className="shrink-0 rounded-full border border-border/60 bg-muted/35 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
           model {model}
@@ -1319,7 +1321,10 @@ function TurnFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "turn-
 
 function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
   const ctx = use(TimelineRowCtx);
-  const employeeId = row.message.employeeId;
+  // Older assistant rows may predate employee attribution. If the thread is
+  // now routed through an employee, show that active speaker rather than
+  // falling back to an unlabeled provider response.
+  const employeeId = row.message.employeeId ?? ctx.modelSelection?.employeeId;
   const rawMessageText = row.message.text ?? "";
   const handoff =
     employeeId === undefined

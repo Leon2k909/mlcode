@@ -744,6 +744,42 @@ describe("MessagesTimeline", () => {
     expect(markup).not.toContain("&lt;handoff");
   });
 
+  it("attributes an older assistant row to the active employee and exposes its model on hover", () => {
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        employees={TEST_EMPLOYEES}
+        modelSelection={{
+          instanceId: ProviderInstanceId.make("codex"),
+          model: "gpt-5.6-sol",
+          employeeId: EmployeeId.make("ceo"),
+          employeeIds: [EmployeeId.make("ceo"), EmployeeId.make("reviewer")],
+        }}
+        timelineEntries={[
+          {
+            id: "legacy-employee-response",
+            kind: "message",
+            createdAt: MESSAGE_CREATED_AT,
+            message: {
+              id: MessageId.make("legacy-employee-response"),
+              role: "assistant",
+              text: "The CEO handled this.",
+              turnId: TurnId.make("turn-legacy-employee"),
+              createdAt: MESSAGE_CREATED_AT,
+              updatedAt: MESSAGE_CREATED_AT,
+              streaming: false,
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(markup).toContain('data-t3-worker-kind="employee"');
+    expect(markup).toContain("Alex");
+    expect(markup).toContain("model gpt-5.6-sol");
+    expect(markup).toContain('title="Alex uses gpt-5.6-sol via Codex"');
+  });
+
   it("renders employee handoff prompts as an internal teammate message", () => {
     const markup = renderToStaticMarkup(
       <MessagesTimeline
