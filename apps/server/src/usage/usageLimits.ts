@@ -10,6 +10,20 @@ function finite(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
+function timestamp(value: unknown): number | null {
+  const numeric = finite(value);
+  if (numeric !== null) return numeric;
+  if (typeof value !== "string") return null;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed / 1000 : null;
+}
+
+function utilizationPercent(value: unknown): number | null {
+  const raw = finite(value);
+  if (raw === null) return null;
+  return Math.max(0, Math.min(100, raw * (raw <= 1 ? 100 : 1)));
+}
+
 function nonEmptyString(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
@@ -60,6 +74,45 @@ function codexSpendWindow(value: unknown) {
   };
 }
 
+function claudeUsageWindow(label: string, value: unknown) {
+  const window = record(value);
+  if (!window) return null;
+  const usedPercent = utilizationPercent(window.utilization);
+  const resetsAt = timestamp(window.resets_at ?? window.resetsAt);
+  if (usedPercent === null && resetsAt === null) return null;
+  return {
+    label,
+    ...(usedPercent === null ? {} : { usedPercent }),
+    resetsAt,
+  };
+}
+
+function normalizeClaudeUsageResponse(
+  event: Record<string, unknown>,
+  rateLimits: Record<string, unknown> | null,
+  readAt: string,
+): UsageLimitSnapshot | null {
+  const windows = [
+    claudeUsageWindow("5-hour", rateLimits?.five_hour),
+    claudeUsageWindow("Weekly", rateLimits?.seven_day),
+    claudeUsageWindow("Weekly (OAuth apps)", rateLimits?.seven_day_oauth_apps),
+    claudeUsageWindow("Weekly (Fable)", rateLimits?.seven_day_opus),
+    claudeUsageWindow("Weekly (Sonnet)", rateLimits?.seven_day_sonnet),
+    claudeUsageWindow("Extra usage", rateLimits?.extra_usage),
+  ].filter((window): window is NonNullable<typeof window> => window !== null);
+  const plan = displayPlan(
+    event.subscription_type ?? event.subscriptionType ?? event.plan ?? event.planType,
+  );
+  if (windows.length === 0 && plan === undefined) return null;
+  return {
+    provider: "claude",
+    readAt,
+    status: nonEmptyString(event.status),
+    ...(plan === undefined ? {} : { plan }),
+    windows,
+  };
+}
+
 function normalizeCodex(value: unknown, readAt: string): UsageLimitSnapshot | null {
   const event = record(value);
   if (!event) return null;
@@ -85,15 +138,22 @@ function normalizeCodex(value: unknown, readAt: string): UsageLimitSnapshot | nu
 
 function normalizeClaude(value: unknown, readAt: string): UsageLimitSnapshot | null {
   const event = record(value);
+  if (!event) return null;
+  const structuredRateLimits =
+    Object.hasOwn(event, "rate_limits") || Object.hasOwn(event, "rateLimits")
+      ? record(event.rate_limits ?? event.rateLimits)
+      : undefined;
+  if (structuredRateLimits !== undefined) {
+    return normalizeClaudeUsageResponse(event, structuredRateLimits, readAt);
+  }
   const info = record(event?.rate_limit_info) ?? record(event?.rateLimitInfo);
   if (!info) return null;
-  const utilization = finite(info?.utilization);
   const type = typeof info.rateLimitType === "string" ? info.rateLimitType : "usage";
   const labels: Record<string, string> = {
     five_hour: "5-hour",
-    seven_day: "7-day",
-    seven_day_opus: "7-day Opus",
-    seven_day_sonnet: "7-day Sonnet",
+    seven_day: "Weekly",
+    seven_day_opus: "Weekly (Fable)",
+    seven_day_sonnet: "Weekly (Sonnet)",
     overage: "Overage",
     max_plan: "Max plan",
   };
@@ -105,16 +165,19 @@ function normalizeClaude(value: unknown, readAt: string): UsageLimitSnapshot | n
       event?.planType ??
       (type === "max_plan" ? "max" : undefined),
   );
+  const usedPercent = utilizationPercent(info.utilization);
   const window = {
     label: labels[type] ?? "Usage",
-    ...(utilization === null
+    ...(usedPercent === null
       ? {}
       : {
-          usedPercent: Math.max(0, Math.min(100, utilization * (utilization <= 1 ? 100 : 1))),
+          usedPercent,
         }),
-    resetsAt: finite(info.resetsAt),
+    resetsAt: timestamp(
+      type === "overage" ? (info.overageResetsAt ?? info.resetsAt) : info.resetsAt,
+    ),
   };
-  if (utilization === null && window.resetsAt === null && status === null && plan === undefined) {
+  if (usedPercent === null && window.resetsAt === null && status === null && plan === undefined) {
     return null;
   }
   return {

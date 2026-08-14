@@ -84,6 +84,40 @@ describe("normalizeUsageLimits", () => {
     });
   });
 
+  it("normalizes Claude structured usage with weekly and Fable windows", () => {
+    expect(
+      normalizeUsageLimits(
+        ProviderDriverKind.make("claudeAgent"),
+        {
+          rate_limits: {
+            five_hour: {
+              utilization: 37,
+              resets_at: "2026-08-15T02:50:00.000Z",
+            },
+            seven_day: {
+              utilization: 21,
+              resets_at: "2026-08-17T00:00:00.000Z",
+            },
+            seven_day_opus: {
+              utilization: 8,
+              resets_at: "2026-08-17T00:00:00.000Z",
+            },
+          },
+        },
+        "2026-08-14T08:00:00.000Z",
+      ),
+    ).toEqual({
+      provider: "claude",
+      readAt: "2026-08-14T08:00:00.000Z",
+      status: null,
+      windows: [
+        { label: "5-hour", usedPercent: 37, resetsAt: 1786762200 },
+        { label: "Weekly", usedPercent: 21, resetsAt: 1786924800 },
+        { label: "Weekly (Fable)", usedPercent: 8, resetsAt: 1786924800 },
+      ],
+    });
+  });
+
   it("keeps Claude subscription status when utilization is omitted", () => {
     expect(
       normalizeUsageLimits(

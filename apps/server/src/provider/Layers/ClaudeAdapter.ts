@@ -15,6 +15,7 @@ import {
   type PermissionUpdate,
   type SDKMessage,
   type SDKControlGetContextUsageResponse,
+  type SDKControlGetUsageResponse,
   type SDKResultMessage,
   type SettingSource,
   type SDKUserMessage,
@@ -256,6 +257,7 @@ interface ClaudeQueryRuntime extends AsyncIterable<SDKMessage> {
   readonly setPermissionMode: (mode: PermissionMode) => Promise<void>;
   readonly setMaxThinkingTokens: (maxThinkingTokens: number | null) => Promise<void>;
   readonly getContextUsage?: () => Promise<SDKControlGetContextUsageResponse>;
+  readonly usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET?: () => Promise<SDKControlGetUsageResponse>;
   readonly close: () => void;
 }
 
@@ -1676,6 +1678,55 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
   const offerRuntimeEvent = (event: ProviderRuntimeEvent): Effect.Effect<void> =>
     Queue.offer(runtimeEventQueue, event).pipe(Effect.asVoid);
 
+  const emitClaudeUsageLimits = Effect.fn("emitClaudeUsageLimits")(function* (
+    context: ClaudeSessionContext,
+  ) {
+    const readUsage = context.query.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET;
+    if (!readUsage) {
+      return;
+    }
+
+    // Claude's rate_limit_event currently exposes only the active 5-hour
+    // window. The control endpoint returns the complete account snapshot,
+    // including weekly and model-specific windows. Keep this best-effort so
+    // an unavailable experimental endpoint never turns a successful turn
+    // into a failed one.
+    const response = yield* Effect.tryPromise({
+      try: () => readUsage.call(context.query),
+      catch: () => undefined,
+    }).pipe(Effect.timeoutOption("5 seconds"));
+    if (Option.isNone(response) || response.value === undefined) {
+      return;
+    }
+
+    const usage = response.value;
+    if (!usage.rate_limits_available || usage.rate_limits === null) {
+      return;
+    }
+
+    const stamp = yield* makeEventStamp();
+    yield* offerRuntimeEvent({
+      type: "account.rate-limits.updated",
+      eventId: stamp.eventId,
+      provider: PROVIDER,
+      createdAt: stamp.createdAt,
+      threadId: context.session.threadId,
+      providerRefs: nativeProviderRefs(context),
+      payload: {
+        rateLimits: {
+          subscription_type: usage.subscription_type,
+          rate_limits_available: usage.rate_limits_available,
+          rate_limits: usage.rate_limits,
+        },
+      },
+      raw: {
+        source: "claude.sdk.control",
+        method: "claude/get_usage",
+        payload: usage,
+      },
+    });
+  });
+
   const logNativeSdkMessage = Effect.fnUntraced(function* (
     context: ClaudeSessionContext,
     message: SDKMessage,
@@ -2949,6 +3000,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     }
 
     yield* completeTurn(context, status, errorMessage, message);
+    yield* emitClaudeUsageLimits(context);
   });
 
   /**

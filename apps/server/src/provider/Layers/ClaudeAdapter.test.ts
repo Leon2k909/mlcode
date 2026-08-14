@@ -8,6 +8,7 @@ import type {
   Options as ClaudeQueryOptions,
   PermissionMode,
   PermissionResult,
+  SDKControlGetUsageResponse,
   SDKMessage,
   SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk";
@@ -59,6 +60,7 @@ class FakeClaudeQuery implements AsyncIterable<SDKMessage> {
   public readonly setModelCalls: Array<string | undefined> = [];
   public readonly setPermissionModeCalls: Array<string> = [];
   public readonly setMaxThinkingTokensCalls: Array<number | null> = [];
+  public usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET?: () => Promise<SDKControlGetUsageResponse>;
   public closeCalls = 0;
 
   emit(message: SDKMessage): void {
@@ -161,8 +163,13 @@ function makeHarness(config?: {
   readonly baseDir?: string;
   readonly claudeConfig?: Partial<ClaudeSettings>;
   readonly instanceId?: ProviderInstanceId;
+  readonly usageResponse?: SDKControlGetUsageResponse;
 }) {
   const query = new FakeClaudeQuery();
+  if (config?.usageResponse) {
+    query.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET = async () =>
+      config.usageResponse!;
+  }
   let createInput:
     | {
         readonly prompt: AsyncIterable<SDKUserMessage>;
@@ -971,6 +978,68 @@ describe("ClaudeAdapterLive", () => {
       if (turnCompleted?.type === "turn.completed") {
         assert.equal(String(turnCompleted.turnId), String(turn.turnId));
         assert.equal(turnCompleted.payload.state, "completed");
+      }
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  it.effect("emits Claude's complete structured usage snapshot after a result", () => {
+    const usageResponse = {
+      subscription_type: "max",
+      rate_limits_available: true,
+      rate_limits: {
+        five_hour: {
+          utilization: 37,
+          resets_at: "2026-08-15T02:50:00.000Z",
+        },
+        seven_day: {
+          utilization: 21,
+          resets_at: "2026-08-17T00:00:00.000Z",
+        },
+        seven_day_opus: {
+          utilization: 8,
+          resets_at: "2026-08-17T00:00:00.000Z",
+        },
+      },
+    } as unknown as SDKControlGetUsageResponse;
+    const harness = makeHarness({ usageResponse });
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      const runtimeEventsFiber = yield* adapter.streamEvents.pipe(
+        Stream.takeUntil((event) => event.type === "account.rate-limits.updated"),
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+
+      const session = yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+      yield* adapter.sendTurn({
+        threadId: session.threadId,
+        input: "hello",
+        attachments: [],
+      });
+      harness.query.emit({
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        errors: [],
+        num_turns: 1,
+        session_id: "sdk-session-usage",
+        uuid: "result-usage",
+      } as unknown as SDKMessage);
+
+      const runtimeEvents = Array.from(yield* Fiber.join(runtimeEventsFiber));
+      const usageEvent = runtimeEvents.find(
+        (event) => event.type === "account.rate-limits.updated",
+      );
+      assert.equal(usageEvent?.type, "account.rate-limits.updated");
+      if (usageEvent?.type === "account.rate-limits.updated") {
+        assert.deepEqual(usageEvent.payload.rateLimits, usageResponse);
       }
     }).pipe(
       Effect.provideService(Random.Random, makeDeterministicRandomService()),
