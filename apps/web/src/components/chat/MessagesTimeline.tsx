@@ -940,6 +940,15 @@ type TimelineWorkEntry = Extract<MessagesTimelineRow, { kind: "work" }>["grouped
 type TimelineRow = MessagesTimelineRow;
 
 const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: TimelineRow }) {
+  const employeeHandoffMessage =
+    row.kind === "message" && row.message.role === "user"
+      ? deriveEmployeeHandoffMessage(row.message.text ?? "")
+      : null;
+  const isEmployeeMessage =
+    row.kind === "message" &&
+    row.message.role === "user" &&
+    (row.message.employeeId !== undefined || employeeHandoffMessage !== null);
+
   return (
     <div
       className={cn(
@@ -961,14 +970,10 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
       {row.kind === "work" ? <WorkGroupSection groupedEntries={row.groupedEntries} /> : null}
       {row.kind === "work-toggle" ? <WorkGroupToggleTimelineRow row={row} /> : null}
       {row.kind === "turn-fold" ? <TurnFoldTimelineRow row={row} /> : null}
-      {row.kind === "message" &&
-      row.message.role === "user" &&
-      row.message.employeeId !== undefined ? (
+      {row.kind === "message" && isEmployeeMessage ? (
         <EmployeeMessageTimelineRow row={row} />
       ) : null}
-      {row.kind === "message" &&
-      row.message.role === "user" &&
-      row.message.employeeId === undefined ? (
+      {row.kind === "message" && row.message.role === "user" && !isEmployeeMessage ? (
         <UserTimelineRow row={row} />
       ) : null}
       {row.kind === "message" && row.message.role === "assistant" ? (
@@ -983,6 +988,36 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
 
 function resolveTimelineEmployee(employees: EmployeeMap, employeeId: EmployeeId) {
   return Object.hasOwn(employees, employeeId) ? employees[employeeId] : undefined;
+}
+
+interface ParsedEmployeeHandoffMessage {
+  readonly targetName: string;
+  readonly sourceName: string;
+  readonly message: string;
+}
+
+const EMPLOYEE_HANDOFF_MESSAGE_PATTERN =
+  /^To\s+([^,\n]+),\s+from\s+([^:\n]+):\s*(?:\r?\n)+([\s\S]*)$/i;
+
+function deriveEmployeeHandoffMessage(text: string): ParsedEmployeeHandoffMessage | null {
+  const match = EMPLOYEE_HANDOFF_MESSAGE_PATTERN.exec(text.trim());
+  if (!match) return null;
+  return {
+    targetName: match[1]!.trim(),
+    sourceName: match[2]!.trim(),
+    message: match[3]!.trim(),
+  };
+}
+
+function resolveEmployeeIdByDisplayName(
+  employees: EmployeeMap,
+  displayName: string,
+): EmployeeId | undefined {
+  const normalizedName = displayName.trim().toLocaleLowerCase();
+  const match = Object.entries(employees).find(
+    ([, employee]) => employee.displayName.trim().toLocaleLowerCase() === normalizedName,
+  );
+  return match?.[0] as EmployeeId | undefined;
 }
 
 function EmployeeTimelineIdentity({
@@ -1028,13 +1063,43 @@ function EmployeeTimelineIdentity({
 
 function EmployeeMessageTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
   const ctx = use(TimelineRowCtx);
-  const employeeId = row.message.employeeId;
-  if (employeeId === undefined) return null;
-  const text = row.message.text ?? "";
+  const rawText = row.message.text ?? "";
+  const handoff = deriveEmployeeHandoffMessage(rawText);
+  const employeeId =
+    row.message.employeeId ??
+    (handoff ? resolveEmployeeIdByDisplayName(ctx.employees, handoff.sourceName) : undefined);
+  const text = handoff?.message ?? rawText;
+  const suffix = handoff ? `to ${handoff.targetName}` : "to the group";
+
+  if (employeeId === undefined) {
+    return (
+      <div
+        className="group flex flex-col items-start gap-1 px-1"
+        data-employee-message="true"
+        data-employee-handoff-message="true"
+      >
+        <span className="text-xs font-medium text-muted-foreground">Internal handoff</span>
+        <div className="max-w-[80%] rounded-2xl border border-border/70 bg-muted/35 p-3">
+          <ChatMarkdown
+            text={text}
+            cwd={ctx.markdownCwd}
+            threadRef={ctx.threadRef ?? undefined}
+            skills={ctx.skills}
+            className="text-message-foreground"
+            lineBreaks
+          />
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="group flex flex-col items-start gap-1 px-1" data-employee-message="true">
-      <EmployeeTimelineIdentity employeeId={employeeId} suffix="to the group" />
+    <div
+      className="group flex flex-col items-start gap-1 px-1"
+      data-employee-message="true"
+      data-employee-handoff-message={handoff ? "true" : undefined}
+    >
+      <EmployeeTimelineIdentity employeeId={employeeId} suffix={suffix} />
       <div className="max-w-[80%] rounded-2xl border border-border/70 bg-muted/35 p-3">
         <ChatMarkdown
           text={text}

@@ -18,6 +18,7 @@ import {
   ProviderInteractionMode,
   ProviderRequestKind,
   ProviderSandboxMode,
+  ThreadTurnDispatchMode,
   ProviderUserInputAnswers,
   RuntimeMode,
 } from "./orchestration.ts";
@@ -74,6 +75,7 @@ export const ProviderSendTurnInput = Schema.Struct({
   ),
   modelSelection: Schema.optional(ModelSelection),
   interactionMode: Schema.optional(ProviderInteractionMode),
+  mode: Schema.optional(ThreadTurnDispatchMode),
 });
 export type ProviderSendTurnInput = typeof ProviderSendTurnInput.Type;
 

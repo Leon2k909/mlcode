@@ -1802,6 +1802,7 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
       (attachment) => resolveAttachment(input, attachment),
       { concurrency: 1 },
     );
+    const requestMethod = input.mode === "steer" ? "turn/steer" : "turn/start";
 
     const session = yield* requireSession(input.threadId);
     const reasoningEffort =
@@ -1825,9 +1826,10 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
           : {}),
         ...(serviceTier ? { serviceTier } : {}),
         ...(input.interactionMode !== undefined ? { interactionMode: input.interactionMode } : {}),
+        ...(input.mode !== undefined ? { mode: input.mode } : {}),
         ...(codexAttachments.length > 0 ? { attachments: codexAttachments } : {}),
       })
-      .pipe(Effect.mapError((cause) => mapCodexRuntimeError(input.threadId, "turn/start", cause)));
+      .pipe(Effect.mapError((cause) => mapCodexRuntimeError(input.threadId, requestMethod, cause)));
   });
 
   const requireSession = Effect.fn("requireSession")(function* (threadId: ThreadId) {

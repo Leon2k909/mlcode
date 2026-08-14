@@ -1,5 +1,6 @@
 import { memo, type PointerEventHandler } from "react";
 import { ChevronDownIcon, ChevronLeftIcon } from "lucide-react";
+import type { ThreadTurnDispatchMode } from "@t3tools/contracts";
 import { useEnvironmentIdentificationMode } from "~/hooks/useSettings";
 import { cn } from "~/lib/utils";
 import { StageBackdropButtonArt, useSidebarStageBackdropVariant } from "../SidebarStageBackdrop";
@@ -28,6 +29,7 @@ interface ComposerPrimaryActionsProps {
   isPreparingWorktree: boolean;
   hasSendableContent: boolean;
   queuesRunningTurns: boolean;
+  onSubmitMode: (mode: ThreadTurnDispatchMode) => void;
   preserveComposerFocusOnPointerDown?: boolean;
   onPreviousPendingQuestion: () => void;
   onInterrupt: () => void;
@@ -69,6 +71,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   isPreparingWorktree,
   hasSendableContent,
   queuesRunningTurns,
+  onSubmitMode,
   preserveComposerFocusOnPointerDown = false,
   onPreviousPendingQuestion,
   onInterrupt,
@@ -157,32 +160,44 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
 
   if (isRunning) {
     return (
-      <div className="flex items-center justify-end gap-1.5">
+      <div className="group/turn-actions flex items-center justify-end gap-1.5">
         {renderStopGenerationButton(false)}
         {hasSendableContent ? (
-          <button
-            type="submit"
-            className="flex h-8 items-center gap-1.5 rounded-full bg-message-action px-3 text-message-action-foreground text-xs font-medium shadow-xs transition-all duration-150 enabled:cursor-pointer hover:bg-message-action-hover hover:scale-105 disabled:pointer-events-none disabled:opacity-30"
-            {...pointerFocusProps}
-            disabled={isSendBusy || isSendDisabled || isConnecting || isEnvironmentUnavailable}
-            aria-label={queuesRunningTurns ? "Queue next turn" : "Steer running turn"}
-            title={
-              queuesRunningTurns
-                ? "Queue this message for the next turn"
-                : "Send now to steer the running turn"
-            }
-          >
-            {queuesRunningTurns ? "Queue" : "Steer"}
-            <svg width="12" height="12" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-              <path
-                d="M7 11.5V2.5M7 2.5L3 6.5M7 2.5L11 6.5"
-                stroke="currentColor"
-                strokeWidth="1.8"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-          </button>
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              className="flex h-8 items-center gap-1.5 rounded-full bg-message-action px-3 text-message-action-foreground text-xs font-medium shadow-xs transition-all duration-150 enabled:cursor-pointer hover:bg-message-action-hover hover:scale-105 disabled:pointer-events-none disabled:opacity-30"
+              {...pointerFocusProps}
+              onClick={() => onSubmitMode("steer")}
+              disabled={isSendBusy || isSendDisabled || isConnecting || isEnvironmentUnavailable}
+              aria-label="Steer running turn"
+              title="Send now to steer the running turn"
+            >
+              Steer
+              <svg width="12" height="12" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+                <path
+                  d="M7 11.5V2.5M7 2.5L3 6.5M7 2.5L11 6.5"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </button>
+            {queuesRunningTurns ? (
+              <button
+                type="button"
+                className="pointer-events-none max-w-0 -translate-x-1 overflow-hidden whitespace-nowrap rounded-full border border-border/70 bg-background/60 px-0 text-xs font-medium text-muted-foreground opacity-0 transition-[max-width,opacity,transform,padding] duration-150 group-hover/turn-actions:pointer-events-auto group-hover/turn-actions:max-w-24 group-hover/turn-actions:translate-x-0 group-hover/turn-actions:px-3 group-hover/turn-actions:opacity-100 group-focus-within/turn-actions:pointer-events-auto group-focus-within/turn-actions:max-w-24 group-focus-within/turn-actions:translate-x-0 group-focus-within/turn-actions:px-3 group-focus-within/turn-actions:opacity-100 hover:border-border hover:bg-muted/70 hover:text-foreground disabled:pointer-events-none disabled:opacity-30"
+                {...pointerFocusProps}
+                onClick={() => onSubmitMode("queue")}
+                disabled={isSendBusy || isSendDisabled || isConnecting || isEnvironmentUnavailable}
+                aria-label="Queue next turn"
+                title="Queue this message for the next turn"
+              >
+                Queue
+              </button>
+            ) : null}
+          </div>
         ) : null}
       </div>
     );

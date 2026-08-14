@@ -2,6 +2,7 @@ import type {
   ApprovalRequestId,
   EmployeeId,
   EnvironmentId,
+  MessageId,
   ModelSelection,
   PreviewAnnotationPayload,
   ProviderApprovalDecision,
@@ -11,6 +12,7 @@ import type {
   ScopedThreadRef,
   ServerProvider,
   ThreadId,
+  ThreadTurnDispatchMode,
 } from "@t3tools/contracts";
 import {
   ProviderDriverKind,
@@ -201,6 +203,7 @@ import {
   type LucideIcon,
   LockIcon,
   LockOpenIcon,
+  ListTodoIcon,
   PenLineIcon,
   SparklesIcon,
   XIcon,
@@ -410,6 +413,7 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
   isEnvironmentUnavailable: boolean;
   hasSendableContent: boolean;
   queuesRunningTurns: boolean;
+  onSubmitMode: (mode: ThreadTurnDispatchMode) => void;
   preserveComposerFocusOnPointerDown?: boolean;
   onPreviousPendingQuestion: () => void;
   onInterrupt: () => void;
@@ -439,6 +443,7 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
         isPreparingWorktree={props.isPreparingWorktree}
         hasSendableContent={props.hasSendableContent}
         queuesRunningTurns={props.queuesRunningTurns}
+        onSubmitMode={props.onSubmitMode}
         preserveComposerFocusOnPointerDown={props.preserveComposerFocusOnPointerDown ?? false}
         onPreviousPendingQuestion={props.onPreviousPendingQuestion}
         onInterrupt={props.onInterrupt}
@@ -489,6 +494,47 @@ export interface ChatComposerHandle {
     selectedModel: string;
     selectedProviderModels: ReadonlyArray<ServerProvider["models"][number]>;
   };
+}
+
+export interface QueuedComposerMessage {
+  readonly id: MessageId;
+  readonly text: string;
+  readonly createdAt: string;
+}
+
+function QueuedMessagesPanel({ messages }: { messages: ReadonlyArray<QueuedComposerMessage> }) {
+  if (messages.length === 0) return null;
+
+  return (
+    <div
+      data-chat-queued-messages="true"
+      className="mb-2 rounded-xl border border-border/65 bg-muted/25 px-3 py-2.5 sm:px-4"
+    >
+      <div className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+        <ListTodoIcon className="size-3.5" aria-hidden="true" />
+        <span>
+          {messages.length === 1 ? "Queued message" : `${messages.length} queued messages`}
+        </span>
+        <span className="text-muted-foreground/65">· sends next</span>
+      </div>
+      <div className="grid gap-1.5">
+        {messages.map((message) => (
+          <div
+            key={message.id}
+            className="flex min-w-0 items-start gap-2 rounded-lg border border-border/50 bg-background/45 px-2.5 py-2"
+          >
+            <span
+              className="mt-1.5 size-1.5 shrink-0 rounded-full bg-primary/70"
+              aria-hidden="true"
+            />
+            <p className="min-w-0 flex-1 truncate text-xs leading-5 text-foreground/85">
+              {message.text.trim() || "Image attachment"}
+            </p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 // --------------------------------------------------------------------------
@@ -571,7 +617,15 @@ export interface ChatComposerProps {
   composerRef: React.RefObject<ChatComposerHandle | null>;
 
   // Callbacks
-  onSend: (e?: { preventDefault: () => void }) => void;
+  queuedMessages: ReadonlyArray<QueuedComposerMessage>;
+  onSend: (
+    e?: { preventDefault: () => void },
+    directAnnotation?: {
+      annotation: PreviewAnnotationPayload;
+      image: ComposerImageAttachment | null;
+    },
+    mode?: ThreadTurnDispatchMode,
+  ) => void;
   onInterrupt: () => void;
   onImplementPlanInNewThread: () => void;
   onRespondToApproval: (
@@ -670,6 +724,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     composerImagesRef,
     composerTerminalContextsRef,
     composerElementContextsRef,
+    queuedMessages,
     onSend,
     onInterrupt,
     onImplementPlanInNewThread,
@@ -1871,7 +1926,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   ]);
 
   const submitComposer = useCallback(
-    (event?: { preventDefault: () => void }) => {
+    (event?: { preventDefault: () => void }, mode?: ThreadTurnDispatchMode) => {
       if (noProviderAvailable || isSendDisabled) {
         event?.preventDefault();
         return;
@@ -1889,7 +1944,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         });
         return;
       }
-      onSend(event);
+      onSend(event, undefined, mode);
       if (shouldBlurMobileComposerOnSubmit()) {
         blurMobileComposerAfterSend();
       }
@@ -1902,6 +1957,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       onSend,
       shouldBlurMobileComposerOnSubmit,
     ],
+  );
+  const submitComposerMode = useCallback(
+    (mode: ThreadTurnDispatchMode) => submitComposer(undefined, mode),
+    [submitComposer],
   );
   const expandMobileComposer = useCallback(() => {
     if (composerBlurFrameRef.current !== null) {
@@ -2859,6 +2918,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       isPreparingWorktree={false}
                       hasSendableContent={false}
                       queuesRunningTurns={false}
+                      onSubmitMode={submitComposerMode}
                       preserveComposerFocusOnPointerDown
                       onPreviousPendingQuestion={onPreviousActivePendingUserInputQuestion}
                       onInterrupt={handleInterruptPrimaryAction}
@@ -3082,6 +3142,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 </div>
               )}
 
+            {!isComposerCollapsedMobile &&
+            !isComposerApprovalState &&
+            pendingUserInputs.length === 0 &&
+            queuedMessages.length > 0 ? (
+              <QueuedMessagesPanel messages={queuedMessages} />
+            ) : null}
+
             <div className="relative">
               <ComposerPromptEditor
                 editorRef={composerEditorRef}
@@ -3143,6 +3210,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     isPreparingWorktree={false}
                     hasSendableContent={false}
                     queuesRunningTurns={false}
+                    onSubmitMode={submitComposerMode}
                     preserveComposerFocusOnPointerDown
                     onPreviousPendingQuestion={onPreviousActivePendingUserInputQuestion}
                     onInterrupt={handleInterruptPrimaryAction}
@@ -3283,6 +3351,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   isPreparingWorktree={isPreparingWorktree}
                   hasSendableContent={composerSendState.hasSendableContent}
                   queuesRunningTurns={selectedProvider === "codex"}
+                  onSubmitMode={submitComposerMode}
                   preserveComposerFocusOnPointerDown={isMobileViewport}
                   onPreviousPendingQuestion={onPreviousActivePendingUserInputQuestion}
                   onInterrupt={handleInterruptPrimaryAction}

@@ -16,6 +16,7 @@ import {
 import { codexSessionAppServerArgs } from "./codexLaunchArgs.ts";
 import {
   buildTurnStartParams,
+  buildTurnSteerParams,
   hasConfiguredMcpServer,
   isRecoverableThreadResumeError,
   openCodexThread,
@@ -241,6 +242,28 @@ describe("buildTurnStartParams", () => {
           type: "text",
           text: "Review",
         },
+      ],
+    });
+  });
+});
+
+describe("buildTurnSteerParams", () => {
+  it("keeps the active turn precondition and forwards text plus images", () => {
+    const params = Effect.runSync(
+      buildTurnSteerParams({
+        threadId: "provider-thread-1",
+        expectedTurnId: "turn-active",
+        prompt: "Change direction",
+        attachments: [{ type: "image", url: "data:image/png;base64,abc" }],
+      }),
+    );
+
+    NodeAssert.deepStrictEqual(params, {
+      threadId: "provider-thread-1",
+      expectedTurnId: "turn-active",
+      input: [
+        { type: "text", text: "Change direction" },
+        { type: "image", url: "data:image/png;base64,abc" },
       ],
     });
   });

@@ -10,6 +10,7 @@ import {
   type ProviderInteractionMode,
   type ProviderRequestKind,
   type ProviderSession,
+  type ThreadTurnDispatchMode,
   type ProviderTurnStartResult,
   type ProviderUserInputAnswers,
   RuntimeMode,
@@ -40,6 +41,7 @@ import { codexSessionAppServerArgs } from "./codexLaunchArgs.ts";
 import { expandHomePath } from "../../pathExpansion.ts";
 import { buildCodexDeveloperInstructions } from "../CodexDeveloperInstructions.ts";
 const decodeV2TurnStartResponse = Schema.decodeUnknownEffect(EffectCodexSchema.V2TurnStartResponse);
+const decodeV2TurnSteerResponse = Schema.decodeUnknownEffect(EffectCodexSchema.V2TurnSteerResponse);
 
 const PROVIDER = ProviderDriverKind.make("codex");
 
@@ -109,6 +111,7 @@ export interface CodexSessionRuntimeOptions {
 }
 
 export interface CodexSessionRuntimeSendTurnInput {
+  readonly mode?: ThreadTurnDispatchMode;
   readonly input?: string;
   readonly attachments?: ReadonlyArray<{
     readonly type: "image";
@@ -408,6 +411,44 @@ export function buildTurnStartParams(input: {
         "decode-request-payload",
         cause,
         { method: "turn/start" },
+      ),
+    ),
+  );
+}
+
+export function buildTurnSteerParams(input: {
+  readonly threadId: string;
+  readonly expectedTurnId: string;
+  readonly prompt?: string;
+  readonly attachments?: ReadonlyArray<{
+    readonly type: "image";
+    readonly url: string;
+  }>;
+}): Effect.Effect<
+  EffectCodexSchema.V2TurnSteerParams,
+  CodexErrors.CodexAppServerProtocolParseError
+> {
+  const turnInput: Array<EffectCodexSchema.V2TurnSteerParams__UserInput> = [];
+  if (input.prompt !== undefined) {
+    turnInput.push({
+      type: "text",
+      text: input.prompt,
+    });
+  }
+  for (const attachment of input.attachments ?? []) {
+    turnInput.push(attachment);
+  }
+
+  return Schema.decodeUnknownEffect(EffectCodexSchema.V2TurnSteerParams)({
+    threadId: input.threadId,
+    expectedTurnId: input.expectedTurnId,
+    input: turnInput,
+  }).pipe(
+    Effect.mapError((error) =>
+      CodexErrors.CodexAppServerProtocolParseError.fromSchemaError(
+        "decode-request-payload",
+        error,
+        { method: "turn/steer" },
       ),
     ),
   );
@@ -1758,9 +1799,39 @@ export const makeCodexSessionRuntime = (
               ),
             );
           }
-          const normalizedModel = normalizeCodexModelSlug(
-            input.model ?? (yield* Ref.get(sessionRef)).model,
-          );
+          const session = yield* Ref.get(sessionRef);
+          const normalizedModel = normalizeCodexModelSlug(input.model ?? session.model);
+          if (input.mode === "steer" && session.activeTurnId !== undefined) {
+            const params = yield* buildTurnSteerParams({
+              threadId: providerThreadId,
+              expectedTurnId: String(session.activeTurnId),
+              ...(input.input !== undefined ? { prompt: input.input } : {}),
+              ...(input.attachments ? { attachments: input.attachments } : {}),
+            });
+            const rawResponse = yield* client.raw.request("turn/steer", params);
+            const response = yield* decodeV2TurnSteerResponse(rawResponse).pipe(
+              Effect.mapError((error) =>
+                CodexErrors.CodexAppServerProtocolParseError.fromSchemaError(
+                  "decode-response-payload",
+                  error,
+                  { method: "turn/steer" },
+                ),
+              ),
+            );
+            const turnId = TurnId.make(response.turnId);
+            yield* updateSession(sessionRef, {
+              status: "running",
+              activeTurnId: session.activeTurnId,
+            });
+            const resumedProviderThreadId = currentProviderThreadId(yield* Ref.get(sessionRef));
+            return {
+              threadId: options.threadId,
+              turnId,
+              ...(resumedProviderThreadId
+                ? { resumeCursor: { threadId: resumedProviderThreadId } }
+                : {}),
+            } satisfies ProviderTurnStartResult;
+          }
           const params = yield* buildTurnStartParams({
             threadId: providerThreadId,
             runtimeMode: options.runtimeMode,

@@ -743,6 +743,40 @@ describe("MessagesTimeline", () => {
     expect(markup).not.toContain("&lt;handoff");
   });
 
+  it("renders employee handoff prompts as an internal teammate message", () => {
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        employees={TEST_EMPLOYEES}
+        timelineEntries={[
+          {
+            id: "employee-handoff-message",
+            kind: "message",
+            createdAt: MESSAGE_CREATED_AT,
+            message: {
+              id: MessageId.make("employee-handoff-message"),
+              role: "user",
+              text: "To Riley, from Alex:\n\nPlease inspect the implementation.",
+              turnId: null,
+              createdAt: MESSAGE_CREATED_AT,
+              updatedAt: MESSAGE_CREATED_AT,
+              streaming: false,
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(markup).toContain('data-employee-message="true"');
+    expect(markup).toContain('data-employee-handoff-message="true"');
+    expect(markup).toContain('data-chat-employee-id="ceo"');
+    expect(markup).toContain("Alex");
+    expect(markup).toContain("to Riley");
+    expect(markup).toContain("Please inspect the implementation.");
+    expect(markup).not.toContain("To Riley, from Alex:");
+    expect(markup).not.toContain("bg-message p-3");
+  });
+
   it("marks employee names inside provider plans as planned, not running", () => {
     const markup = renderToStaticMarkup(
       <MessagesTimeline
