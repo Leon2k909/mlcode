@@ -4,6 +4,7 @@ import { Employee, EmployeeId } from "@t3tools/contracts";
 
 import {
   applyCeoGroupRoutingReminder,
+  applyEmployeeGroupWorkflowReminder,
   applyEmployeePreamble,
   buildEmployeePreamble,
   CEO_GROUP_ROUTING_REMINDER,
@@ -108,5 +109,28 @@ describe("applyCeoGroupRoutingReminder", () => {
         messageText: "Answer this.",
       }),
     ).toBe("Answer this.");
+  });
+});
+
+describe("applyEmployeeGroupWorkflowReminder", () => {
+  it("keeps each default worker in its lane on a warm group session", () => {
+    const cases = [
+      ["worker_beta", "Research lane reminder", "worker_alpha"],
+      ["worker_alpha", "Implementation lane reminder", "Gamma"],
+      ["worker_gamma", "Verification lane reminder", "CEO"],
+    ] as const;
+
+    for (const [employeeId, reminder, nextLane] of cases) {
+      const message = applyEmployeeGroupWorkflowReminder({
+        selection: {
+          employeeId: EmployeeId.make(employeeId),
+          employeeIds: [EmployeeId.make("ceo"), EmployeeId.make(employeeId)],
+        },
+        messageText: "Continue the assigned work.",
+      });
+      expect(message).toContain(reminder);
+      expect(message).toContain(nextLane);
+      expect(message).toContain("Continue the assigned work.");
+    }
   });
 });

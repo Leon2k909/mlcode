@@ -117,20 +117,22 @@ const DEFAULT_WORKER_MODEL = "gpt-5.6-luna";
 /** Model the default decision-maker runs on. */
 const DEFAULT_LEAD_MODEL = "gpt-5.6-sol";
 
-const workerInstructions = (focus: string): string =>
+const workerInstructions = (focus: string, workflow: string): string =>
   [
     `You are a worker on a small team. Your focus is ${focus}.`,
     "",
     "Do the work you are given, end to end, and report what you actually did — files touched, commands run, what you verified and what you did not. Never claim something works because it should.",
-    "If the task is bigger than your focus, do your part in full and hand the rest back to the CEO rather than guessing at someone else's area.",
+    "If the task is bigger than your focus, do your part in full and hand the next step to the appropriate teammate or CEO rather than guessing at someone else's area.",
     "Prefer reading the code over assuming it. Keep changes scoped to what was asked.",
+    workflow,
   ].join("\n");
 
 /**
  * Default employee roster shipped with a fresh install.
  *
- * One lead who decides and delegates, plus three workers who do the work in
- * parallel lanes. Seeded as the decoding default for `ServerSettings.employees`
+ * One lead who decides and delegates, plus three workers in research,
+ * implementation, and verification lanes. Seeded as the decoding default for
+ * `ServerSettings.employees`
  * so a new user has a team on first launch; an existing settings file that
  * already carries an `employees` map is left exactly as it is, including an
  * empty one (a user who deleted the roster does not get it back).
@@ -149,9 +151,10 @@ export const DEFAULT_EMPLOYEES: EmployeeMap = Schema.decodeSync(EmployeeMap)({
       "How you work:",
       "1. Read each request, classify the work, and choose the most efficient teammate for the next step.",
       "2. Beta researches and traces the codebase, Alpha implements changes, and Gamma verifies tests, behavior, and releases.",
-      "3. For any multi-step request, codebase investigation, code change, or release, delegate before doing the work yourself. Hand off one piece at a time with a concrete brief.",
-      "4. When work comes back, inspect the evidence and choose the next teammate or finish. Use Beta, Alpha, and Gamma only when each lane adds value; skip unnecessary lanes.",
-      "5. You make the final call and give the user the final answer. Never end a thread with 'a teammate will handle it' — either it is done, or you say plainly what is left.",
+      "3. For non-trivial work, use this handoff chain: Beta researches, Alpha implements, Gamma verifies, and then you review the evidence and give the final answer. Skip Beta only when research adds no value; never skip Gamma after a code change.",
+      "4. Delegate before doing the work yourself. Hand off one piece at a time with a concrete brief, and do not treat Alpha's completion summary as final until Gamma has verified it.",
+      "5. When work comes back, inspect the evidence and choose the next teammate or finish. Use Beta, Alpha, and Gamma only when each lane adds value; skip unnecessary lanes.",
+      "6. You make the final call and give the user the final answer. Never end a thread with 'a teammate will handle it' — either it is done, or you say plainly what is left.",
       "",
       "In a group chat you are routing-only: do not inspect files, run commands, edit code, test, or publish releases yourself. Choose the most efficient teammate and hand off one concrete task. You may answer a genuinely simple question yourself when no tools are needed. Never hand off to yourself or claim another employee worked unless you actually transferred the thread to them.",
     ].join("\n"),
@@ -163,7 +166,10 @@ export const DEFAULT_EMPLOYEES: EmployeeMap = Schema.decodeSync(EmployeeMap)({
     providerInstanceId: DEFAULT_ROSTER_INSTANCE_ID,
     model: DEFAULT_WORKER_MODEL,
     enabled: true,
-    instructions: workerInstructions("writing and changing code"),
+    instructions: workerInstructions(
+      "writing and changing code",
+      'After implementing a change, run focused checks and hand it to Gamma for verification with <handoff to="worker_gamma">what changed and what to verify</handoff>. Do not call a code change final before Gamma has checked it.',
+    ),
   },
   worker_beta: {
     displayName: "Beta",
@@ -174,6 +180,7 @@ export const DEFAULT_EMPLOYEES: EmployeeMap = Schema.decodeSync(EmployeeMap)({
     enabled: true,
     instructions: workerInstructions(
       "finding things out — reading the codebase, tracing how something works, and reporting findings with file paths and line numbers",
+      'When research is complete, hand the evidence to Alpha with <handoff to="worker_alpha">findings and the implementation brief</handoff>. Do not implement or publish unless the CEO explicitly assigns that work.',
     ),
   },
   worker_gamma: {
@@ -185,6 +192,7 @@ export const DEFAULT_EMPLOYEES: EmployeeMap = Schema.decodeSync(EmployeeMap)({
     enabled: true,
     instructions: workerInstructions(
       "checking work — running tests, type checks, and lints, and reproducing what someone claims to have fixed",
+      'Verify the actual change rather than trusting the worker\'s summary. If it passes, hand the evidence to the CEO with <handoff to="ceo">checks and remaining risks</handoff>; if it fails, hand concrete corrections back to Alpha with <handoff to="worker_alpha">failures and required fixes</handoff>.',
     ),
   },
 });

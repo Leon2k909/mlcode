@@ -197,9 +197,23 @@ describe("DEFAULT_EMPLOYEES", () => {
     const instructions = DEFAULT_EMPLOYEES[EmployeeId.make("ceo")]?.instructions ?? "";
     expect(instructions).toContain("choose the most efficient teammate");
     expect(instructions).toContain("Beta researches");
+    expect(instructions).toContain("Beta researches, Alpha implements, Gamma verifies");
+    expect(instructions).toContain("do not treat Alpha's completion summary as final");
     expect(instructions).toContain("routing-only");
     expect(instructions).toContain("do not inspect files");
     expect(instructions).toContain("Never hand off to yourself");
+  });
+
+  it("gives each worker an explicit next-lane handoff", () => {
+    expect(DEFAULT_EMPLOYEES[EmployeeId.make("worker_beta")]?.instructions).toContain(
+      'handoff to="worker_alpha"',
+    );
+    expect(DEFAULT_EMPLOYEES[EmployeeId.make("worker_alpha")]?.instructions).toContain(
+      'handoff to="worker_gamma"',
+    );
+    expect(DEFAULT_EMPLOYEES[EmployeeId.make("worker_gamma")]?.instructions).toContain(
+      'handoff to="ceo"',
+    );
   });
 
   it("seeds a settings file with no employees key, and leaves an explicit empty map alone", () => {

@@ -33,7 +33,7 @@ import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
 
 import { resolveThreadWorkspaceCwd } from "../../checkpointing/Utils.ts";
 import {
-  applyCeoGroupRoutingReminder,
+  applyEmployeeGroupWorkflowReminder,
   applyEmployeePreamble,
 } from "../../employee/EmployeeInstructions.ts";
 import { checkWorkspacePath, describeMissingWorkspace } from "../../project/WorkspaceRelocation.ts";
@@ -1003,7 +1003,7 @@ const make = Effect.gen(function* () {
       employee === undefined
         ? input.messageText
         : applyEmployeePreamble({ employee, messageText: input.messageText, teammates });
-    const routedMessageText = applyCeoGroupRoutingReminder({
+    const routedMessageText = applyEmployeeGroupWorkflowReminder({
       selection: employeeSelection,
       messageText: messageTextForTurn,
     });

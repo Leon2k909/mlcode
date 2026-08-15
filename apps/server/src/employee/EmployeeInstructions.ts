@@ -25,7 +25,21 @@ import type { Employee, ModelSelection } from "@t3tools/contracts";
  * it can drift back into doing the work itself.
  */
 export const CEO_GROUP_ROUTING_REMINDER =
-  "Routing-only CEO turn: do not inspect files, run commands, edit code, test, or publish a release. Choose the most efficient teammate for the next step and hand off one concrete task. Beta researches, Alpha implements, and Gamma verifies. If the request is genuinely simple and needs no tools, answer it directly.";
+  "Routing-only CEO turn: do not inspect files, run commands, edit code, test, or publish a release. Choose the most efficient teammate for the next step and hand off one concrete task. For non-trivial code work, use Beta research -> Alpha implementation -> Gamma verification -> your final review; skip only lanes that add no value, and never treat Alpha's completion summary as final without Gamma's evidence. If the request is genuinely simple and needs no tools, answer it directly.";
+
+const BETA_GROUP_WORKFLOW_REMINDER =
+  'Research lane reminder: trace and report evidence only. For non-trivial work, hand the findings and implementation brief to Alpha with <handoff to="worker_alpha">findings and the implementation brief</handoff>; do not implement or publish unless explicitly assigned.';
+const ALPHA_GROUP_WORKFLOW_REMINDER =
+  'Implementation lane reminder: make the scoped change and run focused checks. Then hand the files, commands, and risks to Gamma with <handoff to="worker_gamma">what changed and what to verify</handoff>; do not present a code change as final until Gamma verifies it.';
+const GAMMA_GROUP_WORKFLOW_REMINDER =
+  'Verification lane reminder: run checks and reproduce the actual behavior instead of trusting Alpha\'s summary. If it passes, hand the evidence to the CEO with <handoff to="ceo">checks and remaining risks</handoff>; if it fails, hand concrete corrections back to Alpha with <handoff to="worker_alpha">failures and required fixes</handoff>.';
+
+const EMPLOYEE_GROUP_WORKFLOW_REMINDERS: Readonly<Record<string, string>> = {
+  ceo: CEO_GROUP_ROUTING_REMINDER,
+  worker_beta: BETA_GROUP_WORKFLOW_REMINDER,
+  worker_alpha: ALPHA_GROUP_WORKFLOW_REMINDER,
+  worker_gamma: GAMMA_GROUP_WORKFLOW_REMINDER,
+};
 
 /**
  * Framing tag for the persona block. Chosen to match the existing provider
@@ -130,19 +144,29 @@ export const applyEmployeePreamble = (input: {
 };
 
 /**
- * Keep a warm CEO group session in the routing lane.
+ * Keep warm default employee sessions in their assigned workflow lane.
  *
  * This is deliberately a prompt-level guard: the CEO still makes the
- * delegation decision, while the worker that receives the handoff performs
- * the file inspection, implementation, tests, and release work.
+ * delegation decision, while workers perform their lane and hand off the
+ * evidence to the next lane.
  */
-export const applyCeoGroupRoutingReminder = (input: {
+export const applyEmployeeGroupWorkflowReminder = (input: {
   readonly selection: Pick<ModelSelection, "employeeId" | "employeeIds">;
   readonly messageText: string;
 }): string => {
-  const isCeoGroupTurn =
-    input.selection.employeeId === "ceo" && (input.selection.employeeIds?.length ?? 0) >= 2;
-  return isCeoGroupTurn
-    ? `${CEO_GROUP_ROUTING_REMINDER}\n\n${input.messageText}`
-    : input.messageText;
+  if ((input.selection.employeeIds?.length ?? 0) < 2) return input.messageText;
+  const reminder =
+    input.selection.employeeId === undefined
+      ? undefined
+      : EMPLOYEE_GROUP_WORKFLOW_REMINDERS[input.selection.employeeId];
+  return reminder === undefined ? input.messageText : `${reminder}\n\n${input.messageText}`;
 };
+
+/** Backward-compatible helper for callers that only need CEO behavior. */
+export const applyCeoGroupRoutingReminder = (input: {
+  readonly selection: Pick<ModelSelection, "employeeId" | "employeeIds">;
+  readonly messageText: string;
+}): string =>
+  input.selection.employeeId === "ceo"
+    ? applyEmployeeGroupWorkflowReminder(input)
+    : input.messageText;
