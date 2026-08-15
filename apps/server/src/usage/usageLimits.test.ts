@@ -118,6 +118,46 @@ describe("normalizeUsageLimits", () => {
     });
   });
 
+  it("falls back to Claude's model-scoped Fable window", () => {
+    expect(
+      normalizeUsageLimits(
+        ProviderDriverKind.make("claudeAgent"),
+        {
+          subscription_type: "max",
+          rate_limits: {
+            five_hour: {
+              utilization: 47,
+              resets_at: "2026-08-15T23:30:00.000Z",
+            },
+            seven_day: {
+              utilization: 5,
+              resets_at: "2026-08-22T18:00:00.000Z",
+            },
+            seven_day_opus: null,
+            model_scoped: [
+              {
+                display_name: "Fable",
+                utilization: 9,
+                resets_at: "2026-08-22T18:00:00.000Z",
+              },
+            ],
+          },
+        },
+        "2026-08-15T19:00:00.000Z",
+      ),
+    ).toEqual({
+      provider: "claude",
+      readAt: "2026-08-15T19:00:00.000Z",
+      status: null,
+      plan: "Max",
+      windows: [
+        { label: "5-hour", usedPercent: 47, resetsAt: 1786836600 },
+        { label: "Weekly", usedPercent: 5, resetsAt: 1787421600 },
+        { label: "Weekly (Fable)", usedPercent: 9, resetsAt: 1787421600 },
+      ],
+    });
+  });
+
   it("keeps Claude subscription status when utilization is omitted", () => {
     expect(
       normalizeUsageLimits(

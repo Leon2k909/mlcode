@@ -87,6 +87,37 @@ function claudeUsageWindow(label: string, value: unknown) {
   };
 }
 
+function claudeModelScopedWindow(
+  label: string,
+  modelName: string,
+  rateLimits: Record<string, unknown> | null,
+) {
+  const modelScoped = Array.isArray(rateLimits?.model_scoped) ? rateLimits.model_scoped : [];
+  const modelScopedMatch = modelScoped.find((value) => {
+    const entry = record(value);
+    return nonEmptyString(entry?.display_name)?.toLowerCase() === modelName.toLowerCase();
+  });
+  if (modelScopedMatch !== undefined) {
+    return claudeUsageWindow(label, modelScopedMatch);
+  }
+
+  // Some Claude SDK versions expose the same scoped window only in the
+  // generic limits list, with the model name nested under scope.model.
+  const limits = Array.isArray(rateLimits?.limits) ? rateLimits.limits : [];
+  const limitsMatch = limits.find((value) => {
+    const entry = record(value);
+    const scope = record(entry?.scope);
+    const model = record(scope?.model);
+    return nonEmptyString(model?.display_name)?.toLowerCase() === modelName.toLowerCase();
+  });
+  const limit = record(limitsMatch);
+  if (!limit) return null;
+  return claudeUsageWindow(label, {
+    utilization: limit.percent,
+    resets_at: limit.resets_at,
+  });
+}
+
 function normalizeClaudeUsageResponse(
   event: Record<string, unknown>,
   rateLimits: Record<string, unknown> | null,
@@ -96,8 +127,10 @@ function normalizeClaudeUsageResponse(
     claudeUsageWindow("5-hour", rateLimits?.five_hour),
     claudeUsageWindow("Weekly", rateLimits?.seven_day),
     claudeUsageWindow("Weekly (OAuth apps)", rateLimits?.seven_day_oauth_apps),
-    claudeUsageWindow("Weekly (Fable)", rateLimits?.seven_day_opus),
-    claudeUsageWindow("Weekly (Sonnet)", rateLimits?.seven_day_sonnet),
+    claudeUsageWindow("Weekly (Fable)", rateLimits?.seven_day_opus) ??
+      claudeModelScopedWindow("Weekly (Fable)", "Fable", rateLimits),
+    claudeUsageWindow("Weekly (Sonnet)", rateLimits?.seven_day_sonnet) ??
+      claudeModelScopedWindow("Weekly (Sonnet)", "Sonnet", rateLimits),
     claudeUsageWindow("Extra usage", rateLimits?.extra_usage),
   ].filter((window): window is NonNullable<typeof window> => window !== null);
   const plan = displayPlan(
