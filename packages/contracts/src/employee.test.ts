@@ -201,6 +201,8 @@ describe("DEFAULT_EMPLOYEES", () => {
     expect(instructions).toContain("do not treat Alpha's completion summary as final");
     expect(instructions).toContain("routing-only");
     expect(instructions).toContain("do not inspect files");
+    expect(instructions).toContain("your first response is a delegation gate");
+    expect(instructions).toContain("Never say 'I'll trace...'");
     expect(instructions).toContain("Never hand off to yourself");
   });
 

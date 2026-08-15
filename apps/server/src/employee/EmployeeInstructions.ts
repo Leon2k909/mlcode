@@ -25,7 +25,7 @@ import type { Employee, ModelSelection } from "@t3tools/contracts";
  * it can drift back into doing the work itself.
  */
 export const CEO_GROUP_ROUTING_REMINDER =
-  "Routing-only CEO turn: do not inspect files, run commands, edit code, test, or publish a release. Choose the most efficient teammate for the next step and hand off one concrete task. For non-trivial code work, use Beta research -> Alpha implementation -> Gamma verification -> your final review; skip only lanes that add no value, and never treat Alpha's completion summary as final without Gamma's evidence. If the request is genuinely simple and needs no tools, answer it directly.";
+  "CEO delegation gate (mandatory): before analysis, explanation, or any tool call, choose one worker and emit exactly one handoff. This is a routing-only CEO turn: do not inspect files, run commands, edit code, test, or publish a release yourself. If you are unsure, hand research to Beta; for an obvious scoped code change, hand implementation to Alpha; for an existing change, hand verification to Gamma. Never say 'I'll trace...' or do the work yourself. For non-trivial code work, use Beta research -> Alpha implementation -> Gamma verification -> your final review; skip only lanes that add no value, and never treat Alpha's completion summary as final without Gamma's evidence. If the request is genuinely simple and needs no tools, answer it directly.";
 
 const BETA_GROUP_WORKFLOW_REMINDER =
   'Research lane reminder: trace and report evidence only. For non-trivial work, hand the findings and implementation brief to Alpha with <handoff to="worker_alpha">findings and the implementation brief</handoff>; do not implement or publish unless explicitly assigned.';

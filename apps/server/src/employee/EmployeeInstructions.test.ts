@@ -91,6 +91,8 @@ describe("applyCeoGroupRoutingReminder", () => {
     });
 
     expect(message).toBe(`${CEO_GROUP_ROUTING_REMINDER}\n\nFind the cause of this bug.`);
+    expect(message).toContain("before analysis, explanation, or any tool call");
+    expect(message).toContain("Never say 'I'll trace...'");
   });
 
   it("does not add the CEO reminder to a worker or private turn", () => {

@@ -1291,8 +1291,9 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
           markdownCwd={ctx.markdownCwd}
         />
       </div>
-      <div className="flex w-full max-w-[80%] items-center justify-end pe-1 text-xs tabular-nums opacity-0 transition-opacity duration-200 focus-within:opacity-100 group-hover:opacity-100">
-        <div className="flex shrink-0 items-center gap-2">
+      <div className="flex w-full max-w-[80%] items-center justify-end pe-1 text-xs tabular-nums">
+        {canRevertAgentWork ? <RevertUserMessageButton messageId={row.message.id} /> : null}
+        <div className="flex shrink-0 items-center gap-2 opacity-0 transition-opacity duration-200 focus-within:opacity-100 group-hover:opacity-100">
           <Tooltip>
             <TooltipTrigger render={<p className="text-muted-foreground text-xs tabular-nums" />}>
               {formatShortTimestamp(row.message.createdAt, ctx.timestampFormat)}
@@ -1301,12 +1302,9 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
               {formatChatTimestampTooltip(row.message.createdAt, ctx.timestampFormat)}
             </TooltipPopup>
           </Tooltip>
-          <div className="flex items-center gap-0.5">
-            {canRevertAgentWork && <RevertUserMessageButton messageId={row.message.id} />}
-            {displayedUserMessage.copyText && (
-              <MessageCopyButton text={displayedUserMessage.copyText} variant="ghost" />
-            )}
-          </div>
+          {displayedUserMessage.copyText && (
+            <MessageCopyButton text={displayedUserMessage.copyText} variant="ghost" />
+          )}
         </div>
       </div>
     </div>
@@ -1325,15 +1323,18 @@ function RevertUserMessageButton({ messageId }: { messageId: MessageId }) {
             type="button"
             size="xs"
             variant="ghost"
+            className="gap-1 px-1.5 text-[11px] text-muted-foreground hover:text-foreground"
             disabled={activity.isRevertingCheckpoint || activity.isWorking}
             onClick={() => ctx.onRevertUserMessage(messageId)}
-            aria-label="Revert to this message"
+            aria-label="Rewind to this message"
+            title="Rewind thread to before this message"
           />
         }
       >
         <Undo2Icon className="size-3" />
+        <span>Rewind</span>
       </TooltipTrigger>
-      <TooltipPopup side="top">Revert to this message</TooltipPopup>
+      <TooltipPopup side="top">Rewind thread to before this message</TooltipPopup>
     </Tooltip>
   );
 }
@@ -1442,10 +1443,8 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
           onOpenTurnDiff={ctx.onOpenTurnDiff}
         />
         {row.showAssistantMeta ? (
-          <div className="mt-1.5 flex items-center gap-2 text-xs tabular-nums">
-            <div className="opacity-0 transition-opacity duration-200 focus-within:opacity-100 group-hover/assistant:opacity-100">
-              <AssistantCopyButton row={row} text={handoff.visibleText} />
-            </div>
+          <div className="mt-1.5 flex items-center gap-2 text-xs tabular-nums opacity-0 transition-opacity duration-200 focus-within:opacity-100 group-hover/assistant:opacity-100">
+            <AssistantCopyButton row={row} text={handoff.visibleText} />
             {!row.message.streaming ? (
               <EmployeeFeedbackButton
                 messageId={row.message.id}
@@ -1454,18 +1453,16 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
               />
             ) : null}
             {!row.message.streaming && (
-              <div className="opacity-0 transition-opacity duration-200 focus-within:opacity-100 group-hover/assistant:opacity-100">
-                <Tooltip>
-                  <TooltipTrigger
-                    render={<p className="text-muted-foreground text-xs tabular-nums" />}
-                  >
-                    {formatShortTimestamp(row.message.updatedAt, ctx.timestampFormat)}
-                  </TooltipTrigger>
-                  <TooltipPopup>
-                    {formatChatTimestampTooltip(row.message.updatedAt, ctx.timestampFormat)}
-                  </TooltipPopup>
-                </Tooltip>
-              </div>
+              <Tooltip>
+                <TooltipTrigger
+                  render={<p className="text-muted-foreground text-xs tabular-nums" />}
+                >
+                  {formatShortTimestamp(row.message.updatedAt, ctx.timestampFormat)}
+                </TooltipTrigger>
+                <TooltipPopup>
+                  {formatChatTimestampTooltip(row.message.updatedAt, ctx.timestampFormat)}
+                </TooltipPopup>
+              </Tooltip>
             )}
           </div>
         ) : null}

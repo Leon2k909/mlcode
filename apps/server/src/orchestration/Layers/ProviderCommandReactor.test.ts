@@ -2582,6 +2582,8 @@ describe("ProviderCommandReactor", () => {
     const ceoInput = harness.sendTurn.mock.calls[0]?.[0] as { input?: string };
     expect(ceoInput.input).toContain("You are Casey, working as CEO.");
     expect(ceoInput.input).toContain("Riley (id: reviewer)");
+    expect(ceoInput.input).toContain("CEO delegation gate (mandatory)");
+    expect(ceoInput.input).toContain("Never say 'I'll trace...'");
     expect(ceoInput.input).not.toContain("Morgan (id: outsider)");
 
     const reviewerSelection: ModelSelection = {

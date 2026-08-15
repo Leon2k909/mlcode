@@ -777,6 +777,20 @@ describe("MessagesTimeline", () => {
     expect(markup).toContain('aria-label="Mark response as not helpful"');
   });
 
+  it("labels the available checkpoint action as rewind", () => {
+    const messageId = MessageId.make("message-1");
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        revertTurnCountByUserMessageId={new Map([[messageId, 0]])}
+        timelineEntries={[buildUserTimelineEntry("Sent to the wrong chat.")]}
+      />,
+    );
+
+    expect(markup).toContain('aria-label="Rewind to this message"');
+    expect(markup).toContain("Rewind thread to before this message");
+  });
+
   it("does not present a rejected self-handoff as an employee transfer", () => {
     const markup = renderToStaticMarkup(
       <MessagesTimeline
