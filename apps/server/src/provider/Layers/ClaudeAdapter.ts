@@ -3129,6 +3129,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
             config: message as Record<string, unknown>,
           },
         });
+        yield* emitClaudeUsageLimits(context);
         return;
       case "status":
         yield* offerRuntimeEvent({

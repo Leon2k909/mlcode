@@ -1047,6 +1047,75 @@ describe("ClaudeAdapterLive", () => {
     );
   });
 
+  it.effect(
+    "emits Claude's complete structured usage snapshot when the session initializes",
+    () => {
+      const usageResponse = {
+        subscription_type: "max",
+        rate_limits_available: true,
+        rate_limits: {
+          five_hour: {
+            utilization: 37,
+            resets_at: "2026-08-15T02:50:00.000Z",
+          },
+          seven_day: {
+            utilization: 21,
+            resets_at: "2026-08-17T00:00:00.000Z",
+          },
+          seven_day_opus: {
+            utilization: 8,
+            resets_at: "2026-08-17T00:00:00.000Z",
+          },
+        },
+      } as unknown as SDKControlGetUsageResponse;
+      const harness = makeHarness({ usageResponse });
+      return Effect.gen(function* () {
+        const adapter = yield* ClaudeAdapter;
+        const runtimeEventsFiber = yield* adapter.streamEvents.pipe(
+          Stream.takeUntil((event) => event.type === "account.rate-limits.updated"),
+          Stream.runCollect,
+          Effect.forkChild,
+        );
+
+        const session = yield* adapter.startSession({
+          threadId: THREAD_ID,
+          provider: ProviderDriverKind.make("claudeAgent"),
+          runtimeMode: "full-access",
+        });
+        harness.query.emit({
+          type: "system",
+          subtype: "init",
+          apiKeySource: "none",
+          claude_code_version: "test",
+          cwd: "/tmp/claude-adapter-test",
+          tools: [],
+          mcp_servers: [],
+          model: "claude-sonnet-4-5",
+          permissionMode: "bypassPermissions",
+          slash_commands: [],
+          output_style: "default",
+          skills: [],
+          plugins: [],
+          session_id: "sdk-session-usage-init",
+          uuid: "init-usage",
+        } as unknown as SDKMessage);
+
+        const runtimeEvents = Array.from(yield* Fiber.join(runtimeEventsFiber));
+        const usageEvent = runtimeEvents.find(
+          (event) => event.type === "account.rate-limits.updated",
+        );
+        assert.equal(usageEvent?.type, "account.rate-limits.updated");
+        if (usageEvent?.type === "account.rate-limits.updated") {
+          assert.equal(String(usageEvent.threadId), String(session.threadId));
+          assert.deepEqual(usageEvent.payload.rateLimits, usageResponse);
+        }
+      }).pipe(
+        Effect.provideService(Random.Random, makeDeterministicRandomService()),
+        Effect.provide(harness.layer),
+      );
+    },
+  );
+
   it.effect("does not emit turn.completed for a result with no active turn", () => {
     const harness = makeHarness();
     return Effect.gen(function* () {
