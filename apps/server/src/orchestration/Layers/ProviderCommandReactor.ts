@@ -32,7 +32,10 @@ import * as Stream from "effect/Stream";
 import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
 
 import { resolveThreadWorkspaceCwd } from "../../checkpointing/Utils.ts";
-import { applyEmployeePreamble } from "../../employee/EmployeeInstructions.ts";
+import {
+  applyCeoGroupRoutingReminder,
+  applyEmployeePreamble,
+} from "../../employee/EmployeeInstructions.ts";
 import { checkWorkspacePath, describeMissingWorkspace } from "../../project/WorkspaceRelocation.ts";
 import { increment, orchestrationEventsProcessedTotal } from "../../observability/Metrics.ts";
 import { ProviderAdapterRequestError } from "../../provider/Errors.ts";
@@ -1000,13 +1003,17 @@ const make = Effect.gen(function* () {
       employee === undefined
         ? input.messageText
         : applyEmployeePreamble({ employee, messageText: input.messageText, teammates });
+    const routedMessageText = applyCeoGroupRoutingReminder({
+      selection: employeeSelection,
+      messageText: messageTextForTurn,
+    });
     const providerSwitchContext = providerChanged
       ? buildProviderSwitchContext(thread.messages, input.messageId)
       : undefined;
     const normalizedInput = toNonEmptyProviderInput(
       providerSwitchContext === undefined
-        ? messageTextForTurn
-        : `${providerSwitchContext}\n\n[Continue with the new turn]\n\n${messageTextForTurn}`,
+        ? routedMessageText
+        : `${providerSwitchContext}\n\n[Continue with the new turn]\n\n${routedMessageText}`,
     );
     const normalizedAttachments = input.attachments ?? [];
     const activeSession = yield* providerService

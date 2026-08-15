@@ -1,8 +1,13 @@
 import { describe, expect, it } from "vite-plus/test";
 import * as Schema from "effect/Schema";
-import { Employee } from "@t3tools/contracts";
+import { Employee, EmployeeId } from "@t3tools/contracts";
 
-import { applyEmployeePreamble, buildEmployeePreamble } from "./EmployeeInstructions.ts";
+import {
+  applyCeoGroupRoutingReminder,
+  applyEmployeePreamble,
+  buildEmployeePreamble,
+  CEO_GROUP_ROUTING_REMINDER,
+} from "./EmployeeInstructions.ts";
 
 const decodeEmployee = Schema.decodeUnknownSync(Employee);
 
@@ -71,5 +76,37 @@ describe("applyEmployeePreamble", () => {
     const messageText = "Line one\n\n  indented\n```code```";
     const applied = applyEmployeePreamble({ employee: employee(), messageText });
     expect(applied.endsWith(messageText.trim())).toBe(true);
+  });
+});
+
+describe("applyCeoGroupRoutingReminder", () => {
+  it("keeps the CEO on routing duty for every group turn", () => {
+    const message = applyCeoGroupRoutingReminder({
+      selection: {
+        employeeId: EmployeeId.make("ceo"),
+        employeeIds: [EmployeeId.make("ceo"), EmployeeId.make("worker_beta")],
+      },
+      messageText: "Find the cause of this bug.",
+    });
+
+    expect(message).toBe(`${CEO_GROUP_ROUTING_REMINDER}\n\nFind the cause of this bug.`);
+  });
+
+  it("does not add the CEO reminder to a worker or private turn", () => {
+    expect(
+      applyCeoGroupRoutingReminder({
+        selection: {
+          employeeId: EmployeeId.make("worker_beta"),
+          employeeIds: [EmployeeId.make("ceo"), EmployeeId.make("worker_beta")],
+        },
+        messageText: "Trace the bug.",
+      }),
+    ).toBe("Trace the bug.");
+    expect(
+      applyCeoGroupRoutingReminder({
+        selection: { employeeId: EmployeeId.make("ceo"), employeeIds: [EmployeeId.make("ceo")] },
+        messageText: "Answer this.",
+      }),
+    ).toBe("Answer this.");
   });
 });

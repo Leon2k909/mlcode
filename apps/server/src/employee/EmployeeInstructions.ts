@@ -14,7 +14,18 @@
  *
  * @module employee/EmployeeInstructions
  */
-import type { Employee } from "@t3tools/contracts";
+import type { Employee, ModelSelection } from "@t3tools/contracts";
+
+/**
+ * A short, per-turn reminder for the lead in a group chat.
+ *
+ * Employee standing instructions are intentionally injected only when a
+ * provider context is opened (or a handoff changes the active employee). A
+ * warm CEO session therefore needs this smaller reminder on later turns, or
+ * it can drift back into doing the work itself.
+ */
+export const CEO_GROUP_ROUTING_REMINDER =
+  "Routing-only CEO turn: do not inspect files, run commands, edit code, test, or publish a release. Choose the most efficient teammate for the next step and hand off one concrete task. Beta researches, Alpha implements, and Gamma verifies. If the request is genuinely simple and needs no tools, answer it directly.";
 
 /**
  * Framing tag for the persona block. Chosen to match the existing provider
@@ -116,4 +127,22 @@ export const applyEmployeePreamble = (input: {
   if (preamble === undefined) return input.messageText;
   const message = input.messageText.trim();
   return message.length === 0 ? preamble : `${preamble}\n\n${message}`;
+};
+
+/**
+ * Keep a warm CEO group session in the routing lane.
+ *
+ * This is deliberately a prompt-level guard: the CEO still makes the
+ * delegation decision, while the worker that receives the handoff performs
+ * the file inspection, implementation, tests, and release work.
+ */
+export const applyCeoGroupRoutingReminder = (input: {
+  readonly selection: Pick<ModelSelection, "employeeId" | "employeeIds">;
+  readonly messageText: string;
+}): string => {
+  const isCeoGroupTurn =
+    input.selection.employeeId === "ceo" && (input.selection.employeeIds?.length ?? 0) >= 2;
+  return isCeoGroupTurn
+    ? `${CEO_GROUP_ROUTING_REMINDER}\n\n${input.messageText}`
+    : input.messageText;
 };

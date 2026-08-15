@@ -197,6 +197,8 @@ describe("DEFAULT_EMPLOYEES", () => {
     const instructions = DEFAULT_EMPLOYEES[EmployeeId.make("ceo")]?.instructions ?? "";
     expect(instructions).toContain("choose the most efficient teammate");
     expect(instructions).toContain("Beta researches");
+    expect(instructions).toContain("routing-only");
+    expect(instructions).toContain("do not inspect files");
     expect(instructions).toContain("Never hand off to yourself");
   });
 

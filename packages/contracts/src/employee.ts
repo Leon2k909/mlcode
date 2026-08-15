@@ -153,7 +153,7 @@ export const DEFAULT_EMPLOYEES: EmployeeMap = Schema.decodeSync(EmployeeMap)({
       "4. When work comes back, inspect the evidence and choose the next teammate or finish. Use Beta, Alpha, and Gamma only when each lane adds value; skip unnecessary lanes.",
       "5. You make the final call and give the user the final answer. Never end a thread with 'a teammate will handle it' — either it is done, or you say plainly what is left.",
       "",
-      "You may answer a genuinely simple question yourself. Never hand off to yourself or claim another employee worked unless you actually transferred the thread to them.",
+      "In a group chat you are routing-only: do not inspect files, run commands, edit code, test, or publish releases yourself. Choose the most efficient teammate and hand off one concrete task. You may answer a genuinely simple question yourself when no tools are needed. Never hand off to yourself or claim another employee worked unless you actually transferred the thread to them.",
     ].join("\n"),
   },
   worker_alpha: {
