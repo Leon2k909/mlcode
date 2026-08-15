@@ -1026,6 +1026,32 @@ function resolveTimelineModel(
   return modelSelection.model;
 }
 
+const REASONING_OPTION_IDS = new Set(["reasoningEffort", "effort", "reasoning"]);
+const REASONING_EFFORT_LABELS: Readonly<Record<string, string>> = {
+  none: "None",
+  minimal: "Minimal",
+  low: "Low",
+  medium: "Medium",
+  high: "High",
+  xhigh: "Extra High",
+  max: "Max",
+  ultra: "Ultra",
+};
+
+function resolveTimelineReasoningEffort(modelSelection: ModelSelection | null): string | undefined {
+  const option = modelSelection?.options?.find((candidate) =>
+    REASONING_OPTION_IDS.has(candidate.id),
+  );
+  return typeof option?.value === "string" && option.value.length > 0 ? option.value : undefined;
+}
+
+function formatTimelineReasoningEffort(value: string): string {
+  return (
+    REASONING_EFFORT_LABELS[value.toLocaleLowerCase()] ??
+    `${value.slice(0, 1).toLocaleUpperCase()}${value.slice(1)}`
+  );
+}
+
 interface ParsedEmployeeHandoffMessage {
   readonly targetName: string;
   readonly sourceName: string;
@@ -1067,14 +1093,20 @@ function EmployeeTimelineIdentity({
   const employee = resolveTimelineEmployee(ctx.employees, employeeId);
   const displayName = employee?.displayName ?? employeeId;
   const model = resolveTimelineModel(ctx.modelSelection, employee);
+  const reasoningEffort = resolveTimelineReasoningEffort(ctx.modelSelection);
+  const reasoningEffortLabel =
+    reasoningEffort === undefined ? undefined : formatTimelineReasoningEffort(reasoningEffort);
   const provider = employee
     ? formatProviderDisplayName(
         ctx.modelSelection?.instanceId ?? ctx.providerInstanceId ?? employee.providerInstanceId,
       )
     : null;
-  const hoverLabel = model
-    ? `${displayName} uses ${model}${provider ? ` via ${provider}` : ""}`
-    : undefined;
+  const hoverLabel =
+    model === undefined
+      ? undefined
+      : `${displayName} uses ${model}${provider ? ` via ${provider}` : ""}${
+          reasoningEffortLabel ? ` at ${reasoningEffortLabel} reasoning` : ""
+        }`;
 
   return (
     <div
@@ -1101,6 +1133,11 @@ function EmployeeTimelineIdentity({
       {model ? (
         <span className="shrink-0 rounded-full border border-border/60 bg-muted/35 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
           model {model}
+        </span>
+      ) : null}
+      {reasoningEffortLabel ? (
+        <span className="shrink-0 rounded-full border border-border/60 bg-muted/35 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+          reasoning {reasoningEffortLabel}
         </span>
       ) : null}
       {suffix ? <span className="shrink-0 text-muted-foreground">{suffix}</span> : null}
@@ -1328,6 +1365,9 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
   // falling back to an unlabeled provider response.
   const employeeId = row.message.employeeId ?? ctx.modelSelection?.employeeId;
   const rawMessageText = row.message.text ?? "";
+  const reasoningEffort = resolveTimelineReasoningEffort(ctx.modelSelection);
+  const reasoningEffortLabel =
+    reasoningEffort === undefined ? undefined : formatTimelineReasoningEffort(reasoningEffort);
   const handoff =
     employeeId === undefined
       ? { visibleText: rawMessageText, toEmployeeId: undefined }
@@ -1354,6 +1394,11 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
             <span className="rounded-full border border-border/60 bg-muted/35 px-1.5 py-0.5 font-mono text-[10px]">
               model {ctx.modelSelection.model}
             </span>
+            {reasoningEffortLabel ? (
+              <span className="rounded-full border border-border/60 bg-muted/35 px-1.5 py-0.5 text-[10px]">
+                reasoning {reasoningEffortLabel}
+              </span>
+            ) : null}
             <span>via {formatProviderDisplayName(ctx.modelSelection.instanceId)}</span>
           </div>
         ) : null}

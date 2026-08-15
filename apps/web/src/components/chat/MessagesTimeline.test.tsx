@@ -783,6 +783,7 @@ describe("MessagesTimeline", () => {
         modelSelection={{
           instanceId: ProviderInstanceId.make("codex"),
           model: "gpt-5.6-sol",
+          options: [{ id: "reasoningEffort", value: "high" }],
           employeeId: EmployeeId.make("ceo"),
           employeeIds: [EmployeeId.make("ceo"), EmployeeId.make("reviewer")],
         }}
@@ -808,7 +809,43 @@ describe("MessagesTimeline", () => {
     expect(markup).toContain('data-t3-worker-kind="employee"');
     expect(markup).toContain("Alex");
     expect(markup).toContain("model gpt-5.6-sol");
-    expect(markup).toContain('title="Alex uses gpt-5.6-sol via Codex"');
+    expect(markup).toContain("reasoning High");
+    expect(markup).toContain('title="Alex uses gpt-5.6-sol via Codex at High reasoning"');
+  });
+
+  it("shows Claude effort levels in employee attribution", () => {
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        employees={TEST_EMPLOYEES}
+        modelSelection={{
+          instanceId: ProviderInstanceId.make("claudeAgent"),
+          model: "claude-opus-5",
+          options: [{ id: "effort", value: "max" }],
+          employeeId: EmployeeId.make("ceo"),
+          employeeIds: [EmployeeId.make("ceo"), EmployeeId.make("reviewer")],
+        }}
+        timelineEntries={[
+          {
+            id: "claude-employee-response",
+            kind: "message",
+            createdAt: MESSAGE_CREATED_AT,
+            message: {
+              id: MessageId.make("claude-employee-response"),
+              role: "assistant",
+              text: "The Claude employee handled this.",
+              turnId: TurnId.make("turn-claude-employee"),
+              createdAt: MESSAGE_CREATED_AT,
+              updatedAt: MESSAGE_CREATED_AT,
+              streaming: false,
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(markup).toContain("reasoning Max");
+    expect(markup).toContain('title="Alex uses claude-opus-5 via Claude at Max reasoning"');
   });
 
   it("renders employee handoff prompts as an internal teammate message", () => {
