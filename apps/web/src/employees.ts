@@ -62,7 +62,10 @@ export function withEmployeeRouting(
  * Remove the model-facing handoff protocol from chat copy while retaining
  * enough information for the timeline to show who received the work.
  */
-export function deriveEmployeeHandoffDisplay(text: string): EmployeeHandoffDisplayState {
+export function deriveEmployeeHandoffDisplay(
+  text: string,
+  options: { readonly fromEmployeeId?: EmployeeId } = {},
+): EmployeeHandoffDisplayState {
   const match = EMPLOYEE_HANDOFF_PATTERN.exec(text);
   if (match === null) {
     return { visibleText: text, toEmployeeId: undefined, message: undefined };
@@ -70,11 +73,19 @@ export function deriveEmployeeHandoffDisplay(text: string): EmployeeHandoffDispl
 
   const requestedId = match[1];
   const message = (match[2] ?? "").trim();
+  const visibleText = text
+    .replace(EMPLOYEE_HANDOFF_PATTERN, "")
+    .replaceAll(/\n{3,}/g, "\n\n")
+    .trim();
+
+  // The server rejects self-handoffs. Keep the UI from presenting that
+  // rejected protocol marker as a real employee transfer.
+  if (options.fromEmployeeId === requestedId) {
+    return { visibleText, toEmployeeId: undefined, message: undefined };
+  }
+
   return {
-    visibleText: text
-      .replace(EMPLOYEE_HANDOFF_PATTERN, "")
-      .replaceAll(/\n{3,}/g, "\n\n")
-      .trim(),
+    visibleText,
     toEmployeeId: requestedId as EmployeeId,
     message: message.length > 0 ? message : undefined,
   };

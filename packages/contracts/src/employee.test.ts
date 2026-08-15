@@ -193,6 +193,13 @@ describe("DEFAULT_EMPLOYEES", () => {
     }
   });
 
+  it("makes the CEO the explicit routing decision-maker", () => {
+    const instructions = DEFAULT_EMPLOYEES[EmployeeId.make("ceo")]?.instructions ?? "";
+    expect(instructions).toContain("choose the most efficient teammate");
+    expect(instructions).toContain("Beta researches");
+    expect(instructions).toContain("Never hand off to yourself");
+  });
+
   it("seeds a settings file with no employees key, and leaves an explicit empty map alone", () => {
     expect(DEFAULT_SERVER_SETTINGS.employees).toEqual(DEFAULT_EMPLOYEES);
     expect(decodeServerSettings({ employees: {} }).employees).toEqual({});

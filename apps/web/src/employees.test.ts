@@ -335,6 +335,18 @@ describe("deriveEmployeeHandoffDisplay", () => {
       message: "Decision needed.",
     });
   });
+
+  it("hides a self-handoff when the source employee is known", () => {
+    expect(
+      deriveEmployeeHandoffDisplay("Done.\n<handoff to=ceo>Continue.</handoff>", {
+        fromEmployeeId: EmployeeId.make("ceo"),
+      }),
+    ).toEqual({
+      visibleText: "Done.",
+      toEmployeeId: undefined,
+      message: undefined,
+    });
+  });
 });
 
 describe("employeesForInstance", () => {

@@ -724,7 +724,9 @@ function resolveFinalAssistantTextForTurn(
       const text = row.message.text ?? null;
       finalAssistantText =
         text !== null && row.message.employeeId !== undefined
-          ? deriveEmployeeHandoffDisplay(text).visibleText
+          ? deriveEmployeeHandoffDisplay(text, {
+              fromEmployeeId: row.message.employeeId,
+            }).visibleText
           : text;
     }
   }
@@ -1329,7 +1331,7 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
   const handoff =
     employeeId === undefined
       ? { visibleText: rawMessageText, toEmployeeId: undefined }
-      : deriveEmployeeHandoffDisplay(rawMessageText);
+      : deriveEmployeeHandoffDisplay(rawMessageText, { fromEmployeeId: employeeId });
   const messageText =
     handoff.visibleText ||
     (row.message.streaming || handoff.toEmployeeId !== undefined ? "" : "(empty response)");

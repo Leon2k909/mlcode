@@ -744,6 +744,37 @@ describe("MessagesTimeline", () => {
     expect(markup).not.toContain("&lt;handoff");
   });
 
+  it("does not present a rejected self-handoff as an employee transfer", () => {
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        employees={TEST_EMPLOYEES}
+        timelineEntries={[
+          {
+            id: "employee-self-handoff",
+            kind: "message",
+            createdAt: MESSAGE_CREATED_AT,
+            message: {
+              id: MessageId.make("employee-self-handoff"),
+              role: "assistant",
+              employeeId: EmployeeId.make("ceo"),
+              text: 'Done.\n<handoff to="ceo">Continue.</handoff>',
+              turnId: TurnId.make("turn-self-handoff"),
+              createdAt: MESSAGE_CREATED_AT,
+              updatedAt: MESSAGE_CREATED_AT,
+              streaming: false,
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(markup).toContain("Done.");
+    expect(markup).not.toContain('data-t3-worker-kind="employee-handoff"');
+    expect(markup).not.toContain("Alex to");
+    expect(markup).not.toContain("Continue.");
+  });
+
   it("attributes an older assistant row to the active employee and exposes its model on hover", () => {
     const markup = renderToStaticMarkup(
       <MessagesTimeline
