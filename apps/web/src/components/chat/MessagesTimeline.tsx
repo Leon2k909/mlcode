@@ -1442,9 +1442,11 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
           onOpenTurnDiff={ctx.onOpenTurnDiff}
         />
         {row.showAssistantMeta ? (
-          <div className="mt-1.5 flex items-center gap-2 text-xs tabular-nums opacity-0 transition-opacity duration-200 focus-within:opacity-100 group-hover/assistant:opacity-100">
-            <AssistantCopyButton row={row} text={handoff.visibleText} />
-            {employeeId !== undefined && !row.message.streaming ? (
+          <div className="mt-1.5 flex items-center gap-2 text-xs tabular-nums">
+            <div className="opacity-0 transition-opacity duration-200 focus-within:opacity-100 group-hover/assistant:opacity-100">
+              <AssistantCopyButton row={row} text={handoff.visibleText} />
+            </div>
+            {!row.message.streaming ? (
               <EmployeeFeedbackButton
                 messageId={row.message.id}
                 threadKey={ctx.routeThreadKey}
@@ -1452,16 +1454,18 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
               />
             ) : null}
             {!row.message.streaming && (
-              <Tooltip>
-                <TooltipTrigger
-                  render={<p className="text-muted-foreground text-xs tabular-nums" />}
-                >
-                  {formatShortTimestamp(row.message.updatedAt, ctx.timestampFormat)}
-                </TooltipTrigger>
-                <TooltipPopup>
-                  {formatChatTimestampTooltip(row.message.updatedAt, ctx.timestampFormat)}
-                </TooltipPopup>
-              </Tooltip>
+              <div className="opacity-0 transition-opacity duration-200 focus-within:opacity-100 group-hover/assistant:opacity-100">
+                <Tooltip>
+                  <TooltipTrigger
+                    render={<p className="text-muted-foreground text-xs tabular-nums" />}
+                  >
+                    {formatShortTimestamp(row.message.updatedAt, ctx.timestampFormat)}
+                  </TooltipTrigger>
+                  <TooltipPopup>
+                    {formatChatTimestampTooltip(row.message.updatedAt, ctx.timestampFormat)}
+                  </TooltipPopup>
+                </Tooltip>
+              </div>
             )}
           </div>
         ) : null}

@@ -514,6 +514,7 @@ function QueuedMessagesPanel({
   messages,
   canSteer,
   onCancel,
+  onEdit,
   onMove,
   onRetry,
   onSteer,
@@ -521,10 +522,31 @@ function QueuedMessagesPanel({
   messages: ReadonlyArray<QueuedComposerMessage>;
   canSteer: boolean;
   onCancel: (messageId: MessageId) => void;
+  onEdit: (messageId: MessageId, text: string) => void;
   onMove: (messageId: MessageId, direction: "up" | "down") => void;
   onRetry: (messageId: MessageId) => void;
   onSteer: (messageId: MessageId) => void;
 }) {
+  const [editingMessageId, setEditingMessageId] = useState<MessageId | null>(null);
+  const [editingText, setEditingText] = useState("");
+
+  const startEditing = (message: QueuedComposerMessage) => {
+    if (message.status === "sending") return;
+    setEditingMessageId(message.id);
+    setEditingText(message.text);
+  };
+
+  const cancelEditing = () => {
+    setEditingMessageId(null);
+    setEditingText("");
+  };
+
+  const saveEditing = () => {
+    if (editingMessageId === null) return;
+    onEdit(editingMessageId, editingText);
+    cancelEditing();
+  };
+
   if (messages.length === 0) return null;
 
   return (
@@ -549,75 +571,137 @@ function QueuedMessagesPanel({
               className="mt-1.5 size-1.5 shrink-0 rounded-full bg-primary/70"
               aria-hidden="true"
             />
-            <p className="min-w-0 flex-1 truncate text-xs leading-5 text-foreground/85">
-              {message.text.trim() || "Image attachment"}
-            </p>
-            <div className="flex shrink-0 items-center gap-0.5">
-              {message.status === "failed" ? (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="xs"
-                  className="text-[11px] text-destructive hover:text-destructive"
-                  onClick={() => onRetry(message.id)}
-                  aria-label="Retry queued message"
-                  title="Retry queued message"
-                >
-                  Retry
-                </Button>
-              ) : null}
-              <Button
-                type="button"
-                variant="ghost"
-                size="xs"
-                className="gap-1 px-1.5 text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-35"
-                onClick={() => onSteer(message.id)}
-                disabled={message.status === "sending" || !canSteer}
-                aria-label="Steer queued message"
-                title={canSteer ? "Steer this message now" : "Steer while a turn is running"}
-              >
-                <ArrowUpIcon className="size-3" />
-                <span>Steer</span>
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-xs"
-                className="text-muted-foreground hover:text-foreground disabled:opacity-35"
-                onClick={() => onMove(message.id, "up")}
-                disabled={message.status === "sending" || messages.indexOf(message) === 0}
-                aria-label="Move queued message up"
-                title="Move up"
-              >
-                <ArrowUpIcon className="size-3" />
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-xs"
-                className="text-muted-foreground hover:text-foreground disabled:opacity-35"
-                onClick={() => onMove(message.id, "down")}
-                disabled={
-                  message.status === "sending" || messages.indexOf(message) === messages.length - 1
-                }
-                aria-label="Move queued message down"
-                title="Move down"
-              >
-                <ArrowDownIcon className="size-3" />
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-xs"
-                className="text-muted-foreground hover:text-destructive"
-                onClick={() => onCancel(message.id)}
-                disabled={message.status === "sending"}
-                aria-label="Cancel queued message"
-                title="Cancel queued message"
-              >
-                <XIcon className="size-3" />
-              </Button>
-            </div>
+            {editingMessageId === message.id ? (
+              <div className="min-w-0 flex-1 space-y-1.5">
+                <textarea
+                  autoFocus
+                  rows={2}
+                  value={editingText}
+                  onChange={(event) => setEditingText(event.currentTarget.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Escape") {
+                      event.preventDefault();
+                      cancelEditing();
+                    } else if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+                      event.preventDefault();
+                      saveEditing();
+                    }
+                  }}
+                  className="min-h-14 w-full resize-y rounded-md border border-border/70 bg-background px-2 py-1.5 text-xs leading-5 text-foreground outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  aria-label="Edit queued message"
+                  data-chat-queued-message-edit="true"
+                />
+                <div className="flex items-center gap-1">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="xs"
+                    onClick={saveEditing}
+                    aria-label="Save queued message"
+                  >
+                    Save
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="xs"
+                    onClick={cancelEditing}
+                    aria-label="Cancel editing queued message"
+                  >
+                    Cancel
+                  </Button>
+                  <span className="ml-1 text-[10px] text-muted-foreground/70">
+                    Ctrl/⌘+Enter to save
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <>
+                <p className="min-w-0 flex-1 truncate text-xs leading-5 text-foreground/85">
+                  {message.text.trim() || "Image attachment"}
+                </p>
+                <div className="flex shrink-0 items-center gap-0.5">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="xs"
+                    className="gap-1 px-1.5 text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-35"
+                    onClick={() => startEditing(message)}
+                    disabled={message.status === "sending"}
+                    aria-label="Edit queued message"
+                    title="Edit queued message"
+                  >
+                    <PenLineIcon className="size-3" />
+                    <span>Edit</span>
+                  </Button>
+                  {message.status === "failed" ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="xs"
+                      className="text-[11px] text-destructive hover:text-destructive"
+                      onClick={() => onRetry(message.id)}
+                      aria-label="Retry queued message"
+                      title="Retry queued message"
+                    >
+                      Retry
+                    </Button>
+                  ) : null}
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="xs"
+                    className="gap-1 px-1.5 text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-35"
+                    onClick={() => onSteer(message.id)}
+                    disabled={message.status === "sending" || !canSteer}
+                    aria-label="Steer queued message"
+                    title={canSteer ? "Steer this message now" : "Steer while a turn is running"}
+                  >
+                    <ArrowUpIcon className="size-3" />
+                    <span>Steer</span>
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-xs"
+                    className="text-muted-foreground hover:text-foreground disabled:opacity-35"
+                    onClick={() => onMove(message.id, "up")}
+                    disabled={message.status === "sending" || messages.indexOf(message) === 0}
+                    aria-label="Move queued message up"
+                    title="Move up"
+                  >
+                    <ArrowUpIcon className="size-3" />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-xs"
+                    className="text-muted-foreground hover:text-foreground disabled:opacity-35"
+                    onClick={() => onMove(message.id, "down")}
+                    disabled={
+                      message.status === "sending" ||
+                      messages.indexOf(message) === messages.length - 1
+                    }
+                    aria-label="Move queued message down"
+                    title="Move down"
+                  >
+                    <ArrowDownIcon className="size-3" />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-xs"
+                    className="text-muted-foreground hover:text-destructive"
+                    onClick={() => onCancel(message.id)}
+                    disabled={message.status === "sending"}
+                    aria-label="Cancel queued message"
+                    title="Cancel queued message"
+                  >
+                    <XIcon className="size-3" />
+                  </Button>
+                </div>
+              </>
+            )}
           </div>
         ))}
       </div>
@@ -708,6 +792,7 @@ export interface ChatComposerProps {
   queuedMessages: ReadonlyArray<QueuedComposerMessage>;
   canSteerQueuedMessages: boolean;
   onCancelQueuedMessage: (messageId: MessageId) => void;
+  onEditQueuedMessage: (messageId: MessageId, text: string) => void;
   onMoveQueuedMessage: (messageId: MessageId, direction: "up" | "down") => void;
   onRetryQueuedMessage: (messageId: MessageId) => void;
   onSteerQueuedMessage: (messageId: MessageId) => void;
@@ -820,6 +905,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     queuedMessages,
     canSteerQueuedMessages,
     onCancelQueuedMessage,
+    onEditQueuedMessage,
     onMoveQueuedMessage,
     onRetryQueuedMessage,
     onSteerQueuedMessage,
@@ -3262,6 +3348,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 messages={queuedMessages}
                 canSteer={canSteerQueuedMessages}
                 onCancel={onCancelQueuedMessage}
+                onEdit={onEditQueuedMessage}
                 onMove={onMoveQueuedMessage}
                 onRetry={onRetryQueuedMessage}
                 onSteer={onSteerQueuedMessage}

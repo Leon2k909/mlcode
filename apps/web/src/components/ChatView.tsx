@@ -5642,6 +5642,24 @@ function ChatViewContent(props: ChatViewProps) {
     });
   }, []);
 
+  const onEditQueuedMessage = useCallback((messageId: MessageId, text: string) => {
+    const nextText = text.trim();
+    setQueuedMessages((existing) =>
+      existing.map((message) =>
+        message.id === messageId && message.status !== "sending"
+          ? {
+              ...message,
+              text: nextText,
+              payload: {
+                ...message.payload,
+                text: nextText,
+              },
+            }
+          : message,
+      ),
+    );
+  }, []);
+
   const onMoveQueuedMessage = useCallback((messageId: MessageId, direction: "up" | "down") => {
     setQueuedMessages((existing) => {
       const index = existing.findIndex((entry) => entry.id === messageId);
@@ -6855,6 +6873,7 @@ function ChatViewContent(props: ChatViewProps) {
                               phase === "running" && activeThread !== undefined
                             }
                             onCancelQueuedMessage={onCancelQueuedMessage}
+                            onEditQueuedMessage={onEditQueuedMessage}
                             onMoveQueuedMessage={onMoveQueuedMessage}
                             onRetryQueuedMessage={onRetryQueuedMessage}
                             onSteerQueuedMessage={onSteerQueuedMessage}

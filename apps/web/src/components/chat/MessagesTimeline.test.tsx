@@ -744,6 +744,39 @@ describe("MessagesTimeline", () => {
     expect(markup).not.toContain("&lt;handoff");
   });
 
+  it("shows response feedback for ordinary assistant replies", () => {
+    const turnId = TurnId.make("turn-provider-response");
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        latestTurn={{
+          turnId,
+          state: "completed",
+          startedAt: MESSAGE_CREATED_AT,
+          completedAt: MESSAGE_CREATED_AT,
+        }}
+        timelineEntries={[
+          {
+            id: "provider-response",
+            kind: "message",
+            createdAt: MESSAGE_CREATED_AT,
+            message: {
+              id: MessageId.make("provider-response"),
+              role: "assistant",
+              text: "The answer is ready.",
+              turnId,
+              createdAt: MESSAGE_CREATED_AT,
+              updatedAt: MESSAGE_CREATED_AT,
+              streaming: false,
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(markup).toContain('aria-label="Mark response as not helpful"');
+  });
+
   it("does not present a rejected self-handoff as an employee transfer", () => {
     const markup = renderToStaticMarkup(
       <MessagesTimeline
