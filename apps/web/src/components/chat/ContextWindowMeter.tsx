@@ -46,6 +46,7 @@ export function ContextWindowMeter(props: {
   usage: ContextWindowSnapshot;
   providerDisplayName?: string | null;
   modelDisplayName?: string | null;
+  fastMode?: boolean | null;
 }) {
   const { usage, providerDisplayName, modelDisplayName } = props;
   const usageProvider: UsageProviderKind | null = providerDisplayName
@@ -67,6 +68,7 @@ export function ContextWindowMeter(props: {
         usageProvider={usageProvider}
         usedPercentage={usedPercentage}
         normalizedPercentage={normalizedPercentage}
+        fastMode={props.fastMode}
         loadLimits={open}
       />
     </Popover>
@@ -74,7 +76,7 @@ export function ContextWindowMeter(props: {
 }
 
 function ContextUsageLimits({ provider }: { provider: UsageProviderKind }) {
-  const usageWindow = useMemo(() => makeWindow(1), []);
+  const usageWindow = useMemo(() => ({ ...makeWindow(1), limitsOnly: true }), []);
   const { environments, isPending, isPartial } = useUsage(usageWindow);
   const snapshot = useMemo(() => {
     const newest = new Map<UsageProviderKind, UsageLimitSnapshot>();
@@ -149,6 +151,7 @@ function ContextWindowMeterContent(props: {
   usageProvider: UsageProviderKind | null;
   usedPercentage: string | null;
   normalizedPercentage: number;
+  fastMode: boolean | null | undefined;
   loadLimits: boolean;
 }) {
   const { usage, modelDisplayName, usageProvider, usedPercentage, normalizedPercentage } = props;
@@ -258,6 +261,14 @@ function ContextWindowMeterContent(props: {
               <span className="text-secondary-label">Total processed</span>
               <span className="font-medium tabular-nums text-secondary-label">
                 {formatContextWindowTokens(totalProcessedTokens)}
+              </span>
+            </div>
+          ) : null}
+          {props.fastMode !== null && props.fastMode !== undefined ? (
+            <div className="flex items-center justify-between gap-3 text-[11px] leading-4">
+              <span className="text-secondary-label">Fast mode</span>
+              <span className="font-medium tabular-nums text-secondary-label">
+                {props.fastMode ? "On" : "Off"}
               </span>
             </div>
           ) : null}

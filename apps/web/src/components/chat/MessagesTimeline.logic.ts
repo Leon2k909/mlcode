@@ -255,6 +255,23 @@ export function resolveAssistantMessageCopyState({
   };
 }
 
+export function resolveAssistantMessageDisplayState({
+  text,
+  streaming,
+  hasHandoff,
+}: {
+  readonly text: string | null | undefined;
+  readonly streaming: boolean;
+  readonly hasHandoff: boolean;
+}) {
+  const visibleText = text ?? "";
+  const hasText = visibleText.trim().length > 0;
+  return {
+    text: hasText ? visibleText : "",
+    showEmptyState: !streaming && !hasHandoff && !hasText,
+  };
+}
+
 function deriveTerminalAssistantMessageIds(timelineEntries: ReadonlyArray<TimelineEntry>) {
   const lastAssistantMessageIdByResponseKey = new Map<string, string>();
   let nullTurnResponseIndex = 0;

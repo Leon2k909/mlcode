@@ -84,6 +84,7 @@ import {
   deriveMessagesTimelineRows,
   normalizeCompactToolLabel,
   resolveAssistantMessageCopyState,
+  resolveAssistantMessageDisplayState,
   resolveTimelineIsAtEnd,
   resolveTimelineMinimapHasPersistentGutter,
   resolveTimelineMinimapHeightStyle,
@@ -1420,9 +1421,11 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
     employeeId === undefined
       ? { visibleText: rawMessageText, toEmployeeId: undefined }
       : deriveEmployeeHandoffDisplay(rawMessageText, { fromEmployeeId: employeeId });
-  const messageText =
-    handoff.visibleText ||
-    (row.message.streaming || handoff.toEmployeeId !== undefined ? "" : "(empty response)");
+  const messageDisplay = resolveAssistantMessageDisplayState({
+    text: handoff.visibleText,
+    streaming: Boolean(row.message.streaming),
+    hasHandoff: handoff.toEmployeeId !== undefined,
+  });
   const targetEmployee =
     handoff.toEmployeeId === undefined
       ? undefined
@@ -1450,14 +1453,16 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
             <span>via {formatProviderDisplayName(ctx.modelSelection.instanceId)}</span>
           </div>
         ) : null}
-        {messageText.length > 0 ? (
+        {messageDisplay.text.length > 0 ? (
           <ChatMarkdown
-            text={messageText}
+            text={messageDisplay.text}
             cwd={ctx.markdownCwd}
             threadRef={ctx.threadRef ?? undefined}
             isStreaming={Boolean(row.message.streaming)}
             skills={ctx.skills}
           />
+        ) : messageDisplay.showEmptyState ? (
+          <p className="text-sm text-muted-foreground">No response received.</p>
         ) : null}
         {handoff.toEmployeeId !== undefined ? (
           <div

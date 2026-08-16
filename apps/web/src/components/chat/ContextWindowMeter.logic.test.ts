@@ -2,6 +2,7 @@ import { ProviderInstanceId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 import {
   formatContextWindowCompactionMessage,
+  resolveContextWindowFastMode,
   resolveContextWindowModelDisplayName,
 } from "./ContextWindowMeter.logic";
 
@@ -43,5 +44,50 @@ describe("formatContextWindowCompactionMessage", () => {
     expect(formatContextWindowCompactionMessage(null)).toBe(
       "Context compacts automatically when needed.",
     );
+  });
+});
+
+describe("resolveContextWindowFastMode", () => {
+  it("uses the explicit fast mode option when present", () => {
+    expect(
+      resolveContextWindowFastMode({
+        instanceId: ProviderInstanceId.make("codex-work"),
+        model: "gpt-5.6-sol",
+        options: [{ id: "fastMode", value: true }],
+      }),
+    ).toBe(true);
+    expect(
+      resolveContextWindowFastMode({
+        instanceId: ProviderInstanceId.make("codex-work"),
+        model: "gpt-5.6-sol",
+        options: [{ id: "fastMode", value: false }],
+      }),
+    ).toBe(false);
+  });
+
+  it("recognizes Codex service tiers and leaves unsupported values unknown", () => {
+    const selection = {
+      instanceId: ProviderInstanceId.make("codex-work"),
+      model: "gpt-5.6-sol",
+    };
+    expect(
+      resolveContextWindowFastMode(
+        { ...selection, options: [{ id: "serviceTier", value: "fast" }] },
+        "Codex",
+      ),
+    ).toBe(true);
+    expect(
+      resolveContextWindowFastMode(
+        { ...selection, options: [{ id: "serviceTier", value: "default" }] },
+        "Codex",
+      ),
+    ).toBe(false);
+    expect(
+      resolveContextWindowFastMode(
+        { ...selection, options: [{ id: "serviceTier", value: "default" }] },
+        "Claude",
+      ),
+    ).toBe(null);
+    expect(resolveContextWindowFastMode(selection)).toBe(null);
   });
 });

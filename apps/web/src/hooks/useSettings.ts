@@ -43,6 +43,13 @@ const CLIENT_SETTINGS_PERSISTENCE_ERROR_SCOPE = "[CLIENT_SETTINGS]";
 
 type UnifiedSettingsPatch = ServerSettingsPatch & ClientSettingsPatch;
 
+export type SettingsUpdateResult =
+  | { readonly ok: true }
+  | {
+      readonly ok: false;
+      readonly reason: "no-primary-environment" | "request-failed";
+    };
+
 const clientSettingsListeners = new Set<() => void>();
 const clientSettingsHydrationListeners = new Set<() => void>();
 let clientSettingsSnapshot = DEFAULT_CLIENT_SETTINGS;
@@ -306,15 +313,21 @@ function useUpdateSettingsTarget(environmentId: EnvironmentId | null) {
     "server settings update",
   );
   const updateSettings = useCallback(
-    (patch: UnifiedSettingsPatch) => {
+    async (patch: UnifiedSettingsPatch): Promise<SettingsUpdateResult> => {
       const { serverPatch, clientPatch } = splitPatch(patch);
+      let failure: SettingsUpdateResult | null = null;
 
       if (Object.keys(serverPatch).length > 0) {
         if (environmentId) {
-          void persistServerSettings({
+          const result = await persistServerSettings({
             environmentId,
             input: { patch: serverPatch },
           });
+          if (result._tag === "Failure") {
+            failure = { ok: false, reason: "request-failed" };
+          }
+        } else {
+          failure = { ok: false, reason: "no-primary-environment" };
         }
       }
       if (Object.keys(clientPatch).length > 0) {
@@ -323,6 +336,7 @@ function useUpdateSettingsTarget(environmentId: EnvironmentId | null) {
           ...clientPatch,
         });
       }
+      return failure ?? { ok: true };
     },
     [environmentId, persistServerSettings],
   );

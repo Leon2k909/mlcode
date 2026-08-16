@@ -340,6 +340,27 @@ export const make = Effect.gen(function* () {
       hourlyWindow = { sinceTimeMs, untilTimeMs };
     }
 
+    if (input.limitsOnly === true) {
+      const readAt = yield* DateTime.now;
+      return {
+        contractVersion: USAGE_CONTRACT_VERSION,
+        readAt: DateTime.formatIso(readAt),
+        timeZone: input.timeZone,
+        sinceDay: input.sinceDay,
+        untilDay: input.untilDay,
+        buckets: [],
+        sources: [],
+        pricing: {
+          status: "unavailable",
+          source: LITELLM_RATES_URL,
+          fetchedAt: null,
+          knownModels: 0,
+        },
+        limits: readUsageLimits(),
+        scanDurationMs: 0,
+      } satisfies UsageSummary;
+    }
+
     const startedAtMs = yield* Clock.currentTimeMillis;
     yield* ensureRates();
     yield* ensureScanCacheLoaded;

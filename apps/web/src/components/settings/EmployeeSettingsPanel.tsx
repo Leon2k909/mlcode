@@ -14,7 +14,11 @@ import {
   type ServerProviderModel,
 } from "@t3tools/contracts";
 
-import { usePrimarySettings, useUpdatePrimarySettings } from "../../hooks/useSettings";
+import {
+  usePrimarySettings,
+  useUpdatePrimarySettings,
+  type SettingsUpdateResult,
+} from "../../hooks/useSettings";
 import { cn } from "../../lib/utils";
 import { primaryServerProvidersAtom } from "../../state/server";
 import {
@@ -110,6 +114,7 @@ function EmployeeForm({
   onSave,
   onCancel,
   saveLabel,
+  saving,
 }: {
   draft: EmployeeDraft;
   onDraftChange: (next: EmployeeDraft) => void;
@@ -117,9 +122,10 @@ function EmployeeForm({
   modelOptions: ReadonlyArray<ServerProviderModel>;
   idError: string | null;
   saveError: string | null;
-  onSave: () => void;
+  onSave: () => void | Promise<void>;
   onCancel: () => void;
   saveLabel: string;
+  saving: boolean;
 }) {
   const set = <K extends keyof EmployeeDraft>(key: K, value: EmployeeDraft[K]) =>
     onDraftChange({ ...draft, [key]: value });
@@ -303,19 +309,20 @@ function EmployeeForm({
       {saveError ? <p className="text-sm text-destructive">{saveError}</p> : null}
 
       <div className="flex items-center justify-end gap-2">
-        <Button variant="ghost" onClick={onCancel}>
+        <Button variant="ghost" onClick={onCancel} disabled={saving}>
           Cancel
         </Button>
         <Button
           onClick={onSave}
           disabled={
+            saving ||
             nameMissing ||
             instructionsOverCap ||
             idError !== null ||
             draft.providerInstanceId.length === 0
           }
         >
-          {saveLabel}
+          {saving ? "Saving..." : saveLabel}
         </Button>
       </div>
     </div>
@@ -353,6 +360,7 @@ export function EmployeeSettingsPanel() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState<EmployeeDraft | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   const isCreating = editingId === "";
 
@@ -387,7 +395,7 @@ export function EmployeeSettingsPanel() {
     setSaveError(null);
   }, []);
 
-  const save = useCallback(() => {
+  const save = useCallback(async () => {
     if (!draft || editingId === null) return;
     const decoded = decodeDraft(draft);
     if ("error" in decoded) {
@@ -400,8 +408,24 @@ export function EmployeeSettingsPanel() {
       toId: draft.employeeId as EmployeeId,
       employee: decoded.employee,
     });
-    updateSettings(patch);
-    cancel();
+    setSaveError(null);
+    setSaving(true);
+    try {
+      const result: SettingsUpdateResult = await updateSettings(patch);
+      if (!result.ok) {
+        setSaveError(
+          result.reason === "no-primary-environment"
+            ? "Connect to a primary environment before saving employees."
+            : "Employee settings could not be saved. Check the connection and try again.",
+        );
+        return;
+      }
+      cancel();
+    } catch {
+      setSaveError("Employee settings could not be saved. Check the connection and try again.");
+    } finally {
+      setSaving(false);
+    }
   }, [cancel, draft, editingId, employees, isCreating, updateSettings]);
 
   const remove = useCallback(
@@ -470,6 +494,7 @@ export function EmployeeSettingsPanel() {
               onSave={save}
               onCancel={cancel}
               saveLabel="Add employee"
+              saving={saving}
             />
           </div>
         ) : null}
@@ -559,6 +584,7 @@ export function EmployeeSettingsPanel() {
                     onSave={save}
                     onCancel={cancel}
                     saveLabel="Save changes"
+                    saving={saving}
                   />
                 </div>
               ) : null}

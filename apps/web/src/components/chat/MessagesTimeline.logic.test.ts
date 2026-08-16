@@ -5,7 +5,25 @@ import {
   deriveMessagesTimelineRows,
   normalizeCompactToolLabel,
   resolveAssistantMessageCopyState,
+  resolveAssistantMessageDisplayState,
 } from "./MessagesTimeline.logic";
+
+describe("resolveAssistantMessageDisplayState", () => {
+  it("marks a completed blank assistant message without inventing response text", () => {
+    expect(
+      resolveAssistantMessageDisplayState({ text: "  ", streaming: false, hasHandoff: false }),
+    ).toEqual({ text: "", showEmptyState: true });
+  });
+
+  it("does not show the empty state while streaming or when a handoff is present", () => {
+    expect(
+      resolveAssistantMessageDisplayState({ text: "", streaming: true, hasHandoff: false }),
+    ).toEqual({ text: "", showEmptyState: false });
+    expect(
+      resolveAssistantMessageDisplayState({ text: "", streaming: false, hasHandoff: true }),
+    ).toEqual({ text: "", showEmptyState: false });
+  });
+});
 
 describe("computeMessageDurationStart", () => {
   it("returns message createdAt when there is no preceding user message", () => {

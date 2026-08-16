@@ -112,7 +112,10 @@ import {
   renderProviderTraitsPicker,
 } from "./composerProviderState";
 import { ContextWindowMeter } from "./ContextWindowMeter";
-import { resolveContextWindowModelDisplayName } from "./ContextWindowMeter.logic";
+import {
+  resolveContextWindowFastMode,
+  resolveContextWindowModelDisplayName,
+} from "./ContextWindowMeter.logic";
 import { buildExpandedImagePreview, type ExpandedImagePreview } from "./ExpandedImagePreview";
 import { basenameOfPath } from "../../pierre-icons";
 import { cn, randomUUID } from "~/lib/utils";
@@ -405,6 +408,7 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
   activeContextWindow: ReturnType<typeof deriveLatestContextWindowSnapshot>;
   activeThreadProviderDisplayName: string | null;
   activeThreadModelDisplayName: string | null;
+  activeThreadFastMode: boolean | null;
   isPreparingWorktree: boolean;
   pendingAction: {
     questionIndex: number;
@@ -435,6 +439,7 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
           usage={props.activeContextWindow}
           providerDisplayName={props.activeThreadProviderDisplayName}
           modelDisplayName={props.activeThreadModelDisplayName}
+          fastMode={props.activeThreadFastMode}
         />
       ) : null}
       {props.isPreparingWorktree ? (
@@ -1250,6 +1255,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const activeThreadModelDisplayName = useMemo(
     () => resolveContextWindowModelDisplayName(activeThreadModelSelection, modelOptionsByInstance),
     [activeThreadModelSelection, modelOptionsByInstance],
+  );
+  const activeThreadFastMode = useMemo(
+    () => resolveContextWindowFastMode(activeThreadModelSelection, activeThreadProviderDisplayName),
+    [activeThreadModelSelection, activeThreadProviderDisplayName],
   );
 
   // ------------------------------------------------------------------
@@ -3550,6 +3559,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   activeContextWindow={activeContextWindow}
                   activeThreadProviderDisplayName={activeThreadProviderDisplayName}
                   activeThreadModelDisplayName={activeThreadModelDisplayName}
+                  activeThreadFastMode={activeThreadFastMode}
                   pendingAction={pendingPrimaryAction}
                   isRunning={phase === "running"}
                   showPlanFollowUpPrompt={pendingUserInputs.length === 0 && showPlanFollowUpPrompt}
