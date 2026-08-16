@@ -1,5 +1,6 @@
 import {
   DEFAULT_SERVER_SETTINGS,
+  EmployeeId,
   ProviderDriverKind,
   ProviderInstanceId,
   type ServerProvider,
@@ -64,7 +65,7 @@ describe("serverSettings helpers", () => {
   });
 
   it("replaces text generation selection when provider/model are provided", () => {
-    const current = {
+    const current: typeof DEFAULT_SERVER_SETTINGS = {
       ...DEFAULT_SERVER_SETTINGS,
       textGenerationModelSelection: createModelSelection(
         ProviderInstanceId.make("codex"),
@@ -296,6 +297,33 @@ describe("serverSettings helpers", () => {
       enabled: true,
       config: { homePath: "~/.codex" },
     });
+  });
+
+  it("replaces an employee fast-mode preference when it is explicitly disabled", () => {
+    const employeeId = EmployeeId.make("worker_alpha");
+    const current = {
+      ...DEFAULT_SERVER_SETTINGS,
+      employees: {
+        [employeeId]: {
+          displayName: "Alpha",
+          providerInstanceId: ProviderInstanceId.make("codex"),
+          instructions: "Implement the requested change.",
+          fastMode: true,
+          enabled: true,
+        },
+      },
+    };
+
+    const next = applyServerSettingsPatch(current, {
+      employees: {
+        [employeeId]: {
+          ...current.employees[employeeId]!,
+          fastMode: false,
+        },
+      },
+    });
+
+    expect(next.employees[employeeId]?.fastMode).toBe(false);
   });
 
   it("stores background activity profiles as a versioned object and syncs legacy aliases", () => {

@@ -91,7 +91,10 @@ function decodeDraft(draft: EmployeeDraft): { employee: Employee } | { error: st
     ...(draft.role.trim() ? { role: draft.role } : {}),
     ...(draft.avatar.trim() ? { avatar: draft.avatar } : {}),
     ...(draft.model.trim() ? { model: draft.model } : {}),
-    ...(draft.fastMode ? { fastMode: true } : {}),
+    // Send both states explicitly. Server settings patches deep-merge nested
+    // objects, so omitting false would leave a previously saved true value in
+    // place after the user turns fast mode off.
+    fastMode: draft.fastMode,
   });
   if (Option.isSome(result)) return { employee: result.value };
   return { error: "Check the highlighted fields — this employee could not be saved." };
