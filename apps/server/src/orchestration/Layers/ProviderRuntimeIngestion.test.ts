@@ -482,6 +482,109 @@ describe("ProviderRuntimeIngestion", () => {
     });
   });
 
+  it("continues the built-in workflow when an employee omits the handoff tag", async () => {
+    const ceoId = EmployeeId.make("ceo");
+    const betaId = EmployeeId.make("worker_beta");
+    const alphaId = EmployeeId.make("worker_alpha");
+    const harness = await createHarness({
+      serverSettings: {
+        employees: {
+          [ceoId]: {
+            displayName: "Casey",
+            role: "CEO",
+            providerInstanceId: ProviderInstanceId.make("codex"),
+            model: "gpt-5-codex",
+            instructions: "Route the request.",
+            enabled: true,
+          },
+          [betaId]: {
+            displayName: "Briar",
+            role: "Research",
+            providerInstanceId: ProviderInstanceId.make("codex"),
+            model: "gpt-5-codex",
+            instructions: "Research the request.",
+            enabled: true,
+          },
+          [alphaId]: {
+            displayName: "Alex",
+            role: "Implementation",
+            providerInstanceId: ProviderInstanceId.make("codex"),
+            model: "gpt-5-codex",
+            instructions: "Implement the request.",
+            enabled: true,
+          },
+        },
+      },
+      threadModelSelection: {
+        instanceId: ProviderInstanceId.make("codex"),
+        model: "gpt-5-codex",
+        employeeId: betaId,
+        employeeIds: [ceoId, betaId, alphaId],
+      },
+    });
+    const now = "2026-08-16T13:00:00.000Z";
+    const turnId = asTurnId("turn-employee-missing-handoff");
+
+    harness.emit({
+      type: "turn.started",
+      eventId: asEventId("evt-employee-missing-handoff-started"),
+      provider: ProviderDriverKind.make("codex"),
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId,
+    });
+    await waitForThread(harness.readModel, (thread) => thread.session?.activeTurnId === turnId);
+    harness.emit({
+      type: "content.delta",
+      eventId: asEventId("evt-employee-missing-handoff-delta"),
+      provider: ProviderDriverKind.make("codex"),
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId,
+      itemId: asItemId("item-employee-missing-handoff"),
+      payload: {
+        streamKind: "assistant_text",
+        delta: "Research findings are ready for implementation.",
+      },
+    });
+    harness.emit({
+      type: "item.completed",
+      eventId: asEventId("evt-employee-missing-handoff-item-complete"),
+      provider: ProviderDriverKind.make("codex"),
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId,
+      itemId: asItemId("item-employee-missing-handoff"),
+      payload: { itemType: "assistant_message", status: "completed" },
+    });
+    harness.emit({
+      type: "turn.completed",
+      eventId: asEventId("evt-employee-missing-handoff-turn-complete"),
+      provider: ProviderDriverKind.make("codex"),
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId,
+      payload: { state: "completed" },
+    });
+
+    const thread = await waitForThread(
+      harness.readModel,
+      (entry) =>
+        entry.modelSelection.employeeId === alphaId &&
+        entry.messages.some((message) => message.id.startsWith("employee-handoff:")),
+    );
+    expect(
+      thread.messages.find((message) => message.id.startsWith("employee-handoff:")),
+    ).toMatchObject({
+      role: "user",
+      employeeId: betaId,
+      text: expect.stringContaining("The previous employee completed without an explicit handoff."),
+    });
+    expect(
+      thread.activities.some((activity) => activity.summary === "Employee workflow continued"),
+    ).toBe(true);
+  });
+
   it("blocks CEO group tools and recovers through a worker handoff", async () => {
     const ceoId = EmployeeId.make("ceo");
     const workerId = EmployeeId.make("worker_alpha");

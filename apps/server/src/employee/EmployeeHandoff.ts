@@ -57,6 +57,44 @@ export type EmployeeHandoffResult =
   | { readonly kind: "rejected"; readonly rejection: EmployeeHandoffRejection }
   | { readonly kind: "none" };
 
+/**
+ * The built-in employee workflow used when a model completes a group turn
+ * without emitting the handoff tag it was asked for. Explicit handoffs remain
+ * authoritative; this is only a safety net so a malformed or incomplete
+ * response does not strand the user's work in the current employee.
+ */
+const DEFAULT_EMPLOYEE_WORKFLOW = ["ceo", "worker_beta", "worker_alpha", "worker_gamma"] as const;
+
+/**
+ * Pick the next built-in workflow member that is still in the current group.
+ * Missing built-ins are skipped, and a custom group falls back to its next
+ * configured member so optional employees do not make the chain dead-end.
+ */
+export const resolveAutomaticEmployeeHandoffTarget = (input: {
+  readonly fromEmployeeId: string;
+  readonly allowedEmployeeIds: ReadonlyArray<string>;
+}): EmployeeId | undefined => {
+  const allowed = new Set(input.allowedEmployeeIds);
+  const workflowIndex = DEFAULT_EMPLOYEE_WORKFLOW.indexOf(
+    input.fromEmployeeId as (typeof DEFAULT_EMPLOYEE_WORKFLOW)[number],
+  );
+  const workflowCandidates =
+    workflowIndex >= 0
+      ? workflowIndex === DEFAULT_EMPLOYEE_WORKFLOW.length - 1
+        ? [DEFAULT_EMPLOYEE_WORKFLOW[0]]
+        : DEFAULT_EMPLOYEE_WORKFLOW.slice(workflowIndex + 1)
+      : [];
+  const configuredIndex = input.allowedEmployeeIds.indexOf(input.fromEmployeeId);
+  const configuredCandidates =
+    configuredIndex >= 0
+      ? input.allowedEmployeeIds.slice(configuredIndex + 1)
+      : input.allowedEmployeeIds;
+  const target =
+    workflowCandidates.find((employeeId) => allowed.has(employeeId)) ??
+    configuredCandidates.find((employeeId) => employeeId !== input.fromEmployeeId);
+  return target === undefined ? undefined : (target as EmployeeId);
+};
+
 const stripHandoffBlock = (text: string): string =>
   text
     .replace(HANDOFF_PATTERN, "")

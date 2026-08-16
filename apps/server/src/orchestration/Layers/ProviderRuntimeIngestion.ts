@@ -53,6 +53,7 @@ import {
   canContinueHandoffChain,
   describeHandoffRejection,
   parseEmployeeHandoff,
+  resolveAutomaticEmployeeHandoffTarget,
 } from "../../employee/EmployeeHandoff.ts";
 
 const providerTurnKey = (threadId: ThreadId, turnId: TurnId) => `${threadId}:${turnId}`;
@@ -1774,7 +1775,45 @@ const make = Effect.gen(function* () {
     });
 
     if (result.kind === "none") {
-      consecutiveEmployeeHandoffs.delete(input.thread.id);
+      const completedHandoffs = consecutiveEmployeeHandoffs.get(input.thread.id) ?? 0;
+      const automaticTargetEmployeeId =
+        input.text.trim().length > 0 &&
+        // A CEO returning after a completed worker chain is allowed to finish
+        // the review. Only the initial CEO routing turn gets an automatic
+        // recovery; otherwise a missing tag would loop back into the workers.
+        !(fromEmployeeId === "ceo" && completedHandoffs > 0)
+          ? resolveAutomaticEmployeeHandoffTarget({
+              fromEmployeeId,
+              allowedEmployeeIds: groupEmployeeIds,
+            })
+          : undefined;
+      if (automaticTargetEmployeeId === undefined) {
+        consecutiveEmployeeHandoffs.delete(input.thread.id);
+        return;
+      }
+
+      const sourceEmployee = resolveEmployee(settings.employees, fromEmployeeId);
+      const targetEmployee = resolveEmployee(settings.employees, automaticTargetEmployeeId);
+      const dispatched = yield* dispatchEmployeeHandoff({
+        event: input.event,
+        thread: input.thread,
+        turnId: input.turnId,
+        employees: settings.employees,
+        toEmployeeId: automaticTargetEmployeeId,
+        message:
+          "The previous employee completed without an explicit handoff. Continue the user's request in your assigned lane, review the response above, and hand off when your lane is complete.",
+        completedHandoffs,
+      });
+      if (dispatched) {
+        yield* appendEmployeeHandoffActivity({
+          event: input.event,
+          threadId: input.thread.id,
+          turnId: input.turnId,
+          tone: "info",
+          summary: "Employee workflow continued",
+          detail: `No handoff tag was emitted, so the request continued automatically with ${targetEmployee?.displayName ?? automaticTargetEmployeeId} after ${sourceEmployee?.displayName ?? fromEmployeeId}.`,
+        });
+      }
       return;
     }
     if (result.kind === "rejected") {

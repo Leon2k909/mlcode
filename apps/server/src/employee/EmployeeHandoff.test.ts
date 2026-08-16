@@ -7,6 +7,7 @@ import {
   describeHandoffRejection,
   MAX_CONSECUTIVE_HANDOFFS,
   parseEmployeeHandoff,
+  resolveAutomaticEmployeeHandoffTarget,
 } from "./EmployeeHandoff.ts";
 
 const employees = Schema.decodeUnknownSync(EmployeeMap)({
@@ -143,5 +144,43 @@ describe("canContinueHandoffChain", () => {
   it("stops the chain at the cap", () => {
     expect(canContinueHandoffChain(MAX_CONSECUTIVE_HANDOFFS)).toBe(false);
     expect(canContinueHandoffChain(MAX_CONSECUTIVE_HANDOFFS + 1)).toBe(false);
+  });
+});
+
+describe("resolveAutomaticEmployeeHandoffTarget", () => {
+  it("keeps the built-in workflow moving when a tag is missing", () => {
+    expect(
+      resolveAutomaticEmployeeHandoffTarget({
+        fromEmployeeId: "worker_beta",
+        allowedEmployeeIds: ["ceo", "worker_beta", "worker_alpha", "worker_gamma"],
+      }),
+    ).toBe("worker_alpha");
+  });
+
+  it("skips disabled or removed built-in lanes", () => {
+    expect(
+      resolveAutomaticEmployeeHandoffTarget({
+        fromEmployeeId: "ceo",
+        allowedEmployeeIds: ["ceo", "worker_alpha", "worker_gamma"],
+      }),
+    ).toBe("worker_alpha");
+  });
+
+  it("uses the next configured custom employee as a fallback", () => {
+    expect(
+      resolveAutomaticEmployeeHandoffTarget({
+        fromEmployeeId: "reviewer",
+        allowedEmployeeIds: ["ceo", "reviewer", "architect"],
+      }),
+    ).toBe("architect");
+  });
+
+  it("does not invent a target for a solo group", () => {
+    expect(
+      resolveAutomaticEmployeeHandoffTarget({
+        fromEmployeeId: "ceo",
+        allowedEmployeeIds: ["ceo"],
+      }),
+    ).toBeUndefined();
   });
 });
