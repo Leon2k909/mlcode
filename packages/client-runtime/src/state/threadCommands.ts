@@ -5,6 +5,7 @@ import { createAtomCommandScheduler, createEnvironmentCommand } from "./runtime.
 import {
   type ArchiveThreadInput,
   type CreateThreadInput,
+  type DeleteThreadMessageInput,
   type DeleteThreadInput,
   type InterruptThreadTurnInput,
   type RespondToThreadApprovalInput,
@@ -25,6 +26,7 @@ import {
   type UpdateThreadMetadataInput,
   archiveThread,
   createThread,
+  deleteThreadMessage,
   deleteThread,
   interruptThreadTurn,
   respondToThreadApproval,
@@ -49,6 +51,7 @@ import type { EnvironmentRegistry } from "../connection/registry.ts";
 export type {
   ArchiveThreadInput,
   CreateThreadInput,
+  DeleteThreadMessageInput,
   DeleteThreadInput,
   InterruptThreadTurnInput,
   RespondToThreadApprovalInput,
@@ -184,6 +187,12 @@ export function createThreadEnvironmentAtoms<R, E>(
     respondToUserInput: createEnvironmentCommand(runtime, {
       label: "environment-data:commands:thread:respond-to-user-input",
       execute: (input: RespondToThreadUserInputInput) => respondToThreadUserInput(input),
+      scheduler,
+      concurrency,
+    }),
+    deleteMessage: createEnvironmentCommand(runtime, {
+      label: "environment-data:commands:thread:delete-message",
+      execute: (input: DeleteThreadMessageInput) => deleteThreadMessage(input),
       scheduler,
       concurrency,
     }),

@@ -11,6 +11,7 @@ import * as Schema from "effect/Schema";
 import { toProjectorDecodeError, type OrchestrationProjectorDecodeError } from "./Errors.ts";
 import {
   MessageSentPayloadSchema,
+  ThreadMessageDeletedPayload,
   ProjectCreatedPayload,
   ProjectDeletedPayload,
   ProjectMetaUpdatedPayload,
@@ -555,6 +556,27 @@ export function projectEvent(
           threads: updateThread(nextBase.threads, payload.threadId, {
             messages: cappedMessages,
             updatedAt: event.occurredAt,
+          }),
+        };
+      });
+
+    case "thread.message-deleted":
+      return Effect.gen(function* () {
+        const payload = yield* decodeForEvent(
+          ThreadMessageDeletedPayload,
+          event.payload,
+          event.type,
+          "payload",
+        );
+        const thread = nextBase.threads.find((entry) => entry.id === payload.threadId);
+        if (!thread) {
+          return nextBase;
+        }
+        return {
+          ...nextBase,
+          threads: updateThread(nextBase.threads, payload.threadId, {
+            messages: thread.messages.filter((entry) => entry.id !== payload.messageId),
+            updatedAt: payload.deletedAt,
           }),
         };
       });

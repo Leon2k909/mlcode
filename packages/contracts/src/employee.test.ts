@@ -54,12 +54,13 @@ describe("EmployeeId", () => {
 });
 
 describe("Employee", () => {
-  it("defaults instructions to empty and enabled to true", () => {
+  it("defaults instructions to empty, fast mode to unset, and enabled to true", () => {
     const employee = decodeEmployee({
       displayName: "Ada",
       providerInstanceId: "claudeAgent",
     });
     expect(employee.instructions).toBe("");
+    expect(employee.fastMode).toBeUndefined();
     expect(employee.enabled).toBe(true);
     expect(employee.role).toBeUndefined();
   });
@@ -73,12 +74,14 @@ describe("Employee", () => {
       avatar: "🎨",
       accentColor: "#ff8800",
       model: "claude-opus-5",
+      fastMode: true,
       enabled: false,
     });
     expect(employee.role).toBe("Frontend engineer");
     expect(employee.instructions).toBe("Prefer small diffs.");
     expect(employee.avatar).toBe("🎨");
     expect(employee.model).toBe("claude-opus-5");
+    expect(employee.fastMode).toBe(true);
     expect(employee.enabled).toBe(false);
   });
 

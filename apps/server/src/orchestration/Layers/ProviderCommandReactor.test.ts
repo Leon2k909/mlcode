@@ -2516,6 +2516,62 @@ describe("ProviderCommandReactor", () => {
     expect(employeeTurn?.input).toContain("You are Casey, working as CEO.");
   });
 
+  it("applies an employee fast-mode preference to the effective model selection", async () => {
+    const workerId = EmployeeId.make("worker_alpha");
+    const harness = await createHarness({
+      serverSettings: {
+        employees: {
+          [workerId]: {
+            displayName: "Alpha",
+            role: "Implementation",
+            providerInstanceId: ProviderInstanceId.make("codex"),
+            model: "gpt-5.6-luna",
+            fastMode: true,
+            instructions: "Implement the requested change.",
+            enabled: true,
+          },
+        },
+      },
+    });
+    const selection: ModelSelection = {
+      instanceId: ProviderInstanceId.make("codex"),
+      model: "gpt-5.6-luna",
+      options: [{ id: "reasoningEffort", value: "low" }],
+      employeeId: workerId,
+    };
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-employee-fast-mode"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-employee-fast-mode"),
+          role: "user",
+          text: "Use the faster mode for this employee.",
+          attachments: [],
+        },
+        modelSelection: selection,
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: "2026-08-14T10:00:00.000Z",
+      }),
+    );
+
+    await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+    expect(harness.sendTurn.mock.calls[0]?.[0]).toMatchObject({
+      modelSelection: {
+        instanceId: ProviderInstanceId.make("codex"),
+        model: "gpt-5.6-luna",
+        options: [
+          { id: "reasoningEffort", value: "low" },
+          { id: "fastMode", value: true },
+        ],
+        employeeId: workerId,
+      },
+    });
+  });
+
   it("keeps a group handoff on the selected provider with only group teammates", async () => {
     const ceoId = EmployeeId.make("ceo");
     const reviewerId = EmployeeId.make("reviewer");

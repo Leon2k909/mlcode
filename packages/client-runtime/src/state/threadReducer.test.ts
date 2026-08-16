@@ -882,6 +882,54 @@ describe("applyThreadDetailEvent", () => {
     });
   });
 
+  describe("thread.message-deleted", () => {
+    it("removes only the selected message from the thread", () => {
+      const threadWithMessages: OrchestrationThread = {
+        ...baseThread,
+        messages: [
+          {
+            id: MessageId.make("user-message"),
+            role: "user",
+            text: "Wrong chat",
+            turnId: null,
+            streaming: false,
+            createdAt: "2026-04-01T01:00:00.000Z",
+            updatedAt: "2026-04-01T01:00:00.000Z",
+          },
+          {
+            id: MessageId.make("assistant-message"),
+            role: "assistant",
+            text: "A response",
+            turnId: TurnId.make("turn-1"),
+            streaming: false,
+            createdAt: "2026-04-01T02:00:00.000Z",
+            updatedAt: "2026-04-01T02:00:00.000Z",
+          },
+        ],
+      };
+
+      const result = applyThreadDetailEvent(threadWithMessages, {
+        ...baseEventFields,
+        sequence: 16,
+        occurredAt: "2026-04-01T03:00:00.000Z",
+        aggregateKind: "thread",
+        aggregateId: ThreadId.make("thread-1"),
+        type: "thread.message-deleted",
+        payload: {
+          threadId: ThreadId.make("thread-1"),
+          messageId: MessageId.make("user-message"),
+          deletedAt: "2026-04-01T03:00:00.000Z",
+        },
+      });
+
+      expect(result.kind).toBe("updated");
+      if (result.kind === "updated") {
+        expect(result.thread.messages.map((message) => message.id)).toEqual(["assistant-message"]);
+        expect(result.thread.updatedAt).toBe("2026-04-01T03:00:00.000Z");
+      }
+    });
+  });
+
   describe("no-op events", () => {
     it("returns unchanged for approval-response-requested", () => {
       const result = applyThreadDetailEvent(baseThread, {

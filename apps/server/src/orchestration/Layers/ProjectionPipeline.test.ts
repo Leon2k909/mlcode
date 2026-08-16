@@ -237,6 +237,33 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
         WHERE thread_id = 'thread-1'
       `;
       assert.deepEqual(unsettledRows, [{ settledOverride: "active", settledAt: null }]);
+
+      const deletedEvent = yield* eventStore.append({
+        type: "thread.message-deleted",
+        eventId: EventId.make("evt-delete-message-1"),
+        aggregateKind: "thread",
+        aggregateId: ThreadId.make("thread-1"),
+        occurredAt: "2026-01-01T00:00:03.000Z",
+        commandId: CommandId.make("cmd-delete-message-1"),
+        causationEventId: null,
+        correlationId: CommandId.make("cmd-delete-message-1"),
+        metadata: {},
+        payload: {
+          threadId: ThreadId.make("thread-1"),
+          messageId: MessageId.make("message-1"),
+          deletedAt: "2026-01-01T00:00:03.000Z",
+        },
+      });
+      yield* projectionPipeline.projectEvent(deletedEvent);
+
+      const deletedMessageRows = yield* sql<{
+        readonly messageId: string;
+      }>`
+        SELECT message_id AS "messageId"
+        FROM projection_thread_messages
+        WHERE thread_id = 'thread-1'
+      `;
+      assert.deepEqual(deletedMessageRows, []);
     }),
   );
 });

@@ -96,6 +96,21 @@ function isCeoGroupRoutingSelection(selection: ModelSelection): boolean {
   return selection.employeeId === "ceo" && (selection.employeeIds?.length ?? 0) >= 2;
 }
 
+function applyEmployeeFastMode(
+  selection: ModelSelection,
+  fastMode: boolean | undefined,
+): ModelSelection {
+  if (fastMode !== true) return selection;
+  const options = [...(selection.options ?? [])];
+  const existingIndex = options.findIndex((option) => option.id === "fastMode");
+  if (existingIndex >= 0) {
+    options[existingIndex] = { id: "fastMode", value: true };
+  } else {
+    options.push({ id: "fastMode", value: true });
+  }
+  return { ...selection, options };
+}
+
 function mapProviderSessionStatusToOrchestrationStatus(
   status: "connecting" | "ready" | "running" | "error" | "closed",
 ): OrchestrationSession["status"] {
@@ -951,11 +966,17 @@ const make = Effect.gen(function* () {
         });
       }
       const { options, ...selectionWithoutOptions } = requestedModelSelection;
+      const effectiveSelectionWithEmployeeOptions = applyEmployeeFastMode(
+        {
+          ...selectionWithoutOptions,
+          instanceId: targetInstanceId,
+          model: targetModel,
+          ...(usesRequestedProvider && options !== undefined ? { options } : {}),
+        },
+        selectedEmployee.fastMode,
+      );
       return {
-        ...selectionWithoutOptions,
-        instanceId: targetInstanceId,
-        model: targetModel,
-        ...(usesRequestedProvider && options !== undefined ? { options } : {}),
+        ...effectiveSelectionWithEmployeeOptions,
       } satisfies ModelSelection;
     });
     const toolPolicy: ProviderToolPolicy = isCeoGroupRoutingSelection(effectiveModelSelection)

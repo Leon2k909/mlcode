@@ -378,6 +378,20 @@ export function applyThreadDetailEvent(
       };
     }
 
+    case "thread.message-deleted": {
+      if (!thread.messages.some((entry) => entry.id === event.payload.messageId)) {
+        return { kind: "unchanged" };
+      }
+      return {
+        kind: "updated",
+        thread: {
+          ...thread,
+          messages: Arr.filter(thread.messages, (entry) => entry.id !== event.payload.messageId),
+          updatedAt: event.occurredAt,
+        },
+      };
+    }
+
     // ── Session ─────────────────────────────────────────────────────
     case "thread.session-set": {
       // Leaving the "running" session status is the turn-end signal: settle a

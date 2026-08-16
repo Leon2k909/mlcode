@@ -232,13 +232,13 @@ function buildLongUserMessageText(tail = "deep hidden detail only after expand")
   ).join("\n");
 }
 
-function buildUserTimelineEntry(text: string) {
+function buildUserTimelineEntry(text: string, messageId = MessageId.make("message-1")) {
   return {
     id: "entry-1",
     kind: "message" as const,
     createdAt: MESSAGE_CREATED_AT,
     message: {
-      id: MessageId.make("message-1"),
+      id: messageId,
       role: "user" as const,
       text,
       turnId: null,
@@ -790,6 +790,21 @@ describe("MessagesTimeline", () => {
     expect(markup).toContain('aria-label="Delete this message and rewind"');
     expect(markup).toContain("Delete &amp; rewind");
     expect(markup).toContain('title="Delete this message and rewind the thread to before it"');
+  });
+
+  it("shows delete-only for a latest message without a Git checkpoint", () => {
+    const messageId = MessageId.make("message-without-checkpoint");
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        deletableUserMessageId={messageId}
+        timelineEntries={[buildUserTimelineEntry("Sent to the wrong chat.", messageId)]}
+      />,
+    );
+
+    expect(markup).toContain('aria-label="Delete this message"');
+    expect(markup).toContain("Delete message");
+    expect(markup).not.toContain("Delete &amp; rewind");
   });
 
   it("does not present a rejected self-handoff as an employee transfer", () => {

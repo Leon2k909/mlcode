@@ -19,6 +19,7 @@ import {
 const EMPTY_AGENT_PANEL_MODEL = emptyAgentPanelModel();
 const NOOP_OPEN_AGENTS = () => {};
 const NOOP_EMPLOYEE_FEEDBACK = (_messageId: MessageId) => {};
+const NOOP_DELETE_USER_MESSAGE = (_messageId: MessageId) => {};
 import { resolveChatListAnchoredEndSpace } from "@t3tools/shared/chatList";
 import {
   createContext,
@@ -152,6 +153,7 @@ interface TimelineRowSharedState {
   modelSelection: ModelSelection | null;
   employees: EmployeeMap;
   onRevertUserMessage: (messageId: MessageId) => void;
+  onDeleteUserMessage: (messageId: MessageId) => void;
   onImageExpand: (preview: ExpandedImagePreview) => void;
   onOpenTurnDiff: (turnId: TurnId, filePath?: string) => void;
   onToggleTurnFold: (turnId: TurnId) => void;
@@ -237,6 +239,8 @@ interface MessagesTimelineProps {
   onOpenTurnDiff: (turnId: TurnId, filePath?: string) => void;
   revertTurnCountByUserMessageId: Map<MessageId, number>;
   onRevertUserMessage: (messageId: MessageId) => void;
+  deletableUserMessageId?: MessageId | null;
+  onDeleteUserMessage?: (messageId: MessageId) => void;
   isRevertingCheckpoint: boolean;
   onImageExpand: (preview: ExpandedImagePreview) => void;
   activeThreadEnvironmentId: EnvironmentId;
@@ -287,6 +291,8 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   onOpenTurnDiff,
   revertTurnCountByUserMessageId,
   onRevertUserMessage,
+  deletableUserMessageId = null,
+  onDeleteUserMessage = NOOP_DELETE_USER_MESSAGE,
   isRevertingCheckpoint,
   onImageExpand,
   activeThreadEnvironmentId,
@@ -429,6 +435,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
         activeTurnStartedAt,
         turnDiffSummaryByAssistantMessageId,
         revertTurnCountByUserMessageId,
+        deletableUserMessageId,
       }),
     [
       timelineEntries,
@@ -440,6 +447,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       activeTurnStartedAt,
       turnDiffSummaryByAssistantMessageId,
       revertTurnCountByUserMessageId,
+      deletableUserMessageId,
     ],
   );
   const rows = useStableRows(rawRows);
@@ -538,6 +546,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       modelSelection,
       employees,
       onRevertUserMessage,
+      onDeleteUserMessage,
       onImageExpand,
       onOpenTurnDiff,
       onToggleTurnFold,
@@ -558,6 +567,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       modelSelection,
       employees,
       onRevertUserMessage,
+      onDeleteUserMessage,
       onImageExpand,
       onOpenTurnDiff,
       onToggleTurnFold,
@@ -1230,6 +1240,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
   const previewImages = userImages.filter((image) => image.name.startsWith("preview-annotation-"));
   const regularImages = userImages.filter((image) => !image.name.startsWith("preview-annotation-"));
   const canRevertAgentWork = typeof row.revertTurnCount === "number";
+  const canDeleteUserMessage = row.canDeleteUserMessage === true;
 
   return (
     <div className="group flex flex-col items-end gap-1">
@@ -1292,7 +1303,11 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
         />
       </div>
       <div className="flex w-full max-w-[80%] items-center justify-end pe-1 text-xs tabular-nums">
-        {canRevertAgentWork ? <RevertUserMessageButton messageId={row.message.id} /> : null}
+        {canDeleteUserMessage ? (
+          <DeleteUserMessageButton messageId={row.message.id} />
+        ) : canRevertAgentWork ? (
+          <RevertUserMessageButton messageId={row.message.id} />
+        ) : null}
         <div className="flex shrink-0 items-center gap-2 opacity-0 transition-opacity duration-200 focus-within:opacity-100 group-hover:opacity-100">
           <Tooltip>
             <TooltipTrigger render={<p className="text-muted-foreground text-xs tabular-nums" />}>
@@ -1336,6 +1351,36 @@ function RevertUserMessageButton({ messageId }: { messageId: MessageId }) {
       </TooltipTrigger>
       <TooltipPopup side="top">
         Delete this message and everything after it, then restore the previous checkpoint
+      </TooltipPopup>
+    </Tooltip>
+  );
+}
+
+function DeleteUserMessageButton({ messageId }: { messageId: MessageId }) {
+  const ctx = use(TimelineRowCtx);
+  const activity = use(TimelineRowActivityCtx);
+
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            type="button"
+            size="xs"
+            variant="ghost"
+            className="gap-1 rounded-full border border-border/60 bg-background/40 px-2 text-[11px] text-muted-foreground hover:border-border hover:text-foreground"
+            disabled={activity.isRevertingCheckpoint || activity.isWorking}
+            onClick={() => ctx.onDeleteUserMessage(messageId)}
+            aria-label="Delete this message"
+            title="Delete this message from the chat"
+          />
+        }
+      >
+        <XIcon className="size-3" />
+        <span>Delete message</span>
+      </TooltipTrigger>
+      <TooltipPopup side="top">
+        Remove this message from the chat without changing files or Git history
       </TooltipPopup>
     </Tooltip>
   );

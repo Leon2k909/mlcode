@@ -23,6 +23,7 @@ export function deriveOrchestrationBatchEffects(
   for (const event of events) {
     switch (event.type) {
       case "thread.turn-diff-completed":
+      case "thread.message-deleted":
       case "thread.reverted": {
         needsProviderInvalidation = true;
         break;

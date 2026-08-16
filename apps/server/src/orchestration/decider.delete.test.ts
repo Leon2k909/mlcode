@@ -2,6 +2,7 @@ import {
   CommandId,
   DEFAULT_PROVIDER_INTERACTION_MODE,
   EventId,
+  MessageId,
   ProjectId,
   ThreadId,
   type OrchestrationCommand,
@@ -212,6 +213,76 @@ it.layer(NodeServices.layer)("decider deletion flows", (it) => {
       }
 
       expect(normalizeDeleteEvent(forcedResult)).toEqual(normalizeDeleteEvent(sequentialEvents));
+    }),
+  );
+
+  it.effect("deletes the latest user message without requiring a checkpoint", () =>
+    Effect.gen(function* () {
+      const readModel = yield* seedReadModel;
+      const messageId = MessageId.make("message-delete-latest");
+      const withMessage = yield* projectEvent(readModel, {
+        sequence: 4,
+        eventId: asEventId("evt-message-delete-latest"),
+        aggregateKind: "thread",
+        aggregateId: asThreadId("thread-delete-1"),
+        occurredAt: "2026-01-01T00:00:01.000Z",
+        commandId: asCommandId("cmd-message-delete-latest"),
+        causationEventId: null,
+        correlationId: asCommandId("cmd-message-delete-latest"),
+        metadata: {},
+        type: "thread.message-sent",
+        payload: {
+          threadId: asThreadId("thread-delete-1"),
+          messageId,
+          role: "user",
+          text: "Sent to the wrong chat",
+          attachments: [],
+          turnId: null,
+          streaming: false,
+          createdAt: "2026-01-01T00:00:01.000Z",
+          updatedAt: "2026-01-01T00:00:01.000Z",
+        },
+      });
+
+      const result = yield* decideOrchestrationCommand({
+        readModel: withMessage,
+        command: {
+          type: "thread.message.delete",
+          commandId: asCommandId("cmd-delete-message"),
+          threadId: asThreadId("thread-delete-1"),
+          messageId,
+          createdAt: "2026-01-01T00:00:02.000Z",
+        },
+      });
+
+      expect(result).toMatchObject({
+        type: "thread.message-deleted",
+        payload: {
+          threadId: asThreadId("thread-delete-1"),
+          messageId,
+          deletedAt: "2026-01-01T00:00:02.000Z",
+        },
+      });
+      const projected = yield* projectEvent(withMessage, {
+        sequence: 5,
+        eventId: asEventId("evt-message-deleted"),
+        aggregateKind: "thread",
+        aggregateId: asThreadId("thread-delete-1"),
+        occurredAt: "2026-01-01T00:00:02.000Z",
+        commandId: asCommandId("cmd-delete-message"),
+        causationEventId: null,
+        correlationId: asCommandId("cmd-delete-message"),
+        metadata: {},
+        type: "thread.message-deleted",
+        payload: {
+          threadId: asThreadId("thread-delete-1"),
+          messageId,
+          deletedAt: "2026-01-01T00:00:02.000Z",
+        },
+      });
+      expect(projected.threads.find((thread) => thread.id === "thread-delete-1")?.messages).toEqual(
+        [],
+      );
     }),
   );
 });

@@ -92,6 +92,8 @@ export const Employee = Schema.Struct({
   accentColor: Schema.optional(TrimmedNonEmptyString),
   /** Model override on the default provider. Other providers follow the thread selection. */
   model: Schema.optional(TrimmedNonEmptyString),
+  /** Request the provider's fast-mode option whenever this employee works. */
+  fastMode: Schema.optional(Schema.Boolean),
   enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
 });
 export type Employee = typeof Employee.Type;

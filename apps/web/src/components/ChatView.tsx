@@ -1270,6 +1270,9 @@ function ChatViewContent(props: ChatViewProps) {
   const respondToThreadUserInput = useAtomCommand(threadEnvironment.respondToUserInput, {
     reportFailure: false,
   });
+  const deleteThreadMessage = useAtomCommand(threadEnvironment.deleteMessage, {
+    reportFailure: false,
+  });
   const revertThreadCheckpoint = useAtomCommand(threadEnvironment.revertCheckpoint, {
     reportFailure: false,
   });
@@ -4891,6 +4894,69 @@ function ChatViewContent(props: ChatViewProps) {
     ],
   );
 
+  const onDeleteUserMessage = useCallback(
+    async (messageId: MessageId) => {
+      const localApi = readLocalApi();
+      if (!localApi || !activeThread || isRevertingCheckpoint) return;
+
+      if (activeEnvironmentUnavailable && activeEnvironmentUnavailableLabel) {
+        setThreadError(
+          activeThread.id,
+          `Reconnect ${activeEnvironmentUnavailableLabel} before deleting this message.`,
+        );
+        return;
+      }
+      if (phase === "running" || isSendBusy || isConnecting) {
+        setThreadError(activeThread.id, "Interrupt the current turn before deleting this message.");
+        return;
+      }
+      const confirmed = await localApi.dialogs.confirm(
+        [
+          "Delete this message from the chat?",
+          "It will not change files or Git history, and it will be omitted from future AI turns.",
+          "This action cannot be undone.",
+        ].join("\n"),
+        { variant: "destructive" },
+      );
+      if (!confirmed) {
+        return;
+      }
+
+      setIsRevertingCheckpoint(true);
+      setThreadError(activeThread.id, null);
+      try {
+        const result = await deleteThreadMessage({
+          environmentId,
+          input: {
+            threadId: activeThread.id,
+            messageId,
+          },
+        });
+        if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+          const error = squashAtomCommandFailure(result);
+          setThreadError(
+            activeThread.id,
+            error instanceof Error ? error.message : "Failed to delete this message.",
+          );
+        }
+      } finally {
+        setIsRevertingCheckpoint(false);
+      }
+    },
+    [
+      activeEnvironmentUnavailable,
+      activeEnvironmentUnavailableLabel,
+      activeThread,
+      deleteThreadMessage,
+      environmentId,
+      isConnecting,
+      isRevertingCheckpoint,
+      isSendBusy,
+      phase,
+      setThreadError,
+    ],
+  );
+
   const onEmployeeFeedback = useCallback(
     (_messageId: MessageId) => {
       const inserted = composerRef.current?.insertTextAtEnd(
@@ -6431,6 +6497,18 @@ function ChatViewContent(props: ChatViewProps) {
     }
     void onRevertToTurnCountRef.current(targetTurnCount);
   }, []);
+  const onDeleteUserMessageRef = useRef(onDeleteUserMessage);
+  onDeleteUserMessageRef.current = onDeleteUserMessage;
+  const onDeleteUserMessageStable = useCallback((messageId: MessageId) => {
+    void onDeleteUserMessageRef.current(messageId);
+  }, []);
+  const deletableUserMessageId = useMemo(() => {
+    if (!isGitRepo) {
+      const latestMessage = activeThread?.messages.at(-1);
+      return latestMessage?.role === "user" ? latestMessage.id : null;
+    }
+    return null;
+  }, [activeThread?.messages, isGitRepo]);
 
   // Empty state: no active thread
   if (!activeThread) {
@@ -6694,6 +6772,8 @@ function ChatViewContent(props: ChatViewProps) {
                 onOpenTurnDiff={onOpenTurnDiff}
                 revertTurnCountByUserMessageId={revertTurnCountByUserMessageId}
                 onRevertUserMessage={onRevertUserMessage}
+                deletableUserMessageId={deletableUserMessageId}
+                onDeleteUserMessage={onDeleteUserMessageStable}
                 isRevertingCheckpoint={isRevertingCheckpoint}
                 onImageExpand={onExpandTimelineImage}
                 markdownCwd={gitCwd ?? undefined}

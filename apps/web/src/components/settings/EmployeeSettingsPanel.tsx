@@ -49,6 +49,7 @@ interface EmployeeDraft {
   readonly instructions: string;
   readonly providerInstanceId: string;
   readonly model: string;
+  readonly fastMode: boolean;
   readonly enabled: boolean;
 }
 
@@ -60,6 +61,7 @@ const emptyDraft = (providerInstanceId: string): EmployeeDraft => ({
   instructions: "",
   providerInstanceId,
   model: "",
+  fastMode: false,
   enabled: true,
 });
 
@@ -71,6 +73,7 @@ const draftFromEntry = (entry: EmployeeEntry): EmployeeDraft => ({
   instructions: entry.employee.instructions,
   providerInstanceId: entry.employee.providerInstanceId,
   model: entry.employee.model ?? "",
+  fastMode: entry.employee.fastMode === true,
   enabled: entry.employee.enabled,
 });
 
@@ -88,6 +91,7 @@ function decodeDraft(draft: EmployeeDraft): { employee: Employee } | { error: st
     ...(draft.role.trim() ? { role: draft.role } : {}),
     ...(draft.avatar.trim() ? { avatar: draft.avatar } : {}),
     ...(draft.model.trim() ? { model: draft.model } : {}),
+    ...(draft.fastMode ? { fastMode: true } : {}),
   });
   if (Option.isSome(result)) return { employee: result.value };
   return { error: "Check the highlighted fields — this employee could not be saved." };
@@ -258,6 +262,21 @@ function EmployeeForm({
           </span>
         </label>
       </div>
+
+      <label className="flex items-center justify-between gap-4 rounded-lg border border-border/60 bg-background/40 p-3 text-sm">
+        <span className="min-w-0 space-y-1">
+          <span className="block font-medium">Fast mode</span>
+          <span className="block text-xs text-muted-foreground">
+            Prefer the provider's faster service tier for this employee. Providers without fast mode
+            support ignore this preference.
+          </span>
+        </span>
+        <Switch
+          checked={draft.fastMode}
+          aria-label={`Use fast mode for ${draft.displayName || "this employee"}`}
+          onCheckedChange={(checked) => set("fastMode", checked)}
+        />
+      </label>
 
       <label className="block space-y-1.5 text-sm">
         <span className="font-medium">Standing instructions</span>

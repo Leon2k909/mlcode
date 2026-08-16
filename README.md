@@ -15,6 +15,19 @@ Employees can work in their own chats or collaborate in shared conversations wit
 
 Installed builds check this repository for a newer release shortly after startup and every few minutes while running. When an update is available, ML Code offers to download and install it. You can also use **Settings > General > Check for Updates**.
 
+## Employee workflow and speed controls
+
+ML Code can route work through named employees instead of treating every turn as one undifferentiated assistant. The default roster is enabled for new chats:
+
+- **Ceo** decides who is best suited to the request and delegates the next step.
+- **Beta** researches and traces the codebase before implementation.
+- **Alpha** implements the scoped change and runs focused checks.
+- **Gamma** independently verifies behavior, tests, and remaining risks.
+
+Each employee can have its own provider, model override, standing instructions, and optional **Fast mode** preference. Configure these under **Settings > Employees**. Fast mode asks the selected provider for its faster service tier when that provider supports one; providers without that capability safely ignore the preference. Leave it off to preserve the chat's normal model options.
+
+This workflow is designed to improve speed and quality by matching work to a focused role while keeping verification separate from implementation. It is still an early-alpha feature: inspect the employee's report and test important changes before shipping them.
+
 > [!WARNING]
 > Install and authenticate at least one provider before use:
 >
