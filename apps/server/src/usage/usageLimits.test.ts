@@ -4,6 +4,27 @@ import { ProviderDriverKind } from "@t3tools/contracts";
 import { normalizeUsageLimits } from "./usageLimits.ts";
 
 describe("normalizeUsageLimits", () => {
+  it("labels the Codex Pro Lite plan as Pro 5x", () => {
+    expect(
+      normalizeUsageLimits(
+        ProviderDriverKind.make("codex"),
+        {
+          rateLimits: {
+            planType: "prolite",
+            primary: { usedPercent: 56, resetsAt: 1_800_000_000 },
+          },
+        },
+        "2026-08-14T08:00:00.000Z",
+      ),
+    ).toEqual({
+      provider: "codex",
+      readAt: "2026-08-14T08:00:00.000Z",
+      status: null,
+      plan: "Pro 5x",
+      windows: [{ label: "Session", usedPercent: 56, resetsAt: 1_800_000_000 }],
+    });
+  });
+
   it("normalizes Codex session and weekly windows", () => {
     expect(
       normalizeUsageLimits(

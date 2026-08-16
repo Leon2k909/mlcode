@@ -39,7 +39,7 @@ function displayPlan(value: unknown): string | undefined {
     max: "Max",
     plus: "Plus",
     pro: "Pro",
-    prolite: "Pro Lite",
+    prolite: "Pro 5x",
     team: "Team",
     business: "Business",
     enterprise: "Enterprise",
