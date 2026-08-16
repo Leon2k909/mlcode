@@ -166,6 +166,8 @@ interface PendingApproval {
 interface PendingUserInput {
   readonly questions: ReadonlyArray<UserInputQuestion>;
   readonly answers: Deferred.Deferred<ProviderUserInputAnswers>;
+  /** Unparks the waiting handler as cancelled. Session teardown must run it. */
+  readonly cancel: Effect.Effect<void>;
 }
 
 interface ToolInFlight {
@@ -3676,6 +3678,12 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     }
     context.pendingApprovals.clear();
 
+    // A request nobody can answer any more must not stay open, or the thread
+    // can never be settled after the Claude session stops.
+    for (const pending of context.pendingUserInputs.values()) {
+      yield* pending.cancel;
+    }
+
     if (context.turnState) {
       yield* completeTurn(context, "interrupted", "Session stopped.");
     }
@@ -3859,9 +3867,20 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
 
         const answersDeferred = yield* Deferred.make<ProviderUserInputAnswers>();
         let aborted = false;
+        const settleAsAborted = Effect.suspend(() => {
+          if (!pendingUserInputs.has(requestId)) {
+            return Effect.void;
+          }
+          aborted = true;
+          pendingUserInputs.delete(requestId);
+          return Deferred.succeed(answersDeferred, {} as ProviderUserInputAnswers).pipe(
+            Effect.ignore,
+          );
+        });
         const pendingInput: PendingUserInput = {
           questions,
           answers: answersDeferred,
+          cancel: settleAsAborted,
         };
 
         // Emit user-input.requested so the UI can present the questions.
@@ -3896,12 +3915,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
 
         // Handle abort (e.g. turn interrupted while waiting for user input).
         const onAbort = () => {
-          if (!pendingUserInputs.has(requestId)) {
-            return;
-          }
-          aborted = true;
-          pendingUserInputs.delete(requestId);
-          runFork(Deferred.succeed(answersDeferred, {} as ProviderUserInputAnswers));
+          runFork(settleAsAborted);
         };
         callbackOptions.signal.addEventListener("abort", onAbort, {
           once: true,

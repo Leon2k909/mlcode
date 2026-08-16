@@ -5,6 +5,7 @@ import { cn } from "~/lib/utils";
 import { type ContextWindowSnapshot, formatContextWindowTokens } from "~/lib/contextWindow";
 import { useUsage } from "~/state/usage";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
+import { formatContextWindowCompactionMessage } from "./ContextWindowMeter.logic";
 
 function formatPercentage(value: number | null): string | null {
   if (value === null || !Number.isFinite(value)) {
@@ -44,8 +45,9 @@ function formatUsageStatus(value: string | null): string | null {
 export function ContextWindowMeter(props: {
   usage: ContextWindowSnapshot;
   providerDisplayName?: string | null;
+  modelDisplayName?: string | null;
 }) {
-  const { usage, providerDisplayName } = props;
+  const { usage, providerDisplayName, modelDisplayName } = props;
   const usageProvider: UsageProviderKind | null = providerDisplayName
     ?.toLowerCase()
     .includes("codex")
@@ -61,7 +63,7 @@ export function ContextWindowMeter(props: {
     <Popover open={open} onOpenChange={setOpen}>
       <ContextWindowMeterContent
         usage={usage}
-        providerDisplayName={providerDisplayName}
+        modelDisplayName={modelDisplayName}
         usageProvider={usageProvider}
         usedPercentage={usedPercentage}
         normalizedPercentage={normalizedPercentage}
@@ -143,13 +145,13 @@ function ContextUsageLimits({ provider }: { provider: UsageProviderKind }) {
 
 function ContextWindowMeterContent(props: {
   usage: ContextWindowSnapshot;
-  providerDisplayName: string | null | undefined;
+  modelDisplayName: string | null | undefined;
   usageProvider: UsageProviderKind | null;
   usedPercentage: string | null;
   normalizedPercentage: number;
   loadLimits: boolean;
 }) {
-  const { usage, providerDisplayName, usageProvider, usedPercentage, normalizedPercentage } = props;
+  const { usage, modelDisplayName, usageProvider, usedPercentage, normalizedPercentage } = props;
   const radius = 9.75;
   const circumference = 2 * Math.PI * radius;
   const dashOffset = circumference * (1 - normalizedPercentage / 100);
@@ -264,7 +266,7 @@ function ContextWindowMeterContent(props: {
           ) : null}
           {usage.compactsAutomatically ? (
             <div className="mt-1 text-pretty text-secondary-label text-[11px] font-medium">
-              {providerDisplayName ?? "It"} automatically compacts its context when needed.
+              {formatContextWindowCompactionMessage(modelDisplayName)}
             </div>
           ) : null}
         </div>
