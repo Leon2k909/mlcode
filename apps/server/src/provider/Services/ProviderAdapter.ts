@@ -24,7 +24,7 @@ import type * as Effect from "effect/Effect";
 import type * as Stream from "effect/Stream";
 
 export type ProviderSessionModelSwitchMode = "in-session" | "unsupported";
-export type ProviderRoutingOnlyToolPolicy = "native" | "unsupported";
+export type ProviderRoutingOnlyToolPolicy = "native" | "guarded" | "unsupported";
 
 export interface ProviderAdapterCapabilities {
   /**
@@ -32,8 +32,9 @@ export interface ProviderAdapterCapabilities {
    */
   readonly sessionModelSwitch: ProviderSessionModelSwitchMode;
   /**
-   * Declares whether the adapter can prevent all tool execution for a
-   * provider turn before the provider starts it.
+   * `native` prevents all tool execution before the provider starts the turn.
+   * `guarded` relies on runtime-event interruption and recovery before tool
+   * activity is accepted. `unsupported` cannot enforce either boundary.
    */
   readonly routingOnlyToolPolicy: ProviderRoutingOnlyToolPolicy;
 }

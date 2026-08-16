@@ -965,7 +965,7 @@ const make = Effect.gen(function* () {
       const capabilities = yield* providerService.getCapabilities(
         effectiveModelSelection.instanceId,
       );
-      if (capabilities.routingOnlyToolPolicy !== "native") {
+      if (capabilities.routingOnlyToolPolicy === "unsupported") {
         return yield* new ProviderAdapterRequestError({
           provider: providerErrorLabelFromInstanceHint({
             instanceId: String(effectiveModelSelection.instanceId),
@@ -973,7 +973,7 @@ const make = Effect.gen(function* () {
           }),
           method: "thread.turn.start",
           detail:
-            "CEO group routing requires a provider-native deny-all tool policy. The selected provider cannot guarantee a tool-free routing turn.",
+            "CEO group routing requires a native deny-all policy or guarded runtime recovery. The selected provider supports neither.",
         });
       }
     }

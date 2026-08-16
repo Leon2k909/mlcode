@@ -150,7 +150,7 @@ describe("ProviderCommandReactor", () => {
     readonly baseDir?: string;
     readonly threadModelSelection?: ModelSelection;
     readonly sessionModelSwitch?: "unsupported" | "in-session";
-    readonly routingOnlyToolPolicy?: "native" | "unsupported";
+    readonly routingOnlyToolPolicy?: "native" | "guarded" | "unsupported";
     readonly requiresNewThreadForModelChange?: boolean;
     readonly titleRegenerationCompletionDispatchFailures?: number;
     readonly titleRegenerationBeforeStart?: "one" | "two";
@@ -2586,7 +2586,8 @@ describe("ProviderCommandReactor", () => {
     expect(ceoInput.input).toContain("You are Casey, working as CEO.");
     expect(ceoInput.input).toContain("Riley (id: reviewer)");
     expect(ceoInput.input).toContain("CEO delegation gate (mandatory)");
-    expect(ceoInput.input).toContain("Never say 'I'll trace...'");
+    expect(ceoInput.input).toContain("your entire response must be one tag");
+    expect(ceoInput.input).toContain("that is not a handoff");
     expect(ceoInput.input).not.toContain("Morgan (id: outsider)");
 
     const reviewerSelection: ModelSelection = {
@@ -2695,6 +2696,66 @@ describe("ProviderCommandReactor", () => {
     });
     expect(harness.startSession).not.toHaveBeenCalled();
     expect(harness.sendTurn).not.toHaveBeenCalled();
+  });
+
+  it("starts a guarded CEO routing provider with the deny-all policy", async () => {
+    const ceoId = EmployeeId.make("ceo");
+    const workerId = EmployeeId.make("worker_alpha");
+    const groupSelection: ModelSelection = {
+      instanceId: ProviderInstanceId.make("codex"),
+      model: "gpt-5-codex",
+      employeeId: ceoId,
+      employeeIds: [ceoId, workerId],
+    };
+    const harness = await createHarness({
+      threadModelSelection: groupSelection,
+      routingOnlyToolPolicy: "guarded",
+      serverSettings: {
+        employees: {
+          [ceoId]: {
+            displayName: "Casey",
+            role: "CEO",
+            providerInstanceId: ProviderInstanceId.make("codex"),
+            model: "gpt-5-codex",
+            instructions: "Delegate before doing work.",
+            enabled: true,
+          },
+          [workerId]: {
+            displayName: "Alex",
+            role: "Implementation",
+            providerInstanceId: ProviderInstanceId.make("codex"),
+            model: "gpt-5-codex",
+            instructions: "Implement assigned changes.",
+            enabled: true,
+          },
+        },
+      },
+    });
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-guarded-ceo-routing"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-guarded-ceo-routing"),
+          role: "user",
+          text: "Please implement this.",
+          attachments: [],
+        },
+        modelSelection: groupSelection,
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "full-access",
+        createdAt: "2026-08-16T12:00:00.000Z",
+      }),
+    );
+
+    await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+    expect(harness.startSession).toHaveBeenCalledTimes(1);
+    expect(harness.sendTurn.mock.calls[0]?.[0]).toMatchObject({
+      modelSelection: groupSelection,
+      toolPolicy: "deny-all",
+    });
   });
 
   it("starts the selected provider after the existing thread session has stopped", async () => {

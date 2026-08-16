@@ -92,7 +92,9 @@ describe("applyCeoGroupRoutingReminder", () => {
 
     expect(message).toBe(`${CEO_GROUP_ROUTING_REMINDER}\n\nFind the cause of this bug.`);
     expect(message).toContain("before analysis, explanation, or any tool call");
-    expect(message).toContain("Never say 'I'll trace...'");
+    expect(message).toContain("your entire response must be one tag");
+    expect(message).toContain('handoff to="worker_beta"');
+    expect(message).toContain("that is not a handoff");
   });
 
   it("does not add the CEO reminder to a worker or private turn", () => {

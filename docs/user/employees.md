@@ -44,6 +44,10 @@ Only employees selected for that group can take part. Employee replies show thei
 and a handoff is marked in the timeline so the conversation reads like a small Slack or Teams
 channel rather than one anonymous agent.
 
+The default CEO is routing-only in a group: it chooses a worker before any tool use. If it attempts
+a tool instead of handing off, T3 Code blocks that tool and continues the request automatically
+with an enabled worker rather than ending the conversation.
+
 The composer and sidebar list the employees by name. If you change the group while an employee is
 already working, the picker says **Next turn**: the running turn keeps its original membership, and
 your new group applies when you send the next message.

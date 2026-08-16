@@ -482,7 +482,7 @@ describe("ProviderRuntimeIngestion", () => {
     });
   });
 
-  it("stops CEO group tools before accepting their activity", async () => {
+  it("blocks CEO group tools and recovers through a worker handoff", async () => {
     const ceoId = EmployeeId.make("ceo");
     const workerId = EmployeeId.make("worker_alpha");
     const threadId = asThreadId("thread-1");
@@ -517,6 +517,28 @@ describe("ProviderRuntimeIngestion", () => {
     });
     const now = "2026-08-16T12:00:00.000Z";
 
+    await harness.dispatch({
+      type: "thread.turn.start",
+      commandId: CommandId.make("cmd-ceo-routing-user-turn"),
+      threadId,
+      message: {
+        messageId: asMessageId("user-ceo-routing"),
+        role: "user",
+        text: "Fix the message controls and verify the prompt can continue.",
+        attachments: [],
+      },
+      modelSelection: {
+        instanceId: ProviderInstanceId.make("codex"),
+        model: "gpt-5-codex",
+        employeeId: ceoId,
+        employeeIds: [ceoId, workerId],
+      },
+      interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+      runtimeMode: "approval-required",
+      createdAt: now,
+    });
+    await harness.drain();
+
     harness.emit({
       type: "turn.started",
       eventId: asEventId("evt-ceo-routing-started"),
@@ -542,7 +564,7 @@ describe("ProviderRuntimeIngestion", () => {
     });
 
     const blockedThread = await waitForThread(harness.readModel, (thread) =>
-      thread.activities.some((activity) => activity.summary === "CEO routing stopped"),
+      thread.activities.some((activity) => activity.summary === "CEO routing redirected"),
     );
     expect(harness.interrupts).toEqual([{ threadId, turnId }]);
     expect(blockedThread.activities.some((activity) => activity.kind === "tool.started")).toBe(
@@ -564,13 +586,31 @@ describe("ProviderRuntimeIngestion", () => {
         title: "Run command",
       },
     });
-    await harness.drain();
-    const finalThread = await harness.readModel();
+    harness.emit({
+      type: "turn.completed",
+      eventId: asEventId("evt-ceo-routing-completed"),
+      provider: ProviderDriverKind.make("codex"),
+      threadId,
+      turnId,
+      createdAt: now,
+      payload: { state: "interrupted" },
+    });
+
+    const recoveredThread = await waitForThread(
+      harness.readModel,
+      (thread) =>
+        thread.modelSelection.employeeId === workerId &&
+        thread.messages.some((message) => message.id.startsWith("employee-handoff:")),
+    );
+    expect(recoveredThread.activities.some((activity) => activity.kind === "tool.completed")).toBe(
+      false,
+    );
     expect(
-      finalThread.threads
-        .find((thread) => thread.id === threadId)
-        ?.activities.some((activity) => activity.kind === "tool.completed"),
-    ).toBe(false);
+      recoveredThread.activities.some((activity) => activity.summary === "CEO routing recovered"),
+    ).toBe(true);
+    expect(
+      recoveredThread.messages.find((message) => message.id.startsWith("employee-handoff:"))?.text,
+    ).toContain("Fix the message controls and verify the prompt can continue.");
   });
 
   it("applies provider session.state.changed transitions directly", async () => {

@@ -4,6 +4,7 @@ import {
   CommandId,
   DEFAULT_MODEL_BY_PROVIDER,
   type EmployeeId,
+  type EmployeeMap,
   MessageId,
   type ModelSelection,
   type OrchestrationEvent,
@@ -931,6 +932,7 @@ const make = Effect.gen(function* () {
   // blocked thread until the turn settles so later tool lifecycle events from
   // that same turn do not leak a misleading "ran" activity into the UI.
   const routingOnlyToolBlockedThreads = new Set<ThreadId>();
+  const pendingCeoRoutingRecoveryTurnByThreadId = new Map<ThreadId, TurnId | null>();
 
   const assistantSegmentStateByTurnKey = yield* Cache.make<string, AssistantSegmentState>({
     capacity: TURN_MESSAGE_IDS_BY_TURN_CACHE_CAPACITY,
@@ -1606,6 +1608,143 @@ const make = Effect.gen(function* () {
     },
   );
 
+  type EmployeeHandoffThread = Pick<
+    OrchestrationThread,
+    "id" | "modelSelection" | "runtimeMode" | "interactionMode"
+  >;
+
+  const dispatchEmployeeHandoff = Effect.fn("dispatchEmployeeHandoff")(function* (input: {
+    readonly event: ProviderRuntimeEvent;
+    readonly thread: EmployeeHandoffThread;
+    readonly turnId: TurnId | undefined;
+    readonly employees: EmployeeMap;
+    readonly toEmployeeId: EmployeeId;
+    readonly message: string;
+    readonly completedHandoffs: number;
+  }) {
+    const selection = input.thread.modelSelection;
+    const fromEmployeeId = selection.employeeId;
+    const groupEmployeeIds = selection.employeeIds ?? [];
+    if (
+      fromEmployeeId === undefined ||
+      groupEmployeeIds.length < 2 ||
+      input.toEmployeeId === fromEmployeeId ||
+      !groupEmployeeIds.includes(input.toEmployeeId)
+    ) {
+      consecutiveEmployeeHandoffs.delete(input.thread.id);
+      return false;
+    }
+
+    if (!canContinueHandoffChain(input.completedHandoffs)) {
+      consecutiveEmployeeHandoffs.delete(input.thread.id);
+      yield* appendEmployeeHandoffActivity({
+        event: input.event,
+        threadId: input.thread.id,
+        turnId: input.turnId,
+        tone: "error",
+        summary: "Employee handoff limit reached",
+        detail:
+          "The group paused after eight consecutive employee turns. Send a message to continue.",
+      });
+      return false;
+    }
+
+    const targetEmployee = resolveEmployee(input.employees, input.toEmployeeId);
+    if (targetEmployee === undefined) {
+      consecutiveEmployeeHandoffs.delete(input.thread.id);
+      return false;
+    }
+
+    // Handoffs keep the provider selected for the group chat. The employee's
+    // saved instance is only a fallback for older/malformed selections, so a
+    // CEO running on Claude can hand work to an implementation employee whose
+    // default is still Codex without silently jumping providers.
+    const selectedProviderInfo = yield* providerService
+      .getInstanceInfo(selection.instanceId)
+      .pipe(Effect.option);
+    const selectedProvider =
+      Option.isSome(selectedProviderInfo) && selectedProviderInfo.value.enabled
+        ? selectedProviderInfo.value
+        : undefined;
+    const usesSelectedProvider = selectedProvider !== undefined;
+    const targetInstanceId = usesSelectedProvider
+      ? selection.instanceId
+      : targetEmployee.providerInstanceId;
+    const targetInfo = usesSelectedProvider
+      ? selectedProvider
+      : yield* providerService
+          .getInstanceInfo(targetInstanceId)
+          .pipe(Effect.option, Effect.map(Option.getOrUndefined));
+    if (targetInfo === undefined || !targetInfo.enabled) {
+      consecutiveEmployeeHandoffs.delete(input.thread.id);
+      yield* appendEmployeeHandoffActivity({
+        event: input.event,
+        threadId: input.thread.id,
+        turnId: input.turnId,
+        tone: "error",
+        summary: "Employee provider unavailable",
+        detail: `${targetEmployee.displayName}'s default provider instance '${targetEmployee.providerInstanceId}' is not available, and the chat provider could not be reused.`,
+      });
+      return false;
+    }
+
+    const targetModel = usesSelectedProvider
+      ? targetInstanceId === targetEmployee.providerInstanceId
+        ? (targetEmployee.model ?? selection.model)
+        : selection.model
+      : (targetEmployee.model ?? DEFAULT_MODEL_BY_PROVIDER[targetInfo.driverKind]);
+    if (!targetModel) {
+      consecutiveEmployeeHandoffs.delete(input.thread.id);
+      yield* appendEmployeeHandoffActivity({
+        event: input.event,
+        threadId: input.thread.id,
+        turnId: input.turnId,
+        tone: "error",
+        summary: "Employee model unavailable",
+        detail: `No model is configured for ${targetEmployee.displayName}.`,
+      });
+      return false;
+    }
+
+    const nextModelSelection: ModelSelection = {
+      instanceId: targetInstanceId,
+      model: targetModel,
+      employeeId: input.toEmployeeId,
+      employeeIds: [...groupEmployeeIds],
+      ...(selection.instanceId === targetInstanceId && selection.options !== undefined
+        ? { options: selection.options }
+        : {}),
+    };
+    const sourceEmployee = resolveEmployee(input.employees, fromEmployeeId);
+    const sourceName = sourceEmployee?.displayName ?? String(fromEmployeeId);
+    const uuid = yield* crypto.randomUUIDv4;
+
+    yield* orchestrationEngine.dispatch({
+      type: "thread.meta.update",
+      commandId: yield* providerCommandId(input.event, "employee-handoff-meta"),
+      threadId: input.thread.id,
+      modelSelection: nextModelSelection,
+    });
+    yield* orchestrationEngine.dispatch({
+      type: "thread.turn.start",
+      commandId: yield* providerCommandId(input.event, "employee-handoff-turn"),
+      threadId: input.thread.id,
+      message: {
+        messageId: MessageId.make(`employee-handoff:${input.thread.id}:${uuid}`),
+        role: "user",
+        text: `To ${targetEmployee.displayName}, from ${sourceName}:\n\n${input.message}`,
+        attachments: [],
+        employeeId: fromEmployeeId,
+      },
+      modelSelection: nextModelSelection,
+      runtimeMode: input.thread.runtimeMode,
+      interactionMode: input.thread.interactionMode,
+      createdAt: input.event.createdAt,
+    });
+    consecutiveEmployeeHandoffs.set(input.thread.id, input.completedHandoffs + 1);
+    return true;
+  });
+
   const processEmployeeHandoff = Effect.fn("processEmployeeHandoff")(function* (input: {
     readonly event: Extract<ProviderRuntimeEvent, { type: "turn.completed" }>;
     readonly thread: Pick<
@@ -1651,115 +1790,111 @@ const make = Effect.gen(function* () {
       return;
     }
 
-    const completedHandoffs = consecutiveEmployeeHandoffs.get(input.thread.id) ?? 0;
-    if (!canContinueHandoffChain(completedHandoffs)) {
-      consecutiveEmployeeHandoffs.delete(input.thread.id);
-      yield* appendEmployeeHandoffActivity({
-        event: input.event,
-        threadId: input.thread.id,
-        turnId: input.turnId,
-        tone: "error",
-        summary: "Employee handoff limit reached",
-        detail:
-          "The group paused after eight consecutive employee turns. Send a message to continue.",
-      });
-      return;
-    }
-
-    const targetEmployee = resolveEmployee(settings.employees, result.handoff.toEmployeeId);
-    if (targetEmployee === undefined) {
-      consecutiveEmployeeHandoffs.delete(input.thread.id);
-      return;
-    }
-
-    // Handoffs keep the provider selected for the group chat. The employee's
-    // saved instance is only a fallback for older/malformed selections, so a
-    // CEO running on Claude can hand work to an implementation employee whose
-    // default is still Codex without silently jumping providers.
-    const selectedProviderInfo = yield* providerService
-      .getInstanceInfo(selection.instanceId)
-      .pipe(Effect.option);
-    const selectedProvider =
-      Option.isSome(selectedProviderInfo) && selectedProviderInfo.value.enabled
-        ? selectedProviderInfo.value
-        : undefined;
-    const usesSelectedProvider = selectedProvider !== undefined;
-    const targetInstanceId = usesSelectedProvider
-      ? selection.instanceId
-      : targetEmployee.providerInstanceId;
-    const targetInfo = usesSelectedProvider
-      ? selectedProvider
-      : yield* providerService
-          .getInstanceInfo(targetInstanceId)
-          .pipe(Effect.option, Effect.map(Option.getOrUndefined));
-    if (targetInfo === undefined || !targetInfo.enabled) {
-      consecutiveEmployeeHandoffs.delete(input.thread.id);
-      yield* appendEmployeeHandoffActivity({
-        event: input.event,
-        threadId: input.thread.id,
-        turnId: input.turnId,
-        tone: "error",
-        summary: "Employee provider unavailable",
-        detail: `${targetEmployee.displayName}'s default provider instance '${targetEmployee.providerInstanceId}' is not available, and the chat provider could not be reused.`,
-      });
-      return;
-    }
-
-    const targetModel = usesSelectedProvider
-      ? targetInstanceId === targetEmployee.providerInstanceId
-        ? (targetEmployee.model ?? selection.model)
-        : selection.model
-      : (targetEmployee.model ?? DEFAULT_MODEL_BY_PROVIDER[targetInfo.driverKind]);
-    if (!targetModel) {
-      consecutiveEmployeeHandoffs.delete(input.thread.id);
-      yield* appendEmployeeHandoffActivity({
-        event: input.event,
-        threadId: input.thread.id,
-        turnId: input.turnId,
-        tone: "error",
-        summary: "Employee model unavailable",
-        detail: `No model is configured for ${targetEmployee.displayName}.`,
-      });
-      return;
-    }
-
-    const nextModelSelection: ModelSelection = {
-      instanceId: targetInstanceId,
-      model: targetModel,
-      employeeId: result.handoff.toEmployeeId,
-      employeeIds: [...groupEmployeeIds],
-      ...(selection.instanceId === targetInstanceId && selection.options !== undefined
-        ? { options: selection.options }
-        : {}),
-    };
-    const sourceEmployee = resolveEmployee(settings.employees, fromEmployeeId);
-    const sourceName = sourceEmployee?.displayName ?? String(fromEmployeeId);
-    const uuid = yield* crypto.randomUUIDv4;
-
-    yield* orchestrationEngine.dispatch({
-      type: "thread.meta.update",
-      commandId: yield* providerCommandId(input.event, "employee-handoff-meta"),
-      threadId: input.thread.id,
-      modelSelection: nextModelSelection,
+    yield* dispatchEmployeeHandoff({
+      event: input.event,
+      thread: input.thread,
+      turnId: input.turnId,
+      employees: settings.employees,
+      toEmployeeId: result.handoff.toEmployeeId,
+      message: result.handoff.message,
+      completedHandoffs: consecutiveEmployeeHandoffs.get(input.thread.id) ?? 0,
     });
-    yield* orchestrationEngine.dispatch({
-      type: "thread.turn.start",
-      commandId: yield* providerCommandId(input.event, "employee-handoff-turn"),
-      threadId: input.thread.id,
-      message: {
-        messageId: MessageId.make(`employee-handoff:${input.thread.id}:${uuid}`),
-        role: "user",
-        text: `To ${targetEmployee.displayName}, from ${sourceName}:\n\n${result.handoff.message}`,
-        attachments: [],
-        employeeId: fromEmployeeId,
-      },
-      modelSelection: nextModelSelection,
-      runtimeMode: input.thread.runtimeMode,
-      interactionMode: input.thread.interactionMode,
-      createdAt: input.event.createdAt,
-    });
-    consecutiveEmployeeHandoffs.set(input.thread.id, completedHandoffs + 1);
   });
+
+  const recoverBlockedCeoRouting = Effect.fn("recoverBlockedCeoRouting")(function* (input: {
+    readonly event: ProviderRuntimeEvent;
+    readonly thread: OrchestrationThread;
+    readonly turnId: TurnId | undefined;
+  }) {
+    const selection = input.thread.modelSelection;
+    const fromEmployeeId = selection.employeeId;
+    const groupEmployeeIds = selection.employeeIds ?? [];
+    if (fromEmployeeId === undefined || !isCeoGroupRoutingTurn(input.thread)) {
+      consecutiveEmployeeHandoffs.delete(input.thread.id);
+      return;
+    }
+
+    const settings = yield* serverSettingsService.getSettings;
+    const eligibleWorkerIds = groupEmployeeIds.filter(
+      (employeeId) =>
+        employeeId !== fromEmployeeId &&
+        resolveEmployee(settings.employees, employeeId) !== undefined,
+    );
+    const targetEmployeeId =
+      eligibleWorkerIds.find((employeeId) => employeeId === "worker_beta") ?? eligibleWorkerIds[0];
+    if (targetEmployeeId === undefined) {
+      consecutiveEmployeeHandoffs.delete(input.thread.id);
+      yield* appendEmployeeHandoffActivity({
+        event: input.event,
+        threadId: input.thread.id,
+        turnId: input.turnId,
+        tone: "error",
+        summary: "CEO routing recovery failed",
+        detail: "No enabled worker is available in this employee group.",
+      });
+      return;
+    }
+
+    const recentUserContext = input.thread.messages
+      .filter((message) => message.role === "user" && message.employeeId === undefined)
+      .slice(-3)
+      .map((message, index) => {
+        const text = message.text.trim();
+        return `User message ${index + 1}:\n${text.length > 0 ? text : "(attachments only)"}`;
+      })
+      .join("\n\n");
+    const boundedUserContext =
+      recentUserContext.length > 12_000
+        ? `...${recentUserContext.slice(recentUserContext.length - 12_000)}`
+        : recentUserContext;
+    const recoveryMessage = [
+      "The CEO routing turn attempted a tool before delegating, so take over the underlying user request now.",
+      targetEmployeeId === "worker_beta"
+        ? "Research the request and continue the normal employee handoff chain with a concrete implementation brief."
+        : "Handle the request in your assigned lane and continue the normal employee handoff chain.",
+      boundedUserContext.length > 0 ? `Recent user context:\n\n${boundedUserContext}` : undefined,
+    ]
+      .filter((part): part is string => part !== undefined)
+      .join("\n\n");
+
+    const dispatched = yield* dispatchEmployeeHandoff({
+      event: input.event,
+      thread: input.thread,
+      turnId: input.turnId,
+      employees: settings.employees,
+      toEmployeeId: targetEmployeeId,
+      message: recoveryMessage,
+      completedHandoffs: consecutiveEmployeeHandoffs.get(input.thread.id) ?? 0,
+    });
+    if (!dispatched) {
+      return;
+    }
+
+    const targetEmployee = resolveEmployee(settings.employees, targetEmployeeId);
+    yield* appendEmployeeHandoffActivity({
+      event: input.event,
+      threadId: input.thread.id,
+      turnId: input.turnId,
+      tone: "info",
+      summary: "CEO routing recovered",
+      detail: `The blocked routing turn continued automatically with ${targetEmployee?.displayName ?? targetEmployeeId}.`,
+    });
+  });
+
+  const consumePendingCeoRoutingRecovery = (
+    threadId: ThreadId,
+    settledTurnId: TurnId | undefined,
+  ): boolean => {
+    if (!pendingCeoRoutingRecoveryTurnByThreadId.has(threadId)) {
+      return false;
+    }
+    const blockedTurnId = pendingCeoRoutingRecoveryTurnByThreadId.get(threadId) ?? null;
+    if (blockedTurnId !== null && !sameId(blockedTurnId, settledTurnId)) {
+      return false;
+    }
+    pendingCeoRoutingRecoveryTurnByThreadId.delete(threadId);
+    return true;
+  };
 
   const processRuntimeEvent = (event: ProviderRuntimeEvent) =>
     Effect.gen(function* () {
@@ -1789,6 +1924,7 @@ const make = Effect.gen(function* () {
         (event.type === "turn.started" && !isCeoGroupRoutingTurn(thread))
       ) {
         routingOnlyToolBlockedThreads.delete(thread.id);
+        pendingCeoRoutingRecoveryTurnByThreadId.delete(thread.id);
       }
 
       const isRoutingOnlyToolStart =
@@ -1797,6 +1933,7 @@ const make = Effect.gen(function* () {
         isToolLifecycleItemType(event.payload.itemType);
       if (isRoutingOnlyToolStart && !routingOnlyToolBlockedThreads.has(thread.id)) {
         routingOnlyToolBlockedThreads.add(thread.id);
+        pendingCeoRoutingRecoveryTurnByThreadId.set(thread.id, eventTurnId ?? activeTurnId);
         yield* providerService
           .interruptTurn({
             threadId: thread.id,
@@ -1816,10 +1953,10 @@ const make = Effect.gen(function* () {
           event,
           threadId: thread.id,
           turnId: eventTurnId,
-          tone: "error",
-          summary: "CEO routing stopped",
+          tone: "info",
+          summary: "CEO routing redirected",
           detail:
-            "The CEO must hand the group to a worker before analysis or tool use. No tool activity was accepted.",
+            "The CEO attempted a tool during a routing-only turn. The tool was blocked, and the request will continue automatically with a worker.",
         });
       }
 
@@ -2206,7 +2343,27 @@ const make = Effect.gen(function* () {
           });
 
           const employeeReplyText = yield* takeEmployeeHandoffText(thread.id, turnId);
-          if (
+          const shouldRecoverCeoRouting =
+            shouldApplyThreadLifecycle && consumePendingCeoRoutingRecovery(thread.id, turnId);
+          if (shouldRecoverCeoRouting) {
+            if (detailedThread !== null) {
+              yield* recoverBlockedCeoRouting({
+                event,
+                thread: detailedThread,
+                turnId,
+              });
+            } else {
+              consecutiveEmployeeHandoffs.delete(thread.id);
+              yield* appendEmployeeHandoffActivity({
+                event,
+                threadId: thread.id,
+                turnId,
+                tone: "error",
+                summary: "CEO routing recovery failed",
+                detail: "The thread details were unavailable after the blocked routing turn.",
+              });
+            }
+          } else if (
             shouldApplyThreadLifecycle &&
             employeeId !== undefined &&
             normalizeRuntimeTurnState(event.payload.state) === "completed"
@@ -2226,7 +2383,30 @@ const make = Effect.gen(function* () {
       }
       if (event.type === "turn.aborted" && eventTurnId !== undefined) {
         yield* takeEmployeeHandoffText(thread.id, eventTurnId);
-        consecutiveEmployeeHandoffs.delete(thread.id);
+        const shouldRecoverCeoRouting =
+          shouldApplyThreadLifecycle && consumePendingCeoRoutingRecovery(thread.id, eventTurnId);
+        if (shouldRecoverCeoRouting) {
+          const detailedThread = yield* getLoadedThreadDetail();
+          if (detailedThread !== null) {
+            yield* recoverBlockedCeoRouting({
+              event,
+              thread: detailedThread,
+              turnId: eventTurnId,
+            });
+          } else {
+            consecutiveEmployeeHandoffs.delete(thread.id);
+            yield* appendEmployeeHandoffActivity({
+              event,
+              threadId: thread.id,
+              turnId: eventTurnId,
+              tone: "error",
+              summary: "CEO routing recovery failed",
+              detail: "The thread details were unavailable after the blocked routing turn.",
+            });
+          }
+        } else {
+          consecutiveEmployeeHandoffs.delete(thread.id);
+        }
       }
 
       if (event.type === "runtime.error") {
@@ -2397,6 +2577,7 @@ const make = Effect.gen(function* () {
       if (event.payload.employeeId === undefined) {
         consecutiveEmployeeHandoffs.delete(event.payload.threadId);
         routingOnlyToolBlockedThreads.delete(event.payload.threadId);
+        pendingCeoRoutingRecoveryTurnByThreadId.delete(event.payload.threadId);
       }
     });
 
