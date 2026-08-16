@@ -388,6 +388,48 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
     }),
   );
 
+  it.effect("switches warm sessions to deny-all for routing and restores workers", () =>
+    Effect.gen(function* () {
+      const adapter = yield* OpenCodeAdapter;
+      const threadId = asThreadId("thread-opencode-routing-policy");
+      const modelSelection = createModelSelection(
+        ProviderInstanceId.make("opencode"),
+        "anthropic/sonnet",
+      );
+
+      yield* adapter.startSession({
+        provider: ProviderDriverKind.make("opencode"),
+        threadId,
+        runtimeMode: "full-access",
+        toolPolicy: "normal",
+      });
+      yield* adapter.sendTurn({
+        threadId,
+        input: "route this request",
+        modelSelection,
+        toolPolicy: "deny-all",
+      });
+
+      NodeAssert.deepEqual(runtimeMock.state.sessionUpdateCalls.at(-1), {
+        sessionID: "http://127.0.0.1:9999/session",
+        permission: [{ permission: "*", pattern: "*", action: "deny" }],
+      });
+
+      yield* adapter.sendTurn({
+        threadId,
+        input: "implement the request",
+        modelSelection,
+        toolPolicy: "normal",
+      });
+
+      NodeAssert.deepEqual(runtimeMock.state.sessionUpdateCalls.at(-1), {
+        sessionID: "http://127.0.0.1:9999/session",
+        permission: [{ permission: "*", pattern: "*", action: "allow" }],
+      });
+      yield* adapter.stopSession(threadId);
+    }),
+  );
+
   it.effect("falls back to a fresh session when the persisted session is gone", () =>
     Effect.gen(function* () {
       const adapter = yield* OpenCodeAdapter;

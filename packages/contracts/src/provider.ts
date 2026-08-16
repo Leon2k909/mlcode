@@ -24,6 +24,9 @@ import {
 } from "./orchestration.ts";
 import { ProviderInstanceId, ProviderDriverKind } from "./providerInstance.ts";
 
+export const ProviderToolPolicy = Schema.Literals(["normal", "deny-all"]);
+export type ProviderToolPolicy = typeof ProviderToolPolicy.Type;
+
 const ProviderSessionStatus = Schema.Literals([
   "connecting",
   "ready",
@@ -61,6 +64,7 @@ export const ProviderSessionStartInput = Schema.Struct({
   resumeCursor: Schema.optional(Schema.Unknown),
   approvalPolicy: Schema.optional(ProviderApprovalPolicy),
   sandboxMode: Schema.optional(ProviderSandboxMode),
+  toolPolicy: Schema.optional(ProviderToolPolicy),
   runtimeMode: RuntimeMode,
 });
 export type ProviderSessionStartInput = typeof ProviderSessionStartInput.Type;
@@ -76,6 +80,7 @@ export const ProviderSendTurnInput = Schema.Struct({
   modelSelection: Schema.optional(ModelSelection),
   interactionMode: Schema.optional(ProviderInteractionMode),
   mode: Schema.optional(ThreadTurnDispatchMode),
+  toolPolicy: Schema.optional(ProviderToolPolicy),
 });
 export type ProviderSendTurnInput = typeof ProviderSendTurnInput.Type;
 

@@ -5,6 +5,7 @@ import {
   ProviderInstanceId,
   type ProviderRuntimeEvent,
   type ProviderSession,
+  type ProviderToolPolicy,
   RuntimeItemId,
   RuntimeRequestId,
   ThreadId,
@@ -220,6 +221,7 @@ interface OpenCodeSessionContext {
   activeTurnId: TurnId | undefined;
   activeAgent: string | undefined;
   activeVariant: string | undefined;
+  toolPolicy: ProviderToolPolicy;
   /**
    * One-shot guard flipped by `stopOpenCodeContext` / `emitUnexpectedExit`.
    * The session lifecycle is owned by `sessionScope`; this Ref exists only
@@ -620,6 +622,22 @@ export function makeOpenCodeAdapter(
             : {}),
         })),
       );
+
+    const applyToolPolicy = Effect.fn("applyToolPolicy")(function* (
+      context: OpenCodeSessionContext,
+      toolPolicy: ProviderToolPolicy,
+    ) {
+      if (context.toolPolicy === toolPolicy) {
+        return;
+      }
+      yield* runOpenCodeSdk("session.update", () =>
+        context.client.session.update({
+          sessionID: context.openCodeSessionId,
+          permission: buildOpenCodePermissionRules(context.session.runtimeMode, toolPolicy),
+        }),
+      );
+      context.toolPolicy = toolPolicy;
+    });
 
     // Layer-level finalizer: when the adapter layer shuts down, stop every
     // session. Each session's `Scope.close` tears down its spawned OpenCode
@@ -1058,6 +1076,9 @@ export function makeOpenCodeAdapter(
 
           if (event.properties.status.type === "idle" && turnId) {
             context.activeTurnId = undefined;
+            if (context.toolPolicy === "deny-all") {
+              yield* applyToolPolicy(context, "normal").pipe(Effect.mapError(toRequestError));
+            }
             yield* updateProviderSession(context, { status: "ready" }, { clearActiveTurnId: true });
             yield* emit({
               ...(yield* buildEventBase({
@@ -1262,7 +1283,10 @@ export function makeOpenCodeAdapter(
                   yield* runOpenCodeSdk("session.update", () =>
                     client.session.update({
                       sessionID: reusable.id,
-                      permission: buildOpenCodePermissionRules(input.runtimeMode),
+                      permission: buildOpenCodePermissionRules(
+                        input.runtimeMode,
+                        input.toolPolicy ?? "normal",
+                      ),
                     }),
                   );
                   return { openCodeSession: reusable, created: false };
@@ -1289,7 +1313,10 @@ export function makeOpenCodeAdapter(
                   yield* runOpenCodeSdk("session.update", () =>
                     client.session.update({
                       sessionID: forked.id,
-                      permission: buildOpenCodePermissionRules(input.runtimeMode),
+                      permission: buildOpenCodePermissionRules(
+                        input.runtimeMode,
+                        input.toolPolicy ?? "normal",
+                      ),
                     }),
                   );
                   return { openCodeSession: forked, created: true };
@@ -1302,7 +1329,10 @@ export function makeOpenCodeAdapter(
                 }
                 const createdSession = yield* runOpenCodeSdk("session.create", () =>
                   client.session.create({
-                    permission: buildOpenCodePermissionRules(input.runtimeMode),
+                    permission: buildOpenCodePermissionRules(
+                      input.runtimeMode,
+                      input.toolPolicy ?? "normal",
+                    ),
                   }),
                 );
                 if (!createdSession.data) {
@@ -1384,6 +1414,7 @@ export function makeOpenCodeAdapter(
           activeTurnId: undefined,
           activeAgent: undefined,
           activeVariant: undefined,
+          toolPolicy: input.toolPolicy ?? "normal",
           stopped: yield* Ref.make(false),
           sessionScope: started.sessionScope,
         };
@@ -1456,6 +1487,10 @@ export function makeOpenCodeAdapter(
 
       const agent = getModelSelectionStringOptionValue(modelSelection, "agent");
       const variant = getModelSelectionStringOptionValue(modelSelection, "variant");
+
+      yield* applyToolPolicy(context, input.toolPolicy ?? "normal").pipe(
+        Effect.mapError(toRequestError),
+      );
 
       context.activeTurnId = turnId;
       context.activeAgent = agent ?? (input.interactionMode === "plan" ? "plan" : undefined);
@@ -1701,6 +1736,7 @@ export function makeOpenCodeAdapter(
       provider: PROVIDER,
       capabilities: {
         sessionModelSwitch: "in-session",
+        routingOnlyToolPolicy: "native",
       },
       startSession,
       sendTurn,

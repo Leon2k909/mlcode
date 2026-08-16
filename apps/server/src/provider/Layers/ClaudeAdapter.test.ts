@@ -3896,6 +3896,65 @@ describe("ClaudeAdapterLive", () => {
     );
   });
 
+  it.effect("denies every routing tool and restores worker permissions", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      const session = yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+      const createInput = harness.getLastCreateQueryInput();
+      const canUseTool = createInput?.options.canUseTool;
+      assert.equal(typeof canUseTool, "function");
+      if (!canUseTool) {
+        return;
+      }
+
+      yield* adapter.sendTurn({
+        threadId: session.threadId,
+        input: "route this request",
+        toolPolicy: "deny-all",
+        attachments: [],
+      });
+      const denied = yield* Effect.promise(() =>
+        canUseTool(
+          "Bash",
+          { command: "pwd" },
+          {
+            signal: new AbortController().signal,
+            toolUseID: "routing-tool",
+          },
+        ),
+      );
+      assert.equal(denied.behavior, "deny");
+      assert.deepEqual(harness.query.setPermissionModeCalls, ["plan"]);
+
+      yield* adapter.sendTurn({
+        threadId: session.threadId,
+        input: "implement this request",
+        toolPolicy: "normal",
+        attachments: [],
+      });
+      const allowed = yield* Effect.promise(() =>
+        canUseTool(
+          "Bash",
+          { command: "pwd" },
+          {
+            signal: new AbortController().signal,
+            toolUseID: "worker-tool",
+          },
+        ),
+      );
+      assert.equal(allowed.behavior, "allow");
+      assert.deepEqual(harness.query.setPermissionModeCalls, ["plan", "bypassPermissions"]);
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
   it.effect.each<{ runtimeMode: RuntimeMode; expectedBase: PermissionMode }>([
     { runtimeMode: "full-access", expectedBase: "bypassPermissions" },
     { runtimeMode: "approval-required", expectedBase: "default" },

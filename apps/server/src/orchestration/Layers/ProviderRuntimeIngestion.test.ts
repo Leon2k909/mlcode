@@ -101,17 +101,26 @@ function isLegacyTurnCompletedEvent(
 function createProviderServiceHarness() {
   const runtimeEventPubSub = Effect.runSync(PubSub.unbounded<ProviderRuntimeEvent>());
   const runtimeSessions: ProviderSession[] = [];
+  const interrupts: Array<{ readonly threadId: ThreadId; readonly turnId?: TurnId }> = [];
 
   const unsupported = () => Effect.die(new Error("Unsupported provider call in test")) as never;
   const service: ProviderServiceShape = {
     startSession: () => unsupported(),
     sendTurn: () => unsupported(),
-    interruptTurn: () => unsupported(),
+    interruptTurn: (input) =>
+      Effect.sync(() => {
+        interrupts.push(
+          input.turnId === undefined
+            ? { threadId: input.threadId }
+            : { threadId: input.threadId, turnId: input.turnId },
+        );
+      }),
     respondToRequest: () => unsupported(),
     respondToUserInput: () => unsupported(),
     stopSession: () => unsupported(),
     listSessions: () => Effect.succeed([...runtimeSessions]),
-    getCapabilities: () => Effect.succeed({ sessionModelSwitch: "in-session" }),
+    getCapabilities: () =>
+      Effect.succeed({ sessionModelSwitch: "in-session", routingOnlyToolPolicy: "unsupported" }),
     getInstanceInfo: (instanceId) => {
       const driverKind = ProviderDriverKind.make(String(instanceId));
       return Effect.succeed({
@@ -163,6 +172,7 @@ function createProviderServiceHarness() {
     service,
     emit,
     setSession,
+    interrupts,
   };
 }
 
@@ -321,6 +331,7 @@ describe("ProviderRuntimeIngestion", () => {
       readModel: () => Effect.runPromise(snapshotQuery.getSnapshot()),
       emit: provider.emit,
       setProviderSession: provider.setSession,
+      interrupts: provider.interrupts,
       drain,
     };
   }
@@ -464,11 +475,102 @@ describe("ProviderRuntimeIngestion", () => {
       text: "To Riley, from Casey:\n\nPlease review the auth change.",
     });
     expect(thread.modelSelection).toMatchObject({
-      instanceId: ProviderInstanceId.make("claudeAgent"),
-      model: "claude-opus-4-6",
+      instanceId: ProviderInstanceId.make("codex"),
+      model: "gpt-5-codex",
       employeeId: reviewerId,
       employeeIds: [ceoId, reviewerId],
     });
+  });
+
+  it("stops CEO group tools before accepting their activity", async () => {
+    const ceoId = EmployeeId.make("ceo");
+    const workerId = EmployeeId.make("worker_alpha");
+    const threadId = asThreadId("thread-1");
+    const turnId = asTurnId("turn-ceo-routing");
+    const harness = await createHarness({
+      serverSettings: {
+        employees: {
+          [ceoId]: {
+            displayName: "Casey",
+            role: "CEO",
+            providerInstanceId: ProviderInstanceId.make("codex"),
+            model: "gpt-5-codex",
+            instructions: "Delegate before doing work.",
+            enabled: true,
+          },
+          [workerId]: {
+            displayName: "Alex",
+            role: "Implementation",
+            providerInstanceId: ProviderInstanceId.make("codex"),
+            model: "gpt-5-codex",
+            instructions: "Implement assigned changes.",
+            enabled: true,
+          },
+        },
+      },
+      threadModelSelection: {
+        instanceId: ProviderInstanceId.make("codex"),
+        model: "gpt-5-codex",
+        employeeId: ceoId,
+        employeeIds: [ceoId, workerId],
+      },
+    });
+    const now = "2026-08-16T12:00:00.000Z";
+
+    harness.emit({
+      type: "turn.started",
+      eventId: asEventId("evt-ceo-routing-started"),
+      provider: ProviderDriverKind.make("codex"),
+      threadId,
+      turnId,
+      createdAt: now,
+    });
+    await waitForThread(harness.readModel, (thread) => thread.session?.activeTurnId === turnId);
+
+    harness.emit({
+      type: "item.started",
+      eventId: asEventId("evt-ceo-routing-tool-started"),
+      provider: ProviderDriverKind.make("codex"),
+      threadId,
+      turnId,
+      itemId: asItemId("item-ceo-command"),
+      createdAt: now,
+      payload: {
+        itemType: "command_execution",
+        title: "Run command",
+      },
+    });
+
+    const blockedThread = await waitForThread(harness.readModel, (thread) =>
+      thread.activities.some((activity) => activity.summary === "CEO routing stopped"),
+    );
+    expect(harness.interrupts).toEqual([{ threadId, turnId }]);
+    expect(blockedThread.activities.some((activity) => activity.kind === "tool.started")).toBe(
+      false,
+    );
+
+    // Late lifecycle events from the interrupted provider turn must not make
+    // the blocked command look like completed work in the timeline.
+    harness.emit({
+      type: "item.completed",
+      eventId: asEventId("evt-ceo-routing-tool-completed"),
+      provider: ProviderDriverKind.make("codex"),
+      threadId,
+      turnId,
+      itemId: asItemId("item-ceo-command"),
+      createdAt: now,
+      payload: {
+        itemType: "command_execution",
+        title: "Run command",
+      },
+    });
+    await harness.drain();
+    const finalThread = await harness.readModel();
+    expect(
+      finalThread.threads
+        .find((thread) => thread.id === threadId)
+        ?.activities.some((activity) => activity.kind === "tool.completed"),
+    ).toBe(false);
   });
 
   it("applies provider session.state.changed transitions directly", async () => {

@@ -57,6 +57,16 @@ import {
 const providerTurnKey = (threadId: ThreadId, turnId: TurnId) => `${threadId}:${turnId}`;
 const providerTaskKey = (threadId: ThreadId, taskId: string) => `${threadId}:${taskId}`;
 
+const isCeoGroupRoutingTurn = (thread: Pick<OrchestrationThread, "modelSelection">): boolean =>
+  thread.modelSelection.employeeId === "ceo" &&
+  (thread.modelSelection.employeeIds?.length ?? 0) >= 2;
+
+const isToolLifecycleEvent = (event: ProviderRuntimeEvent): boolean =>
+  (event.type === "item.started" ||
+    event.type === "item.updated" ||
+    event.type === "item.completed") &&
+  isToolLifecycleItemType(event.payload.itemType);
+
 // Fallback when the in-memory description cache no longer has the task name
 // (server restart, session-exit sweep, TTL/capacity eviction): earlier
 // task.started/task.progress activities for the task are persisted with it.
@@ -916,6 +926,12 @@ const make = Effect.gen(function* () {
   // spoke, keyed by thread. The user turn domain event resets it.
   const consecutiveEmployeeHandoffs = new Map<string, number>();
 
+  // Prompt reminders are not a hard boundary: a CEO can still ask a full-
+  // access provider to run a tool before it emits its handoff. Remember the
+  // blocked thread until the turn settles so later tool lifecycle events from
+  // that same turn do not leak a misleading "ran" activity into the UI.
+  const routingOnlyToolBlockedThreads = new Set<ThreadId>();
+
   const assistantSegmentStateByTurnKey = yield* Cache.make<string, AssistantSegmentState>({
     capacity: TURN_MESSAGE_IDS_BY_TURN_CACHE_CAPACITY,
     timeToLive: TURN_MESSAGE_IDS_BY_TURN_TTL,
@@ -1767,6 +1783,46 @@ const make = Effect.gen(function* () {
       const eventTurnId = toTurnId(event.turnId);
       const employeeId = thread.modelSelection.employeeId;
       const activeTurnId = thread.session?.activeTurnId ?? null;
+
+      if (
+        event.type === "session.exited" ||
+        (event.type === "turn.started" && !isCeoGroupRoutingTurn(thread))
+      ) {
+        routingOnlyToolBlockedThreads.delete(thread.id);
+      }
+
+      const isRoutingOnlyToolStart =
+        isCeoGroupRoutingTurn(thread) &&
+        event.type === "item.started" &&
+        isToolLifecycleItemType(event.payload.itemType);
+      if (isRoutingOnlyToolStart && !routingOnlyToolBlockedThreads.has(thread.id)) {
+        routingOnlyToolBlockedThreads.add(thread.id);
+        yield* providerService
+          .interruptTurn({
+            threadId: thread.id,
+            ...(eventTurnId !== undefined ? { turnId: eventTurnId } : {}),
+          })
+          .pipe(
+            Effect.catchCause((cause) =>
+              Effect.logWarning("failed to stop CEO routing-only tool", {
+                threadId: thread.id,
+                turnId: eventTurnId,
+                eventId: event.eventId,
+                cause: Cause.pretty(cause),
+              }),
+            ),
+          );
+        yield* appendEmployeeHandoffActivity({
+          event,
+          threadId: thread.id,
+          turnId: eventTurnId,
+          tone: "error",
+          summary: "CEO routing stopped",
+          detail:
+            "The CEO must hand the group to a worker before analysis or tool use. No tool activity was accepted.",
+        });
+      }
+
       const pendingTurnStart = yield* projectionTurnRepository.getPendingTurnStartByThreadId({
         threadId: thread.id,
       });
@@ -2315,7 +2371,10 @@ const make = Effect.gen(function* () {
         }
       }
 
-      const activities = runtimeEventToActivities(event, taskTitle);
+      const activities =
+        routingOnlyToolBlockedThreads.has(thread.id) && isToolLifecycleEvent(event)
+          ? []
+          : runtimeEventToActivities(event, taskTitle);
       yield* Effect.forEach(activities, (activity) =>
         providerCommandId(event, "thread-activity-append").pipe(
           Effect.flatMap((commandId) =>
@@ -2337,6 +2396,7 @@ const make = Effect.gen(function* () {
       // conversation burst. Employee handoff turns preserve the running count.
       if (event.payload.employeeId === undefined) {
         consecutiveEmployeeHandoffs.delete(event.payload.threadId);
+        routingOnlyToolBlockedThreads.delete(event.payload.threadId);
       }
     });
 

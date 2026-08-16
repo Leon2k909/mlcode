@@ -1973,6 +1973,7 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
     provider: PROVIDER,
     capabilities: {
       sessionModelSwitch: "in-session",
+      routingOnlyToolPolicy: "unsupported",
     },
     startSession,
     sendTurn,

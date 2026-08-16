@@ -14,6 +14,7 @@ import {
   resolveEmployee,
   ThreadId,
   type ProviderSession,
+  type ProviderToolPolicy,
   type RuntimeMode,
   type ThreadTurnDispatchMode,
   type TurnId,
@@ -89,6 +90,10 @@ function isEmployeeGroupHandoff(current: ModelSelection, requested: ModelSelecti
     participants.includes(current.employeeId) &&
     participants.includes(requested.employeeId)
   );
+}
+
+function isCeoGroupRoutingSelection(selection: ModelSelection): boolean {
+  return selection.employeeId === "ceo" && (selection.employeeIds?.length ?? 0) >= 2;
 }
 
 function mapProviderSessionStatusToOrchestrationStatus(
@@ -598,6 +603,7 @@ const make = Effect.gen(function* () {
       readonly modelSelection?: ModelSelection;
       readonly pendingTurnStart?: boolean;
       readonly allowProviderChange?: boolean;
+      readonly toolPolicy?: ProviderToolPolicy;
     },
   ) {
     const thread = yield* resolveThread(threadId);
@@ -773,6 +779,7 @@ const make = Effect.gen(function* () {
         ...(effectiveCwd ? { cwd: effectiveCwd } : {}),
         modelSelection: desiredModelSelection,
         ...(input?.resumeCursor !== undefined ? { resumeCursor: input.resumeCursor } : {}),
+        ...(options?.toolPolicy !== undefined ? { toolPolicy: options.toolPolicy } : {}),
         runtimeMode: desiredRuntimeMode,
       });
 
@@ -951,6 +958,25 @@ const make = Effect.gen(function* () {
         ...(usesRequestedProvider && options !== undefined ? { options } : {}),
       } satisfies ModelSelection;
     });
+    const toolPolicy: ProviderToolPolicy = isCeoGroupRoutingSelection(effectiveModelSelection)
+      ? "deny-all"
+      : "normal";
+    if (toolPolicy === "deny-all") {
+      const capabilities = yield* providerService.getCapabilities(
+        effectiveModelSelection.instanceId,
+      );
+      if (capabilities.routingOnlyToolPolicy !== "native") {
+        return yield* new ProviderAdapterRequestError({
+          provider: providerErrorLabelFromInstanceHint({
+            instanceId: String(effectiveModelSelection.instanceId),
+            modelSelectionInstanceId: String(effectiveModelSelection.instanceId),
+          }),
+          method: "thread.turn.start",
+          detail:
+            "CEO group routing requires a provider-native deny-all tool policy. The selected provider cannot guarantee a tool-free routing turn.",
+        });
+      }
+    }
     const allowProviderChange =
       isEmployeeGroupHandoff(previousModelSelection, effectiveModelSelection) ||
       previousModelSelection.instanceId !== effectiveModelSelection.instanceId;
@@ -959,6 +985,7 @@ const make = Effect.gen(function* () {
     const sessionOutcome = yield* ensureSessionForThread(input.threadId, input.createdAt, {
       modelSelection: effectiveModelSelection,
       pendingTurnStart: true,
+      toolPolicy,
       ...(allowProviderChange ? { allowProviderChange: true } : {}),
     });
     threadModelSelections.set(input.threadId, effectiveModelSelection);
@@ -1049,6 +1076,7 @@ const make = Effect.gen(function* () {
       ...(modelForTurn !== undefined ? { modelSelection: modelForTurn } : {}),
       ...(input.interactionMode !== undefined ? { interactionMode: input.interactionMode } : {}),
       ...(input.mode !== undefined ? { mode: input.mode } : {}),
+      toolPolicy,
     };
   });
 

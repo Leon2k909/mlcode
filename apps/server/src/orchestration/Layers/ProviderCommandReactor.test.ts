@@ -150,6 +150,7 @@ describe("ProviderCommandReactor", () => {
     readonly baseDir?: string;
     readonly threadModelSelection?: ModelSelection;
     readonly sessionModelSwitch?: "unsupported" | "in-session";
+    readonly routingOnlyToolPolicy?: "native" | "unsupported";
     readonly requiresNewThreadForModelChange?: boolean;
     readonly titleRegenerationCompletionDispatchFailures?: number;
     readonly titleRegenerationBeforeStart?: "one" | "two";
@@ -326,6 +327,7 @@ describe("ProviderCommandReactor", () => {
       getCapabilities: (_provider) =>
         Effect.succeed({
           sessionModelSwitch: input?.sessionModelSwitch ?? "in-session",
+          routingOnlyToolPolicy: input?.routingOnlyToolPolicy ?? "native",
         }),
       getInstanceInfo: (instanceId) => {
         const raw = String(instanceId);
@@ -2578,6 +2580,7 @@ describe("ProviderCommandReactor", () => {
 
     expect(harness.sendTurn.mock.calls[0]?.[0]).toMatchObject({
       modelSelection: groupSelection,
+      toolPolicy: "deny-all",
     });
     const ceoInput = harness.sendTurn.mock.calls[0]?.[0] as { input?: string };
     expect(ceoInput.input).toContain("You are Casey, working as CEO.");
@@ -2622,11 +2625,76 @@ describe("ProviderCommandReactor", () => {
     const reviewerTurn = harness.sendTurn.mock.calls[1]?.[0] as {
       input?: string;
       modelSelection?: ModelSelection;
+      toolPolicy?: string;
     };
     expect(reviewerTurn.modelSelection).toEqual(reviewerSelection);
+    expect(reviewerTurn.toolPolicy).toBe("normal");
     expect(reviewerTurn.input).toContain("You are Riley, working as Reviewer.");
     expect(reviewerTurn.input).toContain("Casey (id: ceo)");
     expect(reviewerTurn.input).not.toContain("Morgan (id: outsider)");
+  });
+
+  it("fails closed before starting an unsupported CEO routing provider", async () => {
+    const ceoId = EmployeeId.make("ceo");
+    const reviewerId = EmployeeId.make("reviewer");
+    const groupSelection: ModelSelection = {
+      instanceId: ProviderInstanceId.make("codex"),
+      model: "gpt-5-codex",
+      employeeId: ceoId,
+      employeeIds: [ceoId, reviewerId],
+    };
+    const harness = await createHarness({
+      threadModelSelection: groupSelection,
+      routingOnlyToolPolicy: "unsupported",
+      serverSettings: {
+        employees: {
+          [ceoId]: {
+            displayName: "Casey",
+            role: "CEO",
+            providerInstanceId: ProviderInstanceId.make("codex"),
+            model: "gpt-5-codex",
+            instructions: "Delegate before doing work.",
+            enabled: true,
+          },
+          [reviewerId]: {
+            displayName: "Riley",
+            role: "Reviewer",
+            providerInstanceId: ProviderInstanceId.make("codex"),
+            model: "gpt-5-codex",
+            instructions: "Review the implementation.",
+            enabled: true,
+          },
+        },
+      },
+    });
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-unsupported-ceo-routing"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-unsupported-ceo-routing"),
+          role: "user",
+          text: "Please implement this.",
+          attachments: [],
+        },
+        modelSelection: groupSelection,
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "full-access",
+        createdAt: "2026-08-16T12:00:00.000Z",
+      }),
+    );
+
+    await waitFor(async () => {
+      const snapshot = await harness.readModel();
+      return (
+        snapshot.threads.find((thread) => thread.id === ThreadId.make("thread-1"))?.session
+          ?.status === "error"
+      );
+    });
+    expect(harness.startSession).not.toHaveBeenCalled();
+    expect(harness.sendTurn).not.toHaveBeenCalled();
   });
 
   it("starts the selected provider after the existing thread session has stopped", async () => {

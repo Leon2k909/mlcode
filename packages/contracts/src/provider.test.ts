@@ -34,9 +34,11 @@ describe("ProviderSessionStartInput", () => {
           { id: "fastMode", value: true },
         ],
       },
+      toolPolicy: "normal",
       runtimeMode: "full-access",
     });
     expect(parsed.runtimeMode).toBe("full-access");
+    expect(parsed.toolPolicy).toBe("normal");
     expect(parsed.modelSelection?.instanceId).toBe("codex");
     expect(parsed.modelSelection?.model).toBe("gpt-5.3-codex");
     expect(getOptionValue(parsed.modelSelection?.options, "reasoningEffort")).toBe("high");
@@ -145,10 +147,12 @@ describe("ProviderSendTurnInput", () => {
           { id: "fastMode", value: true },
         ],
       },
+      toolPolicy: "deny-all",
     });
 
     expect(parsed.modelSelection?.instanceId).toBe("claudeAgent");
     expect(getOptionValue(parsed.modelSelection?.options, "effort")).toBe("ultrathink");
+    expect(parsed.toolPolicy).toBe("deny-all");
     expect(getOptionValue(parsed.modelSelection?.options, "fastMode")).toBe(true);
   });
 });

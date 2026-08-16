@@ -24,12 +24,18 @@ import type * as Effect from "effect/Effect";
 import type * as Stream from "effect/Stream";
 
 export type ProviderSessionModelSwitchMode = "in-session" | "unsupported";
+export type ProviderRoutingOnlyToolPolicy = "native" | "unsupported";
 
 export interface ProviderAdapterCapabilities {
   /**
    * Declares whether changing the model on an existing session is supported.
    */
   readonly sessionModelSwitch: ProviderSessionModelSwitchMode;
+  /**
+   * Declares whether the adapter can prevent all tool execution for a
+   * provider turn before the provider starts it.
+   */
+  readonly routingOnlyToolPolicy: ProviderRoutingOnlyToolPolicy;
 }
 
 export interface ProviderThreadTurnSnapshot {

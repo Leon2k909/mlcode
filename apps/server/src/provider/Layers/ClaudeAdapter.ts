@@ -37,6 +37,7 @@ import {
   type ProviderRuntimeTurnStatus,
   type ProviderSendTurnInput,
   type ProviderSession,
+  type ProviderToolPolicy,
   type ThreadTokenUsageSnapshot,
   type ProviderUserInputAnswers,
   type RuntimeContentStreamKind,
@@ -116,6 +117,7 @@ type PromptQueueItem =
   | {
       readonly type: "message";
       readonly message: SDKUserMessage;
+      readonly toolPolicy: ProviderToolPolicy;
     }
   | {
       readonly type: "terminate";
@@ -212,6 +214,7 @@ interface ClaudeTaskAgentState {
 interface ClaudeSessionContext {
   session: ProviderSession;
   readonly promptQueue: Queue.Queue<PromptQueueItem>;
+  readonly toolPolicyRef: Ref.Ref<ProviderToolPolicy>;
   readonly query: ClaudeQueryRuntime;
   streamFiber: Fiber.Fiber<void, Error> | undefined;
   readonly startedAt: string;
@@ -3798,8 +3801,10 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       const runPromise = Effect.runPromiseWith(runtimeContext);
 
       const promptQueue = yield* Queue.unbounded<PromptQueueItem>();
+      const toolPolicyRef = yield* Ref.make<ProviderToolPolicy>("normal");
       const prompt = Stream.fromQueue(promptQueue).pipe(
         Stream.filter((item) => item.type === "message"),
+        Stream.tap((item) => Ref.set(toolPolicyRef, item.toolPolicy)),
         Stream.map((item) => item.message),
         Stream.catchCause((cause) =>
           Cause.hasInterruptsOnly(cause) ? Stream.empty : Stream.failCause(cause),
@@ -3959,6 +3964,13 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           return {
             behavior: "deny",
             message: "Claude session context is unavailable.",
+          } satisfies PermissionResult;
+        }
+
+        if ((yield* Ref.get(context.toolPolicyRef)) === "deny-all") {
+          return {
+            behavior: "deny",
+            message: "CEO routing turns cannot use tools before handing off to a worker.",
           } satisfies PermissionResult;
         }
 
@@ -4137,6 +4149,8 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         "full-access": "bypassPermissions",
       };
       const permissionMode = runtimeModeToPermission[input.runtimeMode];
+      const initialPermissionMode =
+        input.toolPolicy === "deny-all" ? ("plan" as const) : permissionMode;
       const settings = {
         ...(typeof thinking === "boolean" ? { alwaysThinkingEnabled: thinking } : {}),
         ...(fastMode ? { fastMode: true } : {}),
@@ -4164,8 +4178,8 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
               effort: effectiveEffort as unknown as NonNullable<ClaudeQueryOptions["effort"]>,
             }
           : {}),
-        ...(permissionMode ? { permissionMode } : {}),
-        ...(permissionMode === "bypassPermissions"
+        ...(initialPermissionMode ? { permissionMode: initialPermissionMode } : {}),
+        ...(initialPermissionMode === "bypassPermissions"
           ? { allowDangerouslySkipPermissions: true }
           : {}),
         ...(Object.keys(settings).length > 0 ? { settings } : {}),
@@ -4253,6 +4267,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       const context: ClaudeSessionContext = {
         session,
         promptQueue,
+        toolPolicyRef,
         query: queryRuntime,
         streamFiber: undefined,
         startedAt,
@@ -4302,7 +4317,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
             ...(apiModelId ? { model: apiModelId } : {}),
             ...(input.cwd ? { cwd: input.cwd } : {}),
             ...(effectiveEffort ? { effort: effectiveEffort } : {}),
-            ...(permissionMode ? { permissionMode } : {}),
+            ...(initialPermissionMode ? { permissionMode: initialPermissionMode } : {}),
             ...(fastMode ? { fastMode: true } : {}),
           },
         },
@@ -4397,12 +4412,12 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     // "plan" maps directly to the SDK's "plan" permission mode;
     // "default" restores the session's original permission mode.
     // When interactionMode is absent we leave the current mode unchanged.
-    if (input.interactionMode === "plan") {
+    if (input.toolPolicy === "deny-all" || input.interactionMode === "plan") {
       yield* Effect.tryPromise({
         try: () => context.query.setPermissionMode("plan"),
         catch: (cause) => toRequestError(input.threadId, "turn/setPermissionMode", cause),
       });
-    } else if (input.interactionMode === "default") {
+    } else if (input.toolPolicy === "normal" || input.interactionMode === "default") {
       yield* Effect.tryPromise({
         try: () => context.query.setPermissionMode(context.basePermissionMode ?? "default"),
         catch: (cause) => toRequestError(input.threadId, "turn/setPermissionMode", cause),
@@ -4449,9 +4464,11 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       boundInstanceId,
     });
 
+    yield* Ref.set(context.toolPolicyRef, input.toolPolicy ?? "normal");
     yield* Queue.offer(context.promptQueue, {
       type: "message",
       message,
+      toolPolicy: input.toolPolicy ?? "normal",
     }).pipe(Effect.mapError((cause) => toRequestError(input.threadId, "turn/start", cause)));
 
     return {
@@ -4625,6 +4642,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     provider: PROVIDER,
     capabilities: {
       sessionModelSwitch: "in-session",
+      routingOnlyToolPolicy: "native",
     },
     startSession,
     sendTurn,
