@@ -32,7 +32,9 @@ function nonEmptyString(value: unknown): string | null {
 
 function displayPlan(value: unknown): string | undefined {
   const plan = nonEmptyString(value);
-  if (!plan || plan === "unknown") return undefined;
+  if (!plan || plan.toLowerCase() === "unknown") return undefined;
+  const normalizedPlan = plan.toLowerCase();
+  const compactPlan = normalizedPlan.replace(/[\s_-]+/g, "");
   const labels: Record<string, string> = {
     free: "Free",
     go: "Go",
@@ -48,7 +50,9 @@ function displayPlan(value: unknown): string | undefined {
     enterprise_cbp_usage_based: "Enterprise",
   };
   return (
-    labels[plan] ?? plan.replace(/[_-]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase())
+    labels[normalizedPlan] ??
+    labels[compactPlan] ??
+    plan.replace(/[_-]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase())
   );
 }
 
@@ -270,7 +274,12 @@ export function readUsageLimits(): UsageLimitSnapshot[] {
 
 export function hydrateUsageLimits(values: readonly UsageLimitSnapshot[]): void {
   for (const snapshot of values) {
-    const previous = snapshots.get(snapshot.provider);
-    if (!previous || snapshot.readAt > previous.readAt) snapshots.set(snapshot.provider, snapshot);
+    const plan = displayPlan(snapshot.plan);
+    const normalizedSnapshot =
+      plan === undefined ? snapshot : plan === snapshot.plan ? snapshot : { ...snapshot, plan };
+    const previous = snapshots.get(normalizedSnapshot.provider);
+    if (!previous || normalizedSnapshot.readAt > previous.readAt) {
+      snapshots.set(normalizedSnapshot.provider, normalizedSnapshot);
+    }
   }
 }

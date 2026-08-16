@@ -790,6 +790,9 @@ describe("MessagesTimeline", () => {
     expect(markup).toContain('aria-label="Delete this message and rewind"');
     expect(markup).toContain("Delete &amp; rewind");
     expect(markup).toContain('title="Delete this message and rewind the thread to before it"');
+    expect(markup).toContain('data-user-message-actions="true"');
+    expect(markup).toContain("opacity-0");
+    expect(markup).toContain("group-hover:opacity-100");
   });
 
   it("shows delete-only for a latest message without a Git checkpoint", () => {

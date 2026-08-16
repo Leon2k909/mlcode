@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@effect/vitest";
-import { ProviderDriverKind } from "@t3tools/contracts";
+import { ProviderDriverKind, type UsageLimitSnapshot } from "@t3tools/contracts";
 
-import { normalizeUsageLimits } from "./usageLimits.ts";
+import { hydrateUsageLimits, normalizeUsageLimits, readUsageLimits } from "./usageLimits.ts";
 
 describe("normalizeUsageLimits", () => {
   it("labels the Codex Pro Lite plan as Pro 5x", () => {
@@ -23,6 +23,25 @@ describe("normalizeUsageLimits", () => {
       plan: "Pro 5x",
       windows: [{ label: "Session", usedPercent: 56, resetsAt: 1_800_000_000 }],
     });
+  });
+
+  it("canonicalizes legacy persisted Pro Lite labels", () => {
+    const legacySnapshot: UsageLimitSnapshot = {
+      provider: "codex",
+      readAt: "2026-08-14T08:00:00.000Z",
+      status: null,
+      plan: "Pro Lite",
+      windows: [],
+    };
+
+    hydrateUsageLimits([legacySnapshot]);
+
+    expect(readUsageLimits()).toEqual([
+      {
+        ...legacySnapshot,
+        plan: "Pro 5x",
+      },
+    ]);
   });
 
   it("normalizes Codex session and weekly windows", () => {
