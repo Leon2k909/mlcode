@@ -12,6 +12,13 @@ If reordering is unavailable for one environment, update the T3 Code server runn
 environment. Older servers can still pin and unpin threads, but do not understand synced ordering;
 their pinned threads keep the default newest-first order below the ones you have arranged.
 
+## Rewinding a message
+
+Choose **Delete & rewind** below one of your messages to remove that message and everything after
+it, then restore the files from the preceding checkpoint. The action remains available when the
+agent turn was interrupted or failed. Stop an active turn before rewinding; the deletion cannot be
+undone.
+
 ## Environment artwork
 
 Dev and Nightly environments can identify themselves with artwork at the top of the sidebar and in

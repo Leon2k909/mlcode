@@ -1323,18 +1323,20 @@ function RevertUserMessageButton({ messageId }: { messageId: MessageId }) {
             type="button"
             size="xs"
             variant="ghost"
-            className="gap-1 px-1.5 text-[11px] text-muted-foreground hover:text-foreground"
+            className="gap-1 rounded-full border border-border/60 bg-background/40 px-2 text-[11px] text-muted-foreground hover:border-border hover:text-foreground"
             disabled={activity.isRevertingCheckpoint || activity.isWorking}
             onClick={() => ctx.onRevertUserMessage(messageId)}
-            aria-label="Rewind to this message"
-            title="Rewind thread to before this message"
+            aria-label="Delete this message and rewind"
+            title="Delete this message and rewind the thread to before it"
           />
         }
       >
         <Undo2Icon className="size-3" />
-        <span>Rewind</span>
+        <span>Delete &amp; rewind</span>
       </TooltipTrigger>
-      <TooltipPopup side="top">Rewind thread to before this message</TooltipPopup>
+      <TooltipPopup side="top">
+        Delete this message and everything after it, then restore the previous checkpoint
+      </TooltipPopup>
     </Tooltip>
   );
 }

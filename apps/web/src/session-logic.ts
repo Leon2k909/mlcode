@@ -1620,6 +1620,54 @@ export function inferCheckpointTurnCountByTurnId(
 }
 
 /**
+ * Resolve the checkpoint immediately before each human-authored message.
+ *
+ * A message does not need to have completed a provider turn of its own. This
+ * keeps delete-and-rewind available for interrupted and failed sends, which
+ * are the messages most likely to need removing.
+ */
+export function deriveRevertTurnCountByUserMessageId(
+  timelineEntries: ReadonlyArray<TimelineEntry>,
+  summaries: ReadonlyArray<TurnDiffSummary>,
+  inferredCheckpointTurnCountByTurnId: Readonly<Record<TurnId, number>>,
+): Map<MessageId, number> {
+  const checkpoints = summaries
+    .map((summary) => ({
+      completedAt: summary.completedAt,
+      turnCount: summary.checkpointTurnCount ?? inferredCheckpointTurnCountByTurnId[summary.turnId],
+    }))
+    .filter(
+      (checkpoint): checkpoint is { completedAt: string; turnCount: number } =>
+        typeof checkpoint.turnCount === "number",
+    )
+    .toSorted((left, right) => left.completedAt.localeCompare(right.completedAt));
+
+  const byUserMessageId = new Map<MessageId, number>();
+  let checkpointIndex = 0;
+  let latestCompletedTurnCount = 0;
+
+  for (const entry of timelineEntries) {
+    while (
+      checkpointIndex < checkpoints.length &&
+      checkpoints[checkpointIndex]!.completedAt < entry.createdAt
+    ) {
+      latestCompletedTurnCount = Math.max(0, checkpoints[checkpointIndex]!.turnCount);
+      checkpointIndex += 1;
+    }
+
+    if (
+      entry.kind === "message" &&
+      entry.message.role === "user" &&
+      entry.message.employeeId === undefined
+    ) {
+      byUserMessageId.set(entry.message.id, latestCompletedTurnCount);
+    }
+  }
+
+  return byUserMessageId;
+}
+
+/**
  * Associate checkpoint summaries with the assistant message that completed
  * their turn. Older projected checkpoints may not have persisted
  * `assistantMessageId`, but the assistant message still carries the turn id.

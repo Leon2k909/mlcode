@@ -14,6 +14,7 @@ import {
   deriveTurnPlans,
   derivePendingApprovals,
   derivePendingUserInputs,
+  deriveRevertTurnCountByUserMessageId,
   deriveTimelineEntries,
   deriveWorkLogEntries,
   findLatestProposedPlan,
@@ -253,6 +254,69 @@ describe("indexTurnDiffSummariesByAssistantMessageId", () => {
     );
 
     expect(indexed.get(assistantMessageId)).toBe(summary);
+  });
+});
+
+describe("deriveRevertTurnCountByUserMessageId", () => {
+  const userEntry = (id: string, createdAt: string) => ({
+    id,
+    kind: "message" as const,
+    createdAt,
+    message: {
+      id: MessageId.make(id),
+      role: "user" as const,
+      text: id,
+      turnId: null,
+      streaming: false,
+      createdAt,
+      updatedAt: createdAt,
+    },
+  });
+
+  it("keeps rewind available when the latest user turn was interrupted", () => {
+    const firstTurnId = TurnId.make("turn-1");
+    const summaries = [
+      {
+        turnId: firstTurnId,
+        checkpointTurnCount: 1,
+        checkpointRef: "refs/t3/checkpoints/thread/turn/1" as never,
+        status: "ready" as const,
+        files: [],
+        assistantMessageId: MessageId.make("assistant-1"),
+        completedAt: "2026-02-23T00:00:05.000Z",
+      },
+    ];
+    const entries = [
+      userEntry("user-1", "2026-02-23T00:00:01.000Z"),
+      userEntry("user-interrupted", "2026-02-23T00:00:10.000Z"),
+    ];
+
+    expect(deriveRevertTurnCountByUserMessageId(entries, summaries, { [firstTurnId]: 1 })).toEqual(
+      new Map([
+        [MessageId.make("user-1"), 0],
+        [MessageId.make("user-interrupted"), 1],
+      ]),
+    );
+  });
+
+  it("offers checkpoint zero for a first message that never completed", () => {
+    expect(
+      deriveRevertTurnCountByUserMessageId(
+        [userEntry("user-failed", "2026-02-23T00:00:01.000Z")],
+        [],
+        {},
+      ),
+    ).toEqual(new Map([[MessageId.make("user-failed"), 0]]));
+  });
+
+  it("does not expose the destructive action on employee handoff messages", () => {
+    const humanEntry = userEntry("employee-handoff", "2026-02-23T00:00:01.000Z");
+    const entry = {
+      ...humanEntry,
+      message: { ...humanEntry.message, employeeId: "ceo" as never },
+    };
+
+    expect(deriveRevertTurnCountByUserMessageId([entry], [], {})).toEqual(new Map());
   });
 });
 

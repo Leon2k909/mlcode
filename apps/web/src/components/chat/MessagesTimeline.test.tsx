@@ -777,7 +777,7 @@ describe("MessagesTimeline", () => {
     expect(markup).toContain('aria-label="Mark response as not helpful"');
   });
 
-  it("labels the available checkpoint action as rewind", () => {
+  it("labels the available checkpoint action as delete and rewind", () => {
     const messageId = MessageId.make("message-1");
     const markup = renderToStaticMarkup(
       <MessagesTimeline
@@ -787,8 +787,9 @@ describe("MessagesTimeline", () => {
       />,
     );
 
-    expect(markup).toContain('aria-label="Rewind to this message"');
-    expect(markup).toContain("Rewind thread to before this message");
+    expect(markup).toContain('aria-label="Delete this message and rewind"');
+    expect(markup).toContain("Delete &amp; rewind");
+    expect(markup).toContain('title="Delete this message and rewind the thread to before it"');
   });
 
   it("does not present a rejected self-handoff as an employee transfer", () => {
