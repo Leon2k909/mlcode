@@ -4,6 +4,7 @@ import { isBackgroundTaskActivity } from "@t3tools/client-runtime/state/subagent
 import {
   ApprovalRequestId,
   isToolLifecycleItemType,
+  type MessageId,
   type OrchestrationLatestTurn,
   type OrchestrationThreadActivity,
   type OrchestrationProposedPlanId,
@@ -1614,6 +1615,39 @@ export function inferCheckpointTurnCountByTurnId(
     const summary = sorted[index];
     if (!summary) continue;
     result[summary.turnId] = index + 1;
+  }
+  return result;
+}
+
+/**
+ * Associate checkpoint summaries with the assistant message that completed
+ * their turn. Older projected checkpoints may not have persisted
+ * `assistantMessageId`, but the assistant message still carries the turn id.
+ */
+export function indexTurnDiffSummariesByAssistantMessageId(
+  timelineEntries: ReadonlyArray<TimelineEntry>,
+  summaries: ReadonlyArray<TurnDiffSummary>,
+): Map<MessageId, TurnDiffSummary> {
+  const assistantMessageIdByTurnId = new Map<TurnId, MessageId>();
+  for (const entry of timelineEntries) {
+    if (
+      entry.kind !== "message" ||
+      entry.message.role !== "assistant" ||
+      entry.message.turnId === null
+    ) {
+      continue;
+    }
+    assistantMessageIdByTurnId.set(entry.message.turnId, entry.message.id);
+  }
+
+  const result = new Map<MessageId, TurnDiffSummary>();
+  for (const summary of summaries) {
+    const assistantMessageId =
+      summary.assistantMessageId ?? assistantMessageIdByTurnId.get(summary.turnId);
+    if (assistantMessageId === undefined) {
+      continue;
+    }
+    result.set(assistantMessageId, summary);
   }
   return result;
 }

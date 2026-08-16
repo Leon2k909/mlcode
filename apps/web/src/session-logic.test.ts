@@ -18,6 +18,7 @@ import {
   deriveWorkLogEntries,
   findLatestProposedPlan,
   hasActionableProposedPlan,
+  indexTurnDiffSummariesByAssistantMessageId,
   isLatestTurnSettled,
   workEntryIndicatesToolFailure,
   workEntryIndicatesToolNeutralStatus,
@@ -213,6 +214,45 @@ describe("derivePendingApprovals", () => {
     ];
 
     expect(derivePendingApprovals(activities)).toEqual([]);
+  });
+});
+
+describe("indexTurnDiffSummariesByAssistantMessageId", () => {
+  it("falls back to the assistant turn id for legacy checkpoints", () => {
+    const turnId = TurnId.make("turn-legacy-checkpoint");
+    const assistantMessageId = MessageId.make("assistant-legacy-checkpoint");
+    const completedAt = "2026-02-23T00:00:10.000Z";
+    const summary = {
+      turnId,
+      checkpointTurnCount: 1,
+      checkpointRef: "refs/t3/checkpoints/thread/turn/1" as never,
+      status: "ready" as const,
+      files: [],
+      assistantMessageId: null,
+      completedAt,
+    };
+
+    const indexed = indexTurnDiffSummariesByAssistantMessageId(
+      [
+        {
+          id: assistantMessageId,
+          kind: "message",
+          createdAt: completedAt,
+          message: {
+            id: assistantMessageId,
+            role: "assistant",
+            text: "Done",
+            turnId,
+            streaming: false,
+            createdAt: completedAt,
+            updatedAt: completedAt,
+          },
+        },
+      ],
+      [summary],
+    );
+
+    expect(indexed.get(assistantMessageId)).toBe(summary);
   });
 });
 
