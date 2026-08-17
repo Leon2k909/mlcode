@@ -1,5 +1,5 @@
 import type { UsageLimitSnapshot, UsageProviderKind } from "@t3tools/contracts";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { makeWindow } from "@t3tools/shared/usageFormat";
 import { cn } from "~/lib/utils";
 import { type ContextWindowSnapshot, formatContextWindowTokens } from "~/lib/contextWindow";
@@ -77,7 +77,15 @@ export function ContextWindowMeter(props: {
 
 function ContextUsageLimits({ provider }: { provider: UsageProviderKind }) {
   const usageWindow = useMemo(() => ({ ...makeWindow(1), limitsOnly: true }), []);
-  const { environments, isPending, isPartial } = useUsage(usageWindow);
+  const { environments, isPending, isPartial, refresh } = useUsage(usageWindow);
+  const refreshedOnOpen = useRef(false);
+
+  useEffect(() => {
+    if (refreshedOnOpen.current || environments.length === 0) return;
+    refreshedOnOpen.current = true;
+    refresh();
+  }, [environments.length, refresh]);
+
   const snapshot = useMemo(() => {
     const newest = new Map<UsageProviderKind, UsageLimitSnapshot>();
     for (const environment of environments) {
