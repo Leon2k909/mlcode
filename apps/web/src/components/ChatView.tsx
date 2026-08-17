@@ -3,6 +3,7 @@ import {
   DEFAULT_MODEL,
   defaultInstanceIdForDriver,
   type EmployeeId,
+  employeeUsesModelOverride,
   type EnvironmentId,
   type MessageId,
   type ModelSelection,
@@ -6360,11 +6361,12 @@ function ChatViewContent(props: ChatViewProps) {
         ? baseSelection.instanceId
         : employee.providerInstanceId;
       const usingEmployeeDefaultProvider = providerInstanceId === employee.providerInstanceId;
+      const usesEmployeeModelOverride = employeeUsesModelOverride(employee);
       const resolvedModel = resolveAppModelSelectionForInstance(
         providerInstanceId,
         settings,
         providerStatuses,
-        usingEmployeeDefaultProvider
+        usingEmployeeDefaultProvider && usesEmployeeModelOverride
           ? (employee.model ??
               (baseSelection.instanceId === providerInstanceId ? baseSelection.model : null))
           : baseSelection.instanceId === providerInstanceId
@@ -6384,7 +6386,9 @@ function ChatViewContent(props: ChatViewProps) {
       // its fallback provider. The composer can immediately override them;
       // another provider keeps its own thread-level options.
       const nextOptions =
-        usingEmployeeDefaultProvider && employee.modelOptions !== undefined
+        usingEmployeeDefaultProvider &&
+        usesEmployeeModelOverride &&
+        employee.modelOptions !== undefined
           ? employee.modelOptions
           : baseSelection.instanceId === providerInstanceId && options !== undefined
             ? options

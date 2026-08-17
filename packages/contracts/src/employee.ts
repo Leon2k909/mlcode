@@ -54,6 +54,10 @@ const EMPLOYEE_ROLE_MAX_CHARS = 128;
 /** Wide enough for any single grapheme cluster, including ZWJ emoji sequences. */
 const EMPLOYEE_AVATAR_MAX_CHARS = 16;
 
+/** Whether an employee inherits the active CEO/chat model or pins an override. */
+export const EmployeeModelMode = Schema.Literals(["auto", "override"]);
+export type EmployeeModelMode = typeof EmployeeModelMode.Type;
+
 /**
  * `EmployeeId` — user-defined routing key for one configured employee.
  * Branded separately from `ProviderInstanceId` so the type system cannot
@@ -91,15 +95,29 @@ export const Employee = Schema.Struct({
     TrimmedNonEmptyString.check(Schema.isMaxLength(EMPLOYEE_AVATAR_MAX_CHARS)),
   ),
   accentColor: Schema.optional(TrimmedNonEmptyString),
-  /** Model override on the default provider. Other providers follow the thread selection. */
+  /** Whether model selection follows the active CEO/chat choice or is pinned below. */
+  modelMode: Schema.optional(EmployeeModelMode),
+  /** Model override on the default provider when `modelMode` is `override`. */
   model: Schema.optional(TrimmedNonEmptyString),
-  /** Provider-native model options on the default provider. Other providers follow the thread selection. */
+  /** Provider-native options for the model override on the default provider. */
   modelOptions: Schema.optional(ProviderOptionSelections),
   /** Request the provider's fast-mode option whenever this employee works. */
   fastMode: Schema.optional(Schema.Boolean),
   enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
 });
 export type Employee = typeof Employee.Type;
+
+/**
+ * Resolve the persisted mode while preserving employees written before
+ * `modelMode` existed. A legacy employee with a model or non-empty options is
+ * an override; an employee without either follows the active selection.
+ */
+export const employeeUsesModelOverride = (
+  employee: Pick<Employee, "model" | "modelMode" | "modelOptions">,
+): boolean =>
+  employee.modelMode === "override" ||
+  (employee.modelMode === undefined &&
+    (employee.model !== undefined || (employee.modelOptions?.length ?? 0) > 0));
 
 /**
  * Map shape for `ServerSettings.employees`. Keyed by `EmployeeId`.
@@ -117,8 +135,6 @@ export type EmployeeMap = typeof EmployeeMap.Type;
  */
 const DEFAULT_ROSTER_INSTANCE_ID = "codex";
 
-/** Model the default workers run on. */
-const DEFAULT_WORKER_MODEL = "gpt-5.6-luna";
 /** Model the default decision-maker runs on. */
 const DEFAULT_LEAD_MODEL = "gpt-5.6-sol";
 
@@ -169,7 +185,7 @@ export const DEFAULT_EMPLOYEES: EmployeeMap = Schema.decodeSync(EmployeeMap)({
     role: "Worker — implementation",
     avatar: "⚙️",
     providerInstanceId: DEFAULT_ROSTER_INSTANCE_ID,
-    model: DEFAULT_WORKER_MODEL,
+    modelMode: "auto",
     enabled: true,
     instructions: workerInstructions(
       "writing and changing code",
@@ -181,7 +197,7 @@ export const DEFAULT_EMPLOYEES: EmployeeMap = Schema.decodeSync(EmployeeMap)({
     role: "Worker — research",
     avatar: "🔎",
     providerInstanceId: DEFAULT_ROSTER_INSTANCE_ID,
-    model: DEFAULT_WORKER_MODEL,
+    modelMode: "auto",
     enabled: true,
     instructions: workerInstructions(
       "finding things out — reading the codebase, tracing how something works, and reporting findings with file paths and line numbers",
@@ -193,7 +209,7 @@ export const DEFAULT_EMPLOYEES: EmployeeMap = Schema.decodeSync(EmployeeMap)({
     role: "Worker — verification",
     avatar: "🧪",
     providerInstanceId: DEFAULT_ROSTER_INSTANCE_ID,
-    model: DEFAULT_WORKER_MODEL,
+    modelMode: "auto",
     enabled: true,
     instructions: workerInstructions(
       "checking work — running tests, type checks, and lints, and reproducing what someone claims to have fixed",

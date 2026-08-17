@@ -8,6 +8,8 @@ import * as Schema from "effect/Schema";
 import {
   EMPLOYEE_INSTRUCTIONS_MAX_CHARS,
   Employee,
+  employeeUsesModelOverride,
+  type EmployeeModelMode,
   type EmployeeId,
   type EmployeeMap,
   ProviderDriverKind,
@@ -46,6 +48,7 @@ import { Textarea } from "../ui/textarea";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
 
 const decodeEmployee = Schema.decodeUnknownOption(Employee);
+const EMPLOYEE_MODEL_AUTO = "__employee_auto__";
 const EMPLOYEE_MODEL_FOLLOW_THREAD = "__employee_follow_thread__";
 const EMPLOYEE_MODEL_CUSTOM = "__employee_custom_model__";
 
@@ -62,6 +65,7 @@ interface EmployeeDraft {
   readonly avatar: string;
   readonly instructions: string;
   readonly providerInstanceId: string;
+  readonly modelMode: EmployeeModelMode;
   readonly model: string;
   readonly modelOptions: ReadonlyArray<ProviderOptionSelection>;
   readonly fastMode: boolean;
@@ -75,6 +79,7 @@ const emptyDraft = (providerInstanceId: string): EmployeeDraft => ({
   avatar: "",
   instructions: "",
   providerInstanceId,
+  modelMode: "auto",
   model: "",
   modelOptions: [],
   fastMode: false,
@@ -88,6 +93,7 @@ const draftFromEntry = (entry: EmployeeEntry): EmployeeDraft => ({
   avatar: entry.employee.avatar ?? "",
   instructions: entry.employee.instructions,
   providerInstanceId: entry.employee.providerInstanceId,
+  modelMode: employeeUsesModelOverride(entry.employee) ? "override" : "auto",
   model: entry.employee.model ?? "",
   modelOptions: withoutFastModeOption(entry.employee.modelOptions ?? []),
   fastMode: entry.employee.fastMode === true,
@@ -106,6 +112,7 @@ function decodeDraft(draft: EmployeeDraft): { employee: Employee } | { error: st
     providerInstanceId: draft.providerInstanceId,
     instructions: draft.instructions,
     enabled: draft.enabled,
+    modelMode: draft.modelMode,
     ...(draft.role.trim() ? { role: draft.role } : {}),
     ...(draft.avatar.trim() ? { avatar: draft.avatar } : {}),
     ...(draft.model.trim() ? { model: draft.model } : {}),
@@ -157,9 +164,11 @@ function EmployeeForm({
     () => draft.model.length > 0 && !selectedModelIsKnown,
   );
   const modelPickerValue =
-    customModelMode || (draft.model.length > 0 && !selectedModelIsKnown)
-      ? EMPLOYEE_MODEL_CUSTOM
-      : draft.model || EMPLOYEE_MODEL_FOLLOW_THREAD;
+    draft.modelMode === "auto"
+      ? EMPLOYEE_MODEL_AUTO
+      : customModelMode || (draft.model.length > 0 && !selectedModelIsKnown)
+        ? EMPLOYEE_MODEL_CUSTOM
+        : draft.model || EMPLOYEE_MODEL_FOLLOW_THREAD;
   const traitModels = useMemo(
     () =>
       modelOptions.map((model) => {
@@ -239,7 +248,13 @@ function EmployeeForm({
             onValueChange={(next) => {
               if (!next || next === draft.providerInstanceId) return;
               setCustomModelMode(false);
-              onDraftChange({ ...draft, providerInstanceId: next, model: "", modelOptions: [] });
+              onDraftChange({
+                ...draft,
+                providerInstanceId: next,
+                modelMode: "auto",
+                model: "",
+                modelOptions: [],
+              });
             }}
           >
             <SelectTrigger className="w-full">
@@ -256,32 +271,34 @@ function EmployeeForm({
         </div>
 
         <label className="space-y-1.5 text-sm">
-          <span className="font-medium">Model override</span>
+          <span className="font-medium">Model routing</span>
           <Select
             value={modelPickerValue}
             onValueChange={(next) => {
-              if (!next || next === EMPLOYEE_MODEL_FOLLOW_THREAD) {
+              if (!next || next === EMPLOYEE_MODEL_AUTO || next === EMPLOYEE_MODEL_FOLLOW_THREAD) {
                 setCustomModelMode(false);
-                onDraftChange({ ...draft, model: "", modelOptions: [] });
+                onDraftChange({ ...draft, modelMode: "auto", model: "", modelOptions: [] });
                 return;
               }
               if (next === EMPLOYEE_MODEL_CUSTOM) {
                 setCustomModelMode(true);
                 onDraftChange({
                   ...draft,
+                  modelMode: "override",
                   model: selectedModelIsKnown ? "" : draft.model,
                   modelOptions: [],
                 });
                 return;
               }
               setCustomModelMode(false);
-              onDraftChange({ ...draft, model: next, modelOptions: [] });
+              onDraftChange({ ...draft, modelMode: "override", model: next, modelOptions: [] });
             }}
           >
             <SelectTrigger className="w-full">
-              <SelectValue placeholder="Follow chat model" />
+              <SelectValue placeholder="Auto — CEO decides" />
             </SelectTrigger>
             <SelectContent>
+              <SelectItem value={EMPLOYEE_MODEL_AUTO}>Auto — CEO decides</SelectItem>
               <SelectItem value={EMPLOYEE_MODEL_FOLLOW_THREAD}>Follow chat model</SelectItem>
               {modelOptions.map((model) => (
                 <SelectItem key={model.slug} value={model.slug}>
@@ -296,24 +313,31 @@ function EmployeeForm({
               <SelectItem value={EMPLOYEE_MODEL_CUSTOM}>Custom model slug…</SelectItem>
             </SelectContent>
           </Select>
-          {customModelMode ? (
+          {draft.modelMode === "override" && customModelMode ? (
             <Input
               value={draft.model}
               placeholder="claude-opus-5"
               onChange={(event) =>
-                onDraftChange({ ...draft, model: event.target.value, modelOptions: [] })
+                onDraftChange({
+                  ...draft,
+                  modelMode: "override",
+                  model: event.target.value,
+                  modelOptions: [],
+                })
               }
               spellCheck={false}
             />
           ) : null}
           <span className="block text-xs text-muted-foreground">
-            {modelOptions.length > 0
-              ? `Fallbacks for ${selectedProviderLabel}. Other chat providers use the model selected in the composer.`
-              : "Provider models are not available yet. Follow the chat model or enter a custom slug."}
+            {draft.modelMode === "auto"
+              ? "The CEO chooses the active model and reasoning for this employee. Choose a model below to override it."
+              : modelOptions.length > 0
+                ? `Fallbacks for ${selectedProviderLabel}. Other chat providers use the model selected in the composer.`
+                : "Provider models are not available yet. Follow the chat model or enter a custom slug."}
           </span>
         </label>
 
-        {hasProviderOptions > 0 ? (
+        {draft.modelMode === "override" && hasProviderOptions > 0 ? (
           <div className="space-y-1.5 text-sm">
             <span className="font-medium">Provider defaults</span>
             <TraitsPicker
@@ -613,7 +637,9 @@ export function EmployeeSettingsPanel() {
                     <Badge variant="outline">
                       {String(entry.employee.providerInstanceId as ProviderInstanceId)}
                     </Badge>
-                    {entry.employee.model ? (
+                    {!employeeUsesModelOverride(entry.employee) ? (
+                      <Badge variant="outline">Auto — CEO decides</Badge>
+                    ) : entry.employee.model ? (
                       <Badge variant="outline">{entry.employee.model}</Badge>
                     ) : null}
                     {orphaned ? (

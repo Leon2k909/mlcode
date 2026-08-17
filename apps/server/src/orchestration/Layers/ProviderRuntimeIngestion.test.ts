@@ -397,6 +397,7 @@ describe("ProviderRuntimeIngestion", () => {
             role: "Reviewer",
             providerInstanceId: ProviderInstanceId.make("claudeAgent"),
             model: "claude-opus-4-6",
+            modelMode: "override",
             instructions: "Review the implementation.",
             enabled: true,
           },
@@ -479,6 +480,99 @@ describe("ProviderRuntimeIngestion", () => {
       model: "gpt-5-codex",
       employeeId: reviewerId,
       employeeIds: [ceoId, reviewerId],
+    });
+  });
+
+  it("lets an auto employee inherit the active model through a handoff", async () => {
+    const ceoId = EmployeeId.make("ceo");
+    const workerId = EmployeeId.make("worker_alpha");
+    const harness = await createHarness({
+      serverSettings: {
+        employees: {
+          [ceoId]: {
+            displayName: "Casey",
+            role: "CEO",
+            providerInstanceId: ProviderInstanceId.make("codex"),
+            model: "gpt-5.6-sol",
+            instructions: "Route the request.",
+            enabled: true,
+          },
+          [workerId]: {
+            displayName: "Alex",
+            role: "Implementation",
+            providerInstanceId: ProviderInstanceId.make("codex"),
+            modelMode: "auto",
+            // Simulate stale values left by a deep-merged settings patch.
+            model: "gpt-5.6-luna",
+            modelOptions: [{ id: "reasoningEffort", value: "high" }],
+            instructions: "Implement the request.",
+            enabled: true,
+          },
+        },
+      },
+      threadModelSelection: {
+        instanceId: ProviderInstanceId.make("codex"),
+        model: "gpt-5.6-sol",
+        options: [{ id: "reasoningEffort", value: "low" }],
+        employeeId: ceoId,
+        employeeIds: [ceoId, workerId],
+      },
+    });
+    const now = "2026-08-17T13:00:00.000Z";
+    const turnId = asTurnId("turn-auto-employee-handoff");
+
+    harness.emit({
+      type: "turn.started",
+      eventId: asEventId("evt-auto-employee-handoff-started"),
+      provider: ProviderDriverKind.make("codex"),
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId,
+    });
+    await waitForThread(harness.readModel, (thread) => thread.session?.activeTurnId === turnId);
+    harness.emit({
+      type: "content.delta",
+      eventId: asEventId("evt-auto-employee-handoff-delta"),
+      provider: ProviderDriverKind.make("codex"),
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId,
+      itemId: asItemId("item-auto-employee-handoff"),
+      payload: {
+        streamKind: "assistant_text",
+        delta: '<handoff to="worker_alpha">Implement this.</handoff>',
+      },
+    });
+    harness.emit({
+      type: "item.completed",
+      eventId: asEventId("evt-auto-employee-handoff-item-complete"),
+      provider: ProviderDriverKind.make("codex"),
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId,
+      itemId: asItemId("item-auto-employee-handoff"),
+      payload: { itemType: "assistant_message", status: "completed" },
+    });
+    harness.emit({
+      type: "turn.completed",
+      eventId: asEventId("evt-auto-employee-handoff-turn-complete"),
+      provider: ProviderDriverKind.make("codex"),
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId,
+      payload: { state: "completed" },
+    });
+
+    const thread = await waitForThread(
+      harness.readModel,
+      (entry) => entry.modelSelection.employeeId === workerId,
+    );
+    expect(thread.modelSelection).toMatchObject({
+      instanceId: ProviderInstanceId.make("codex"),
+      model: "gpt-5.6-sol",
+      options: [{ id: "reasoningEffort", value: "low" }],
+      employeeId: workerId,
+      employeeIds: [ceoId, workerId],
     });
   });
 

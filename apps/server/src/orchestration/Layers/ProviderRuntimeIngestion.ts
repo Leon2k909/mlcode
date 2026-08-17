@@ -5,6 +5,7 @@ import {
   DEFAULT_MODEL_BY_PROVIDER,
   type EmployeeId,
   type EmployeeMap,
+  employeeUsesModelOverride,
   MessageId,
   type ModelSelection,
   type OrchestrationEvent,
@@ -1689,11 +1690,14 @@ const make = Effect.gen(function* () {
       return false;
     }
 
+    const usesEmployeeModelOverride = employeeUsesModelOverride(targetEmployee);
     const targetModel = usesSelectedProvider
-      ? targetInstanceId === targetEmployee.providerInstanceId
+      ? usesEmployeeModelOverride && targetInstanceId === targetEmployee.providerInstanceId
         ? (targetEmployee.model ?? selection.model)
         : selection.model
-      : (targetEmployee.model ?? DEFAULT_MODEL_BY_PROVIDER[targetInfo.driverKind]);
+      : usesEmployeeModelOverride
+        ? (targetEmployee.model ?? DEFAULT_MODEL_BY_PROVIDER[targetInfo.driverKind])
+        : DEFAULT_MODEL_BY_PROVIDER[targetInfo.driverKind];
     if (!targetModel) {
       consecutiveEmployeeHandoffs.delete(input.thread.id);
       yield* appendEmployeeHandoffActivity({

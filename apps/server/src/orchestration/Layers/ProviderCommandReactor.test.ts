@@ -2472,6 +2472,7 @@ describe("ProviderCommandReactor", () => {
             role: "CEO",
             providerInstanceId: ProviderInstanceId.make("codex"),
             model: "gpt-5-codex",
+            modelMode: "override",
             modelOptions: [{ id: "reasoningEffort", value: "high" }],
             instructions: "Own the implementation.",
             enabled: true,
@@ -2584,6 +2585,7 @@ describe("ProviderCommandReactor", () => {
             role: "Implementation",
             providerInstanceId: ProviderInstanceId.make("codex"),
             model: "gpt-5.6-luna",
+            modelMode: "override",
             modelOptions: [
               { id: "reasoningEffort", value: "high" },
               { id: "serviceTier", value: "fast" },
@@ -2629,6 +2631,57 @@ describe("ProviderCommandReactor", () => {
         ],
         employeeId: workerId,
       },
+    });
+  });
+
+  it("lets an auto employee inherit the active model and reasoning", async () => {
+    const workerId = EmployeeId.make("worker_alpha");
+    const harness = await createHarness({
+      serverSettings: {
+        employees: {
+          [workerId]: {
+            displayName: "Alpha",
+            role: "Implementation",
+            providerInstanceId: ProviderInstanceId.make("codex"),
+            modelMode: "auto",
+            // A deep-merged settings patch can leave old values behind. Auto
+            // must ignore them and follow the active CEO/chat selection.
+            model: "gpt-5.6-luna",
+            modelOptions: [{ id: "reasoningEffort", value: "high" }],
+            instructions: "Implement the requested change.",
+            enabled: true,
+          },
+        },
+      },
+    });
+    const selection: ModelSelection = {
+      instanceId: ProviderInstanceId.make("codex"),
+      model: "gpt-5.6-sol",
+      options: [{ id: "reasoningEffort", value: "low" }],
+      employeeId: workerId,
+    };
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-employee-auto-model"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-employee-auto-model"),
+          role: "user",
+          text: "Use the CEO-selected model for this employee.",
+          attachments: [],
+        },
+        modelSelection: selection,
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: "2026-08-14T10:00:00.000Z",
+      }),
+    );
+
+    await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+    expect(harness.sendTurn.mock.calls[0]?.[0]).toMatchObject({
+      modelSelection: selection,
     });
   });
 

@@ -4,6 +4,7 @@ import {
   type EmployeeMap,
   type ModelSelection,
   type ServerConfig,
+  employeeUsesModelOverride,
   resolveEmployee,
 } from "@t3tools/contracts";
 
@@ -95,13 +96,16 @@ export function resolveEmployeeModelSelection(input: {
       candidate.auth.status !== "unauthenticated",
   );
   if (provider === undefined) return null;
+  const providerDefaultModel =
+    provider.models.find((model) => model.isDefault)?.slug ??
+    provider.models.find((model) => model.isLegacy !== true)?.slug ??
+    provider.models[0]?.slug;
   const targetModel =
-    employee.model ??
-    (input.currentSelection.instanceId === employee.providerInstanceId
-      ? input.currentSelection.model
-      : (provider.models.find((model) => model.isDefault)?.slug ??
-        provider.models.find((model) => model.isLegacy !== true)?.slug ??
-        provider.models[0]?.slug));
+    employeeUsesModelOverride(employee) && employee.model !== undefined
+      ? employee.model
+      : input.currentSelection.instanceId === employee.providerInstanceId
+        ? input.currentSelection.model
+        : providerDefaultModel;
   if (!targetModel) return null;
 
   return {
@@ -112,9 +116,11 @@ export function resolveEmployeeModelSelection(input: {
     ...(input.employeeIds !== undefined && input.employeeIds.length >= 2
       ? { employeeIds: [...input.employeeIds] }
       : {}),
-    ...(input.currentSelection.instanceId === employee.providerInstanceId && options !== undefined
-      ? { options }
-      : {}),
+    ...(employeeUsesModelOverride(employee) && employee.modelOptions !== undefined
+      ? { options: employee.modelOptions }
+      : input.currentSelection.instanceId === employee.providerInstanceId && options !== undefined
+        ? { options }
+        : {}),
   };
 }
 

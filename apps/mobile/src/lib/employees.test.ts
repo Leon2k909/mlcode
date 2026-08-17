@@ -14,6 +14,7 @@ import {
 
 const ceoId = EmployeeId.make("ceo");
 const reviewerId = EmployeeId.make("reviewer");
+const autoId = EmployeeId.make("auto_worker");
 const employees = {
   [ceoId]: {
     displayName: "Casey",
@@ -27,6 +28,15 @@ const employees = {
     providerInstanceId: ProviderInstanceId.make("claudeAgent"),
     model: "claude-opus-4-6",
     instructions: "Review carefully.",
+    enabled: true,
+  },
+  [autoId]: {
+    displayName: "Auto Worker",
+    providerInstanceId: ProviderInstanceId.make("codex"),
+    modelMode: "auto",
+    model: "gpt-5.6-luna",
+    modelOptions: [{ id: "reasoningEffort", value: "high" }],
+    instructions: "Follow the active CEO selection.",
     enabled: true,
   },
 } as EmployeeMap;
@@ -86,6 +96,27 @@ describe("mobile employees", () => {
     ).toEqual({
       instanceId: ProviderInstanceId.make("codex"),
       model: "gpt-5-codex",
+    });
+  });
+
+  it("lets an auto employee inherit the active model and options", () => {
+    expect(
+      resolveEmployeeModelSelection({
+        config,
+        currentSelection: {
+          instanceId: ProviderInstanceId.make("codex"),
+          model: "gpt-5.6-sol",
+          options: [{ id: "reasoningEffort", value: "low" }],
+        },
+        employeeId: autoId,
+        employeeIds: [ceoId, autoId],
+      }),
+    ).toEqual({
+      instanceId: ProviderInstanceId.make("codex"),
+      model: "gpt-5.6-sol",
+      options: [{ id: "reasoningEffort", value: "low" }],
+      employeeId: autoId,
+      employeeIds: [ceoId, autoId],
     });
   });
 

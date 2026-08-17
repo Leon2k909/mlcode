@@ -7,6 +7,7 @@ import {
   Employee,
   EmployeeId,
   EmployeeMap,
+  employeeUsesModelOverride,
   isEmployeeId,
   resolveEmployee,
 } from "./employee.ts";
@@ -74,6 +75,7 @@ describe("Employee", () => {
       avatar: "🎨",
       accentColor: "#ff8800",
       model: "claude-opus-5",
+      modelMode: "override",
       modelOptions: [{ id: "effort", value: "max" }],
       fastMode: true,
       enabled: false,
@@ -82,9 +84,38 @@ describe("Employee", () => {
     expect(employee.instructions).toBe("Prefer small diffs.");
     expect(employee.avatar).toBe("🎨");
     expect(employee.model).toBe("claude-opus-5");
+    expect(employee.modelMode).toBe("override");
     expect(employee.modelOptions).toEqual([{ id: "effort", value: "max" }]);
     expect(employee.fastMode).toBe(true);
     expect(employee.enabled).toBe(false);
+  });
+
+  it("distinguishes explicit auto mode from legacy model overrides", () => {
+    expect(
+      employeeUsesModelOverride(
+        decodeEmployee({
+          displayName: "Auto Ada",
+          providerInstanceId: "codex",
+          modelMode: "auto",
+          model: "gpt-5.6-luna",
+          modelOptions: [{ id: "reasoningEffort", value: "high" }],
+        }),
+      ),
+    ).toBe(false);
+    expect(
+      employeeUsesModelOverride(
+        decodeEmployee({
+          displayName: "Legacy Ada",
+          providerInstanceId: "codex",
+          model: "gpt-5.6-luna",
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      employeeUsesModelOverride(
+        decodeEmployee({ displayName: "Follow Ada", providerInstanceId: "codex" }),
+      ),
+    ).toBe(false);
   });
 
   it("requires a display name", () => {
@@ -195,6 +226,14 @@ describe("DEFAULT_EMPLOYEES", () => {
       expect(employee.enabled).toBe(true);
       expect(employee.providerInstanceId).toBe(ProviderInstanceId.make("codex"));
       expect(employee.instructions.length).toBeLessThanOrEqual(EMPLOYEE_INSTRUCTIONS_MAX_CHARS);
+    }
+  });
+
+  it("defaults workers to CEO-controlled model routing", () => {
+    expect(DEFAULT_EMPLOYEES[EmployeeId.make("ceo")]?.modelMode).toBeUndefined();
+    for (const id of ["worker_alpha", "worker_beta", "worker_gamma"]) {
+      expect(DEFAULT_EMPLOYEES[EmployeeId.make(id)]?.modelMode).toBe("auto");
+      expect(DEFAULT_EMPLOYEES[EmployeeId.make(id)]?.model).toBeUndefined();
     }
   });
 

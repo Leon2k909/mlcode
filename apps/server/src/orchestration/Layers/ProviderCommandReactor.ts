@@ -11,6 +11,7 @@ import {
   type ProjectId,
   type OrchestrationSession,
   type EmployeeId,
+  employeeUsesModelOverride,
   resolveEmployee,
   ThreadId,
   type ProviderSession,
@@ -953,11 +954,14 @@ const make = Effect.gen(function* () {
       const targetInfo = usesRequestedProvider
         ? requestedTargetInfo.value
         : yield* providerService.getInstanceInfo(targetInstanceId);
+      const usesEmployeeModelOverride = employeeUsesModelOverride(selectedEmployee);
       const targetModel = usesRequestedProvider
-        ? targetInstanceId === selectedEmployee.providerInstanceId
+        ? usesEmployeeModelOverride && targetInstanceId === selectedEmployee.providerInstanceId
           ? (selectedEmployee.model ?? requestedModelSelection.model)
           : requestedModelSelection.model
-        : (selectedEmployee.model ?? DEFAULT_MODEL_BY_PROVIDER[targetInfo.driverKind]);
+        : usesEmployeeModelOverride
+          ? (selectedEmployee.model ?? DEFAULT_MODEL_BY_PROVIDER[targetInfo.driverKind])
+          : DEFAULT_MODEL_BY_PROVIDER[targetInfo.driverKind];
       if (!targetModel) {
         return yield* new ProviderAdapterRequestError({
           provider: targetInfo.driverKind,
@@ -972,7 +976,7 @@ const make = Effect.gen(function* () {
       const optionsForSelection =
         options !== undefined
           ? options
-          : targetInstanceId === selectedEmployee.providerInstanceId
+          : usesEmployeeModelOverride && targetInstanceId === selectedEmployee.providerInstanceId
             ? selectedEmployee.modelOptions
             : undefined;
       const effectiveSelectionWithEmployeeOptions = applyEmployeeFastMode(
