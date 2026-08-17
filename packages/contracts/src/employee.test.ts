@@ -74,6 +74,7 @@ describe("Employee", () => {
       avatar: "🎨",
       accentColor: "#ff8800",
       model: "claude-opus-5",
+      modelOptions: [{ id: "effort", value: "max" }],
       fastMode: true,
       enabled: false,
     });
@@ -81,6 +82,7 @@ describe("Employee", () => {
     expect(employee.instructions).toBe("Prefer small diffs.");
     expect(employee.avatar).toBe("🎨");
     expect(employee.model).toBe("claude-opus-5");
+    expect(employee.modelOptions).toEqual([{ id: "effort", value: "max" }]);
     expect(employee.fastMode).toBe(true);
     expect(employee.enabled).toBe(false);
   });

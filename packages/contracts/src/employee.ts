@@ -29,6 +29,7 @@
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { TrimmedNonEmptyString, TrimmedString } from "./baseSchemas.ts";
+import { ProviderOptionSelections } from "./model.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
 
 const EMPLOYEE_SLUG_MAX_CHARS = 64;
@@ -92,6 +93,8 @@ export const Employee = Schema.Struct({
   accentColor: Schema.optional(TrimmedNonEmptyString),
   /** Model override on the default provider. Other providers follow the thread selection. */
   model: Schema.optional(TrimmedNonEmptyString),
+  /** Provider-native model options on the default provider. Other providers follow the thread selection. */
+  modelOptions: Schema.optional(ProviderOptionSelections),
   /** Request the provider's fast-mode option whenever this employee works. */
   fastMode: Schema.optional(Schema.Boolean),
   enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),

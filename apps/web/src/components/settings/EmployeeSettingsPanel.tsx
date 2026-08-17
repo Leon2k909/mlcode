@@ -10,6 +10,8 @@ import {
   Employee,
   type EmployeeId,
   type EmployeeMap,
+  ProviderDriverKind,
+  type ProviderOptionSelection,
   type ProviderInstanceId,
   type ServerProviderModel,
 } from "@t3tools/contracts";
@@ -20,6 +22,7 @@ import {
   type SettingsUpdateResult,
 } from "../../hooks/useSettings";
 import { cn } from "../../lib/utils";
+import { getProviderModelCapabilities } from "../../providerModels";
 import { primaryServerProvidersAtom } from "../../state/server";
 import {
   buildEmployeeRemovalPatch,
@@ -33,6 +36,7 @@ import {
   type SuggestedEmployee,
 } from "../../employees";
 import { Badge } from "../ui/badge";
+import { TraitsPicker } from "../chat/TraitsPicker";
 import { EmployeeAvatar } from "../employees/EmployeeAvatar";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
@@ -45,6 +49,12 @@ const decodeEmployee = Schema.decodeUnknownOption(Employee);
 const EMPLOYEE_MODEL_FOLLOW_THREAD = "__employee_follow_thread__";
 const EMPLOYEE_MODEL_CUSTOM = "__employee_custom_model__";
 
+function withoutFastModeOption(
+  options: ReadonlyArray<ProviderOptionSelection>,
+): ReadonlyArray<ProviderOptionSelection> {
+  return options.filter((option) => option.id !== "fastMode");
+}
+
 interface EmployeeDraft {
   readonly employeeId: string;
   readonly displayName: string;
@@ -53,6 +63,7 @@ interface EmployeeDraft {
   readonly instructions: string;
   readonly providerInstanceId: string;
   readonly model: string;
+  readonly modelOptions: ReadonlyArray<ProviderOptionSelection>;
   readonly fastMode: boolean;
   readonly enabled: boolean;
 }
@@ -65,6 +76,7 @@ const emptyDraft = (providerInstanceId: string): EmployeeDraft => ({
   instructions: "",
   providerInstanceId,
   model: "",
+  modelOptions: [],
   fastMode: false,
   enabled: true,
 });
@@ -77,6 +89,7 @@ const draftFromEntry = (entry: EmployeeEntry): EmployeeDraft => ({
   instructions: entry.employee.instructions,
   providerInstanceId: entry.employee.providerInstanceId,
   model: entry.employee.model ?? "",
+  modelOptions: withoutFastModeOption(entry.employee.modelOptions ?? []),
   fastMode: entry.employee.fastMode === true,
   enabled: entry.employee.enabled,
 });
@@ -87,6 +100,7 @@ const draftFromEntry = (entry: EmployeeEntry): EmployeeDraft => ({
  * absent when blank rather than being stored as empty strings.
  */
 function decodeDraft(draft: EmployeeDraft): { employee: Employee } | { error: string } {
+  const modelOptions = withoutFastModeOption(draft.modelOptions);
   const result = decodeEmployee({
     displayName: draft.displayName,
     providerInstanceId: draft.providerInstanceId,
@@ -96,8 +110,9 @@ function decodeDraft(draft: EmployeeDraft): { employee: Employee } | { error: st
     ...(draft.avatar.trim() ? { avatar: draft.avatar } : {}),
     ...(draft.model.trim() ? { model: draft.model } : {}),
     // Send both states explicitly. Server settings patches deep-merge nested
-    // objects, so omitting false would leave a previously saved true value in
-    // place after the user turns fast mode off.
+    // objects, so omitting false or an empty options array would leave the
+    // previously saved value in place after the user clears it.
+    modelOptions,
     fastMode: draft.fastMode,
   });
   if (Option.isSome(result)) return { employee: result.value };
@@ -109,6 +124,7 @@ function EmployeeForm({
   onDraftChange,
   instanceOptions,
   modelOptions,
+  provider,
   idError,
   saveError,
   onSave,
@@ -120,6 +136,7 @@ function EmployeeForm({
   onDraftChange: (next: EmployeeDraft) => void;
   instanceOptions: readonly { readonly instanceId: string; readonly label: string }[];
   modelOptions: ReadonlyArray<ServerProviderModel>;
+  provider: ProviderDriverKind;
   idError: string | null;
   saveError: string | null;
   onSave: () => void | Promise<void>;
@@ -143,6 +160,25 @@ function EmployeeForm({
     customModelMode || (draft.model.length > 0 && !selectedModelIsKnown)
       ? EMPLOYEE_MODEL_CUSTOM
       : draft.model || EMPLOYEE_MODEL_FOLLOW_THREAD;
+  const traitModels = useMemo(
+    () =>
+      modelOptions.map((model) => {
+        const descriptors = model.capabilities?.optionDescriptors;
+        if (descriptors === undefined || model.capabilities === null) return model;
+        return {
+          ...model,
+          capabilities: {
+            ...model.capabilities,
+            optionDescriptors: descriptors.filter((descriptor) => descriptor.id !== "fastMode"),
+          },
+        };
+      }),
+    [modelOptions],
+  );
+  const traitModel =
+    draft.model || modelOptions.find((model) => model.isDefault)?.slug || modelOptions[0]?.slug;
+  const hasProviderOptions =
+    getProviderModelCapabilities(traitModels, traitModel, provider).optionDescriptors?.length ?? 0;
 
   return (
     <div className="space-y-4 rounded-xl border border-border/60 bg-muted/20 p-4">
@@ -203,7 +239,7 @@ function EmployeeForm({
             onValueChange={(next) => {
               if (!next || next === draft.providerInstanceId) return;
               setCustomModelMode(false);
-              onDraftChange({ ...draft, providerInstanceId: next, model: "" });
+              onDraftChange({ ...draft, providerInstanceId: next, model: "", modelOptions: [] });
             }}
           >
             <SelectTrigger className="w-full">
@@ -226,16 +262,20 @@ function EmployeeForm({
             onValueChange={(next) => {
               if (!next || next === EMPLOYEE_MODEL_FOLLOW_THREAD) {
                 setCustomModelMode(false);
-                set("model", "");
+                onDraftChange({ ...draft, model: "", modelOptions: [] });
                 return;
               }
               if (next === EMPLOYEE_MODEL_CUSTOM) {
                 setCustomModelMode(true);
-                if (selectedModelIsKnown) set("model", "");
+                onDraftChange({
+                  ...draft,
+                  model: selectedModelIsKnown ? "" : draft.model,
+                  modelOptions: [],
+                });
                 return;
               }
               setCustomModelMode(false);
-              set("model", next);
+              onDraftChange({ ...draft, model: next, modelOptions: [] });
             }}
           >
             <SelectTrigger className="w-full">
@@ -260,7 +300,9 @@ function EmployeeForm({
             <Input
               value={draft.model}
               placeholder="claude-opus-5"
-              onChange={(event) => set("model", event.target.value)}
+              onChange={(event) =>
+                onDraftChange({ ...draft, model: event.target.value, modelOptions: [] })
+              }
               spellCheck={false}
             />
           ) : null}
@@ -270,6 +312,31 @@ function EmployeeForm({
               : "Provider models are not available yet. Follow the chat model or enter a custom slug."}
           </span>
         </label>
+
+        {hasProviderOptions > 0 ? (
+          <div className="space-y-1.5 text-sm">
+            <span className="font-medium">Provider defaults</span>
+            <TraitsPicker
+              provider={provider}
+              instanceId={draft.providerInstanceId as ProviderInstanceId}
+              models={traitModels}
+              model={traitModel}
+              prompt=""
+              onPromptChange={() => {}}
+              modelOptions={draft.modelOptions}
+              allowPromptInjectedEffort={false}
+              triggerVariant="outline"
+              triggerClassName="w-full justify-between"
+              onModelOptionsChange={(nextOptions) =>
+                set("modelOptions", withoutFastModeOption(nextOptions ?? []))
+              }
+            />
+            <span className="block text-xs text-muted-foreground">
+              Saved for this employee&apos;s default provider. Other providers follow the chat
+              selection.
+            </span>
+          </div>
+        ) : null}
       </div>
 
       <label className="flex items-center justify-between gap-4 rounded-lg border border-border/60 bg-background/40 p-3 text-sm">
@@ -349,6 +416,13 @@ export function EmployeeSettingsPanel() {
     () =>
       new Map(
         serverProviders.map((provider) => [String(provider.instanceId), provider.models] as const),
+      ),
+    [serverProviders],
+  );
+  const providerDriversByInstance = useMemo(
+    () =>
+      new Map(
+        serverProviders.map((provider) => [String(provider.instanceId), provider.driver] as const),
       ),
     [serverProviders],
   );
@@ -489,6 +563,10 @@ export function EmployeeSettingsPanel() {
               onDraftChange={setDraft}
               instanceOptions={instanceOptions}
               modelOptions={modelOptionsByInstance.get(draft.providerInstanceId) ?? []}
+              provider={
+                providerDriversByInstance.get(draft.providerInstanceId) ??
+                ProviderDriverKind.make("codex")
+              }
               idError={idError}
               saveError={saveError}
               onSave={save}
@@ -579,6 +657,10 @@ export function EmployeeSettingsPanel() {
                     onDraftChange={setDraft}
                     instanceOptions={instanceOptions}
                     modelOptions={modelOptionsByInstance.get(draft.providerInstanceId) ?? []}
+                    provider={
+                      providerDriversByInstance.get(draft.providerInstanceId) ??
+                      ProviderDriverKind.make("codex")
+                    }
                     idError={idError}
                     saveError={saveError}
                     onSave={save}

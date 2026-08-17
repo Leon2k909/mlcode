@@ -966,12 +966,21 @@ const make = Effect.gen(function* () {
         });
       }
       const { options, ...selectionWithoutOptions } = requestedModelSelection;
+      // Employee options are defaults for the employee's saved provider. A
+      // client-supplied selection remains authoritative, while an omitted
+      // options field (including older clients) picks up the saved defaults.
+      const optionsForSelection =
+        options !== undefined
+          ? options
+          : targetInstanceId === selectedEmployee.providerInstanceId
+            ? selectedEmployee.modelOptions
+            : undefined;
       const effectiveSelectionWithEmployeeOptions = applyEmployeeFastMode(
         {
           ...selectionWithoutOptions,
           instanceId: targetInstanceId,
           model: targetModel,
-          ...(usesRequestedProvider && options !== undefined ? { options } : {}),
+          ...(optionsForSelection !== undefined ? { options: optionsForSelection } : {}),
         },
         selectedEmployee.fastMode,
       );

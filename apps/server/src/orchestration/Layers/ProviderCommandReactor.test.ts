@@ -2472,6 +2472,7 @@ describe("ProviderCommandReactor", () => {
             role: "CEO",
             providerInstanceId: ProviderInstanceId.make("codex"),
             model: "gpt-5-codex",
+            modelOptions: [{ id: "reasoningEffort", value: "high" }],
             instructions: "Own the implementation.",
             enabled: true,
           },
@@ -2526,6 +2527,7 @@ describe("ProviderCommandReactor", () => {
             role: "Implementation",
             providerInstanceId: ProviderInstanceId.make("codex"),
             model: "gpt-5.6-luna",
+            modelOptions: [{ id: "reasoningEffort", value: "high" }],
             fastMode: true,
             instructions: "Implement the requested change.",
             enabled: true,
@@ -2566,6 +2568,64 @@ describe("ProviderCommandReactor", () => {
         options: [
           { id: "reasoningEffort", value: "low" },
           { id: "fastMode", value: true },
+        ],
+        employeeId: workerId,
+      },
+    });
+  });
+
+  it("applies saved employee model options when the request omits options", async () => {
+    const workerId = EmployeeId.make("worker_alpha");
+    const harness = await createHarness({
+      serverSettings: {
+        employees: {
+          [workerId]: {
+            displayName: "Alpha",
+            role: "Implementation",
+            providerInstanceId: ProviderInstanceId.make("codex"),
+            model: "gpt-5.6-luna",
+            modelOptions: [
+              { id: "reasoningEffort", value: "high" },
+              { id: "serviceTier", value: "fast" },
+            ],
+            instructions: "Implement the requested change.",
+            enabled: true,
+          },
+        },
+      },
+    });
+    const selection: ModelSelection = {
+      instanceId: ProviderInstanceId.make("codex"),
+      model: "gpt-5.6-luna",
+      employeeId: workerId,
+    };
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-employee-model-options"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-employee-model-options"),
+          role: "user",
+          text: "Use this employee's saved model defaults.",
+          attachments: [],
+        },
+        modelSelection: selection,
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: "2026-08-14T10:00:00.000Z",
+      }),
+    );
+
+    await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+    expect(harness.sendTurn.mock.calls[0]?.[0]).toMatchObject({
+      modelSelection: {
+        instanceId: ProviderInstanceId.make("codex"),
+        model: "gpt-5.6-luna",
+        options: [
+          { id: "reasoningEffort", value: "high" },
+          { id: "serviceTier", value: "fast" },
         ],
         employeeId: workerId,
       },

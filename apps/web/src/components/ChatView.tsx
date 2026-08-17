@@ -6380,6 +6380,15 @@ function ChatViewContent(props: ChatViewProps) {
         scheduleComposerFocus();
         return;
       }
+      // Selecting an employee starts from that employee's saved defaults on
+      // its fallback provider. The composer can immediately override them;
+      // another provider keeps its own thread-level options.
+      const nextOptions =
+        usingEmployeeDefaultProvider && employee.modelOptions !== undefined
+          ? employee.modelOptions
+          : baseSelection.instanceId === providerInstanceId && options !== undefined
+            ? options
+            : undefined;
       const nextModelSelection: ModelSelection = {
         ...selectionWithoutEmployee,
         instanceId: providerInstanceId,
@@ -6388,9 +6397,7 @@ function ChatViewContent(props: ChatViewProps) {
         ...(employeeIds !== undefined && employeeIds.length >= 2
           ? { employeeIds: [...employeeIds] }
           : {}),
-        ...(baseSelection.instanceId === providerInstanceId && options !== undefined
-          ? { options }
-          : {}),
+        ...(nextOptions !== undefined ? { options: nextOptions } : {}),
       };
       const modelChangeBlockReason = getStartedThreadModelChangeBlockReason({
         providers: providerStatuses,

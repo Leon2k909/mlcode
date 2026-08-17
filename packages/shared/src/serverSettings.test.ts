@@ -328,6 +328,33 @@ describe("serverSettings helpers", () => {
     expect(next.employees[employeeId]?.fastMode).toBe(false);
   });
 
+  it("replaces employee model options when saved defaults are cleared", () => {
+    const employeeId = EmployeeId.make("worker_alpha");
+    const current = {
+      ...DEFAULT_SERVER_SETTINGS,
+      employees: {
+        [employeeId]: {
+          displayName: "Alpha",
+          providerInstanceId: ProviderInstanceId.make("codex"),
+          instructions: "Implement the requested change.",
+          modelOptions: [{ id: "reasoningEffort", value: "high" }],
+          enabled: true,
+        },
+      },
+    };
+
+    const next = applyServerSettingsPatch(current, {
+      employees: {
+        [employeeId]: {
+          ...current.employees[employeeId]!,
+          modelOptions: [],
+        },
+      },
+    });
+
+    expect(next.employees[employeeId]?.modelOptions).toEqual([]);
+  });
+
   it("repairs sparse legacy employee patches before strict settings encoding", () => {
     const employeeId = EmployeeId.make("worker_alpha");
     const current = {
