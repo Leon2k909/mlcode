@@ -721,6 +721,13 @@ describe("MessagesTimeline", () => {
               id: MessageId.make("employee-response"),
               role: "assistant",
               employeeId: EmployeeId.make("ceo"),
+              modelSelection: {
+                instanceId: ProviderInstanceId.make("codex"),
+                model: "gpt-5.6-sol",
+                options: [{ id: "reasoningEffort", value: "high" }],
+                employeeId: EmployeeId.make("ceo"),
+                employeeIds: [EmployeeId.make("ceo"), EmployeeId.make("reviewer")],
+              },
               text: 'The brief is ready.\n<handoff to="reviewer">Review this.</handoff>',
               turnId: TurnId.make("turn-employee"),
               createdAt: MESSAGE_CREATED_AT,
@@ -841,15 +848,15 @@ describe("MessagesTimeline", () => {
     expect(markup).not.toContain("Continue.");
   });
 
-  it("attributes an older assistant row to the active employee and exposes its model on hover", () => {
+  it("keeps durable employee attribution on a legacy row without inventing model badges", () => {
     const markup = renderToStaticMarkup(
       <MessagesTimeline
         {...buildProps()}
         employees={TEST_EMPLOYEES}
         modelSelection={{
-          instanceId: ProviderInstanceId.make("codex"),
-          model: "gpt-5.6-sol",
-          options: [{ id: "reasoningEffort", value: "high" }],
+          instanceId: ProviderInstanceId.make("claudeAgent"),
+          model: "claude-fable-5",
+          options: [{ id: "effort", value: "max" }],
           employeeId: EmployeeId.make("ceo"),
           employeeIds: [EmployeeId.make("ceo"), EmployeeId.make("reviewer")],
         }}
@@ -861,6 +868,7 @@ describe("MessagesTimeline", () => {
             message: {
               id: MessageId.make("legacy-employee-response"),
               role: "assistant",
+              employeeId: EmployeeId.make("ceo"),
               text: "The CEO handled this.",
               turnId: TurnId.make("turn-legacy-employee"),
               createdAt: MESSAGE_CREATED_AT,
@@ -874,9 +882,130 @@ describe("MessagesTimeline", () => {
 
     expect(markup).toContain('data-t3-worker-kind="employee"');
     expect(markup).toContain("Alex");
+    expect(markup).not.toContain("claude-fable-5");
+    expect(markup).not.toContain("reasoning Max");
+    expect(markup).not.toContain("via Claude");
+    expect(markup).not.toContain('title="Alex uses');
+  });
+
+  it("does not relabel an ordinary legacy row after the thread switches providers", () => {
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        modelSelection={{
+          instanceId: ProviderInstanceId.make("claudeAgent"),
+          model: "claude-fable-5",
+          options: [{ id: "effort", value: "max" }],
+        }}
+        timelineEntries={[
+          {
+            id: "legacy-provider-response",
+            kind: "message",
+            createdAt: MESSAGE_CREATED_AT,
+            message: {
+              id: MessageId.make("legacy-provider-response"),
+              role: "assistant",
+              text: "This response predates per-message model metadata.",
+              turnId: TurnId.make("turn-legacy-provider"),
+              createdAt: MESSAGE_CREATED_AT,
+              updatedAt: MESSAGE_CREATED_AT,
+              streaming: false,
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(markup).toContain("This response predates per-message model metadata.");
+    expect(markup).not.toContain('data-t3-worker-kind="employee"');
+    expect(markup).not.toContain("claude-fable-5");
+    expect(markup).not.toContain("reasoning Max");
+    expect(markup).not.toContain("via Claude");
+  });
+
+  it("uses each assistant row's persisted selection instead of the latest thread selection", () => {
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        employees={TEST_EMPLOYEES}
+        modelSelection={{
+          instanceId: ProviderInstanceId.make("codex"),
+          model: "gpt-5.6-sol",
+          options: [{ id: "reasoningEffort", value: "ultra" }],
+          employeeId: EmployeeId.make("ceo"),
+          employeeIds: [EmployeeId.make("ceo"), EmployeeId.make("reviewer")],
+        }}
+        timelineEntries={[
+          {
+            id: "persisted-worker-selection",
+            kind: "message",
+            createdAt: MESSAGE_CREATED_AT,
+            message: {
+              id: MessageId.make("persisted-worker-selection"),
+              role: "assistant",
+              employeeId: EmployeeId.make("reviewer"),
+              modelSelection: {
+                instanceId: ProviderInstanceId.make("codex"),
+                model: "gpt-5.6-luna",
+                options: [{ id: "reasoningEffort", value: "low" }],
+                employeeId: EmployeeId.make("reviewer"),
+                employeeIds: [EmployeeId.make("ceo"), EmployeeId.make("reviewer")],
+              },
+              text: "The routine check passed.",
+              turnId: TurnId.make("turn-persisted-worker-selection"),
+              createdAt: MESSAGE_CREATED_AT,
+              updatedAt: MESSAGE_CREATED_AT,
+              streaming: false,
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(markup).toContain('title="Riley uses gpt-5.6-luna via Codex at Low reasoning"');
+    expect(markup).not.toContain("model gpt-5.6-sol");
+    expect(markup).not.toContain("reasoning Ultra");
+  });
+
+  it("keeps an ordinary assistant row's provider badges after the thread switches providers", () => {
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        modelSelection={{
+          instanceId: ProviderInstanceId.make("claudeAgent"),
+          model: "claude-fable-5",
+          options: [{ id: "effort", value: "max" }],
+        }}
+        timelineEntries={[
+          {
+            id: "persisted-codex-selection",
+            kind: "message",
+            createdAt: MESSAGE_CREATED_AT,
+            message: {
+              id: MessageId.make("persisted-codex-selection"),
+              role: "assistant",
+              modelSelection: {
+                instanceId: ProviderInstanceId.make("codex"),
+                model: "gpt-5.6-sol",
+                options: [{ id: "reasoningEffort", value: "high" }],
+              },
+              text: "This response was produced before the provider changed.",
+              turnId: TurnId.make("turn-persisted-codex-selection"),
+              createdAt: MESSAGE_CREATED_AT,
+              updatedAt: MESSAGE_CREATED_AT,
+              streaming: false,
+            },
+          },
+        ]}
+      />,
+    );
+
     expect(markup).toContain("model gpt-5.6-sol");
     expect(markup).toContain("reasoning High");
-    expect(markup).toContain('title="Alex uses gpt-5.6-sol via Codex at High reasoning"');
+    expect(markup).toContain("via Codex");
+    expect(markup).not.toContain("claude-fable-5");
+    expect(markup).not.toContain("reasoning Max");
+    expect(markup).not.toContain("via Claude");
   });
 
   it("shows Claude effort levels in employee attribution", () => {
@@ -899,6 +1028,14 @@ describe("MessagesTimeline", () => {
             message: {
               id: MessageId.make("claude-employee-response"),
               role: "assistant",
+              employeeId: EmployeeId.make("ceo"),
+              modelSelection: {
+                instanceId: ProviderInstanceId.make("claudeAgent"),
+                model: "claude-opus-5",
+                options: [{ id: "effort", value: "max" }],
+                employeeId: EmployeeId.make("ceo"),
+                employeeIds: [EmployeeId.make("ceo"), EmployeeId.make("reviewer")],
+              },
               text: "The Claude employee handled this.",
               turnId: TurnId.make("turn-claude-employee"),
               createdAt: MESSAGE_CREATED_AT,

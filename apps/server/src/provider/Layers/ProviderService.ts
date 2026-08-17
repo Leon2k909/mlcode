@@ -62,6 +62,7 @@ import * as ProviderEventLoggers from "./ProviderEventLoggers.ts";
 import * as AnalyticsService from "../../telemetry/AnalyticsService.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import * as McpSessionRegistry from "../../mcp/McpSessionRegistry.ts";
+import { recordUsageLimits } from "../../usage/usageLimits.ts";
 const isModelSelection = Schema.is(ModelSelection);
 
 /**
@@ -1123,6 +1124,36 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     },
   );
 
+  const refreshAccountRateLimits = Effect.fn("refreshAccountRateLimits")(function* () {
+    const currentAdapters = yield* getAdapterEntries;
+    yield* Effect.forEach(
+      currentAdapters,
+      ([instanceId, adapter]) => {
+        const readAccountRateLimits = adapter.readAccountRateLimits;
+        if (!readAccountRateLimits) {
+          return Effect.void;
+        }
+        return readAccountRateLimits().pipe(
+          Effect.tap((snapshot) =>
+            snapshot === null
+              ? Effect.void
+              : Effect.sync(() =>
+                  recordUsageLimits(snapshot.provider, snapshot.rateLimits, snapshot.readAt),
+                ),
+          ),
+          Effect.catchCause((cause) =>
+            Effect.logWarning("provider.account-rate-limits.refresh-failed", {
+              provider: adapter.provider,
+              providerInstanceId: instanceId,
+              cause,
+            }),
+          ),
+        );
+      },
+      { concurrency: "unbounded", discard: true },
+    );
+  });
+
   const getCapabilities: ProviderServiceMethod<"getCapabilities"> = (instanceId) =>
     registry.getByInstance(instanceId).pipe(Effect.map((adapter) => adapter.capabilities));
 
@@ -1243,6 +1274,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     respondToUserInput,
     stopSession,
     listSessions,
+    refreshAccountRateLimits,
     getCapabilities,
     getInstanceInfo,
     rollbackConversation,

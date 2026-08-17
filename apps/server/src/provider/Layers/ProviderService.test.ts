@@ -42,7 +42,10 @@ import {
   ProviderValidationError,
   type ProviderAdapterError,
 } from "../Errors.ts";
-import type { ProviderAdapterShape } from "../Services/ProviderAdapter.ts";
+import type {
+  ProviderAccountRateLimitsRead,
+  ProviderAdapterShape,
+} from "../Services/ProviderAdapter.ts";
 import * as ProviderAdapterRegistry from "../Services/ProviderAdapterRegistry.ts";
 import * as ProviderService from "../Services/ProviderService.ts";
 import * as ProviderSessionDirectory from "../Services/ProviderSessionDirectory.ts";
@@ -58,6 +61,7 @@ import {
 import * as ServerConfig from "../../config.ts";
 import * as ServerSettings from "../../serverSettings.ts";
 import * as AnalyticsService from "../../telemetry/AnalyticsService.ts";
+import { readUsageLimits } from "../../usage/usageLimits.ts";
 import { makeAdapterRegistryMock } from "../testUtils/providerAdapterRegistryMock.ts";
 
 const defaultServerSettingsLayer = ServerSettings.ServerSettingsService.layerTest();
@@ -203,6 +207,11 @@ function makeFakeCodexAdapter(provider: ProviderDriverKind = CODEX_DRIVER) {
       }),
   );
 
+  const readAccountRateLimits = vi.fn(
+    (): Effect.Effect<ProviderAccountRateLimitsRead | null, ProviderAdapterError> =>
+      Effect.succeed(null),
+  );
+
   const adapter: ProviderAdapterShape<ProviderAdapterError> = {
     provider,
     capabilities: {
@@ -216,6 +225,7 @@ function makeFakeCodexAdapter(provider: ProviderDriverKind = CODEX_DRIVER) {
     respondToUserInput,
     stopSession,
     listSessions,
+    readAccountRateLimits,
     hasSession,
     readThread,
     rollbackThread,
@@ -251,6 +261,7 @@ function makeFakeCodexAdapter(provider: ProviderDriverKind = CODEX_DRIVER) {
     respondToUserInput,
     stopSession,
     listSessions,
+    readAccountRateLimits,
     hasSession,
     readThread,
     rollbackThread,
@@ -855,6 +866,50 @@ it.effect(
 );
 
 routing.layer("ProviderServiceLive routing", (it) => {
+  it.effect("refreshes current account limits through capable provider adapters", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      const readAt = "2099-08-17T20:00:00.000Z";
+      routing.claude.readAccountRateLimits.mockImplementationOnce(() =>
+        Effect.succeed({
+          provider: CLAUDE_AGENT_DRIVER,
+          readAt,
+          rateLimits: {
+            subscription_type: "max",
+            rate_limits_available: true,
+            rate_limits: {
+              five_hour: { utilization: 0.42, resets_at: "2099-08-17T22:00:00.000Z" },
+              seven_day: { utilization: 0.24, resets_at: "2099-08-22T19:00:00.000Z" },
+              seven_day_opus: {
+                utilization: 0.11,
+                resets_at: "2099-08-22T19:00:00.000Z",
+              },
+            },
+          },
+        }),
+      );
+
+      const refreshAccountRateLimits = provider.refreshAccountRateLimits;
+      assert.isDefined(refreshAccountRateLimits);
+      yield* refreshAccountRateLimits();
+
+      const snapshot = readUsageLimits().find(
+        (candidate) => candidate.provider === "claude" && candidate.readAt === readAt,
+      );
+      assert.deepEqual(snapshot, {
+        provider: "claude",
+        readAt,
+        status: null,
+        plan: "Max",
+        windows: [
+          { label: "5-hour", usedPercent: 42, resetsAt: 4_090_687_200 },
+          { label: "Weekly", usedPercent: 24, resetsAt: 4_091_108_400 },
+          { label: "Weekly (Fable)", usedPercent: 11, resetsAt: 4_091_108_400 },
+        ],
+      });
+    }),
+  );
+
   it.effect("routes provider operations and rollback conversation", () =>
     Effect.gen(function* () {
       const provider = yield* ProviderService.ProviderService;

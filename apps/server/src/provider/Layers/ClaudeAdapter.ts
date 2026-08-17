@@ -1683,12 +1683,12 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
   const offerRuntimeEvent = (event: ProviderRuntimeEvent): Effect.Effect<void> =>
     Queue.offer(runtimeEventQueue, event).pipe(Effect.asVoid);
 
-  const emitClaudeUsageLimits = Effect.fn("emitClaudeUsageLimits")(function* (
+  const readClaudeUsageLimits = Effect.fn("readClaudeUsageLimits")(function* (
     context: ClaudeSessionContext,
   ) {
     const readUsage = context.query.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET;
     if (!readUsage) {
-      return;
+      return null;
     }
 
     // Claude's rate_limit_event currently exposes only the active 5-hour
@@ -1699,13 +1699,34 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     const response = yield* Effect.tryPromise({
       try: () => readUsage.call(context.query),
       catch: () => undefined,
-    }).pipe(Effect.timeoutOption("5 seconds"));
+    }).pipe(
+      Effect.timeoutOption("5 seconds"),
+      Effect.orElseSucceed(() => Option.none()),
+    );
     if (Option.isNone(response) || response.value === undefined) {
-      return;
+      return null;
     }
 
     const usage = response.value;
     if (!usage.rate_limits_available || usage.rate_limits === null) {
+      return null;
+    }
+
+    return {
+      rateLimits: {
+        subscription_type: usage.subscription_type,
+        rate_limits_available: usage.rate_limits_available,
+        rate_limits: usage.rate_limits,
+      },
+      raw: usage,
+    } as const;
+  });
+
+  const emitClaudeUsageLimits = Effect.fn("emitClaudeUsageLimits")(function* (
+    context: ClaudeSessionContext,
+  ) {
+    const usage = yield* readClaudeUsageLimits(context);
+    if (usage === null) {
       return;
     }
 
@@ -1718,16 +1739,12 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       threadId: context.session.threadId,
       providerRefs: nativeProviderRefs(context),
       payload: {
-        rateLimits: {
-          subscription_type: usage.subscription_type,
-          rate_limits_available: usage.rate_limits_available,
-          rate_limits: usage.rate_limits,
-        },
+        rateLimits: usage.rateLimits,
       },
       raw: {
         source: "claude.sdk.control",
         method: "claude/get_usage",
-        payload: usage,
+        payload: usage.raw,
       },
     });
   });
@@ -4619,6 +4636,36 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
   const listSessions: ClaudeAdapterShape["listSessions"] = () =>
     Effect.sync(() => Array.from(sessions.values(), ({ session }) => ({ ...session })));
 
+  const readAccountRateLimits: NonNullable<ClaudeAdapterShape["readAccountRateLimits"]> = Effect.fn(
+    "readAccountRateLimits",
+  )(function* () {
+    let latestContext: ClaudeSessionContext | undefined;
+    for (const context of sessions.values()) {
+      if (context.stopped || context.session.status === "closed") {
+        continue;
+      }
+      if (
+        latestContext === undefined ||
+        context.session.updatedAt > latestContext.session.updatedAt
+      ) {
+        latestContext = context;
+      }
+    }
+    if (!latestContext) {
+      return null;
+    }
+
+    const usage = yield* readClaudeUsageLimits(latestContext);
+    if (usage === null) {
+      return null;
+    }
+    return {
+      provider: PROVIDER,
+      readAt: yield* nowIso,
+      rateLimits: usage.rateLimits,
+    };
+  });
+
   const hasSession: ClaudeAdapterShape["hasSession"] = (threadId) =>
     Effect.sync(() => {
       const context = sessions.get(threadId);
@@ -4667,6 +4714,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     respondToUserInput,
     stopSession,
     listSessions,
+    readAccountRateLimits,
     hasSession,
     stopAll,
     get streamEvents() {

@@ -94,6 +94,9 @@ describe("applyCeoGroupRoutingReminder", () => {
     expect(message).toContain("before analysis, explanation, or any tool call");
     expect(message).toContain("your entire response must be one tag");
     expect(message).toContain('handoff to="worker_beta"');
+    expect(message).toContain('model="gpt-5.6-luna" reasoning="low"');
+    expect(message).toContain("remain on GPT-5.6 Sol with Ultra reasoning");
+    expect(message).toContain("choose cheaper worker settings whenever the task allows");
     expect(message).toContain("that is not a handoff");
   });
 

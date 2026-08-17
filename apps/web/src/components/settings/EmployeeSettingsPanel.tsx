@@ -45,12 +45,15 @@ import { Input } from "../ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 import { Switch } from "../ui/switch";
 import { Textarea } from "../ui/textarea";
+import {
+  EMPLOYEE_MODEL_AUTO,
+  EMPLOYEE_MODEL_CUSTOM,
+  EMPLOYEE_MODEL_FOLLOW_THREAD,
+  getEmployeeModelPickerLabel,
+} from "./EmployeeSettingsPanel.logic";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
 
 const decodeEmployee = Schema.decodeUnknownOption(Employee);
-const EMPLOYEE_MODEL_AUTO = "__employee_auto__";
-const EMPLOYEE_MODEL_FOLLOW_THREAD = "__employee_follow_thread__";
-const EMPLOYEE_MODEL_CUSTOM = "__employee_custom_model__";
 
 function withoutFastModeOption(
   options: ReadonlyArray<ProviderOptionSelection>,
@@ -169,6 +172,7 @@ function EmployeeForm({
       : customModelMode || (draft.model.length > 0 && !selectedModelIsKnown)
         ? EMPLOYEE_MODEL_CUSTOM
         : draft.model || EMPLOYEE_MODEL_FOLLOW_THREAD;
+  const modelPickerLabel = getEmployeeModelPickerLabel(modelPickerValue, modelOptions);
   const traitModels = useMemo(
     () =>
       modelOptions.map((model) => {
@@ -295,10 +299,10 @@ function EmployeeForm({
             }}
           >
             <SelectTrigger className="w-full">
-              <SelectValue placeholder="Auto — CEO decides" />
+              <SelectValue>{modelPickerLabel}</SelectValue>
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value={EMPLOYEE_MODEL_AUTO}>Auto — CEO decides</SelectItem>
+              <SelectItem value={EMPLOYEE_MODEL_AUTO}>Auto</SelectItem>
               <SelectItem value={EMPLOYEE_MODEL_FOLLOW_THREAD}>Follow chat model</SelectItem>
               {modelOptions.map((model) => (
                 <SelectItem key={model.slug} value={model.slug}>

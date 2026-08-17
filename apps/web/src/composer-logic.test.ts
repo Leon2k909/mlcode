@@ -6,6 +6,7 @@ import {
   detectComposerTrigger,
   expandCollapsedComposerCursor,
   isCollapsedCursorAdjacentToInlineToken,
+  parseStandaloneComposerGoalCommand,
   parseStandaloneComposerSlashCommand,
   replaceTextRange,
   shouldSubmitComposerOnEnter,
@@ -370,5 +371,25 @@ describe("parseStandaloneComposerSlashCommand", () => {
 
   it("ignores slash commands with extra message text", () => {
     expect(parseStandaloneComposerSlashCommand("/plan explain this")).toBeNull();
+  });
+});
+
+describe("parseStandaloneComposerGoalCommand", () => {
+  it("shows the current goal when no argument is provided", () => {
+    expect(parseStandaloneComposerGoalCommand(" /goal ")).toEqual({ kind: "show" });
+  });
+
+  it("parses objective and lifecycle commands", () => {
+    expect(parseStandaloneComposerGoalCommand("/goal Ship onboarding")).toEqual({
+      kind: "set",
+      objective: "Ship onboarding",
+    });
+    expect(parseStandaloneComposerGoalCommand("/goal pause")).toEqual({ kind: "pause" });
+    expect(parseStandaloneComposerGoalCommand("/goal resume")).toEqual({ kind: "resume" });
+    expect(parseStandaloneComposerGoalCommand("/goal clear")).toEqual({ kind: "clear" });
+  });
+
+  it("does not consume ordinary messages", () => {
+    expect(parseStandaloneComposerGoalCommand("/goalist")).toBeNull();
   });
 });

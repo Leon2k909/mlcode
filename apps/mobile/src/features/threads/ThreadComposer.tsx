@@ -55,6 +55,7 @@ import {
 import { ControlPill, ControlPillMenu } from "../../components/ControlPill";
 import { ProviderIcon } from "../../components/ProviderIcon";
 import type { DraftComposerImageAttachment } from "../../lib/composerImages";
+import { filterMobileBuiltInSlashCommands } from "../../lib/composerCommands";
 import {
   employeeSelectionLabel,
   preserveEmployeeRoutingForProvider,
@@ -395,30 +396,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
 
     if (composerTrigger.kind === "slash-command") {
       const q = composerTrigger.query.toLowerCase();
-      const allBuiltIn = [
-        {
-          id: "cmd:model",
-          type: "slash-command" as const,
-          command: "model",
-          label: "/model",
-          description: "Switch model",
-        },
-        {
-          id: "cmd:plan",
-          type: "slash-command" as const,
-          command: "plan",
-          label: "/plan",
-          description: "Switch to plan mode",
-        },
-        {
-          id: "cmd:default",
-          type: "slash-command" as const,
-          command: "default",
-          label: "/default",
-          description: "Switch to default mode",
-        },
-      ];
-      const builtIn = allBuiltIn.filter((item) => item.command.includes(q));
+      const builtIn = filterMobileBuiltInSlashCommands(q);
 
       const providerCommands: ComposerCommandItem[] = [];
       for (const cmd of selectedProviderStatus?.slashCommands ?? []) {
@@ -543,7 +521,8 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
     if (inFlightThreadIdsRef.current.has(threadKey)) return;
     inFlightThreadIdsRef.current.add(threadKey);
     try {
-      await onSendMessage();
+      const messageId = await onSendMessage();
+      if (messageId === null) return;
       // Sending a prompt starts agent work: arm the lock-screen card while the
       // app is foregrounded and the activity token can be registered. Armed
       // after the send so its preference read and native Activity start don't

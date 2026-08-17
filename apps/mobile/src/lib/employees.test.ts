@@ -126,6 +126,14 @@ describe("mobile employees", () => {
     ).toEqual({ visibleText: "Done.", toEmployeeId: reviewerId });
   });
 
+  it("hides task-sensitive model assignment attributes", () => {
+    expect(
+      deriveEmployeeHandoffDisplay(
+        '<handoff to="reviewer" model="gpt-5.6-luna" reasoning="low">Check this.</handoff>',
+      ),
+    ).toEqual({ visibleText: "", toEmployeeId: reviewerId });
+  });
+
   it("summarizes the active employee and their group", () => {
     expect(
       employeeSelectionLabel(employees, {

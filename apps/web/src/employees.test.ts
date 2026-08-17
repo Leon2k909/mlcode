@@ -336,6 +336,18 @@ describe("deriveEmployeeHandoffDisplay", () => {
     });
   });
 
+  it("hides task-sensitive model assignment attributes", () => {
+    expect(
+      deriveEmployeeHandoffDisplay(
+        '<handoff to="reviewer" model="gpt-5.6-luna" reasoning="low">Check this.</handoff>',
+      ),
+    ).toEqual({
+      visibleText: "",
+      toEmployeeId: "reviewer",
+      message: "Check this.",
+    });
+  });
+
   it("hides a self-handoff when the source employee is known", () => {
     expect(
       deriveEmployeeHandoffDisplay("Done.\n<handoff to=ceo>Continue.</handoff>", {

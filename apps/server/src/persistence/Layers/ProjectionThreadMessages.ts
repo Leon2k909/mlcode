@@ -5,7 +5,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Struct from "effect/Struct";
-import { ChatAttachment, EmployeeId } from "@t3tools/contracts";
+import { ChatAttachment, EmployeeId, ModelSelection } from "@t3tools/contracts";
 
 import { toPersistenceSqlError } from "../Errors.ts";
 import {
@@ -21,6 +21,7 @@ const ProjectionThreadMessageDbRowSchema = ProjectionThreadMessage.mapFields(
   Struct.assign({
     isStreaming: Schema.Number,
     employeeId: Schema.NullOr(EmployeeId),
+    modelSelection: Schema.NullOr(Schema.fromJsonString(ModelSelection)),
     attachments: Schema.NullOr(Schema.fromJsonString(Schema.Array(ChatAttachment))),
   }),
 );
@@ -38,6 +39,7 @@ function toProjectionThreadMessage(
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     ...(row.employeeId !== null ? { employeeId: row.employeeId } : {}),
+    ...(row.modelSelection !== null ? { modelSelection: row.modelSelection } : {}),
     ...(row.attachments !== null ? { attachments: row.attachments } : {}),
   };
 }
@@ -50,6 +52,8 @@ const makeProjectionThreadMessageRepository = Effect.gen(function* () {
     execute: (row) => {
       const nextAttachmentsJson =
         row.attachments !== undefined ? JSON.stringify(row.attachments) : null;
+      const nextModelSelectionJson =
+        row.modelSelection !== undefined ? JSON.stringify(row.modelSelection) : null;
       return sql`
         INSERT INTO projection_thread_messages (
           message_id,
@@ -58,6 +62,7 @@ const makeProjectionThreadMessageRepository = Effect.gen(function* () {
           role,
           text,
           employee_id,
+          model_selection_json,
           attachments_json,
           is_streaming,
           created_at,
@@ -73,6 +78,14 @@ const makeProjectionThreadMessageRepository = Effect.gen(function* () {
             ${row.employeeId ?? null},
             (
               SELECT employee_id
+              FROM projection_thread_messages
+              WHERE message_id = ${row.messageId}
+            )
+          ),
+          COALESCE(
+            ${nextModelSelectionJson},
+            (
+              SELECT model_selection_json
               FROM projection_thread_messages
               WHERE message_id = ${row.messageId}
             )
@@ -99,6 +112,10 @@ const makeProjectionThreadMessageRepository = Effect.gen(function* () {
             excluded.employee_id,
             projection_thread_messages.employee_id
           ),
+          model_selection_json = COALESCE(
+            excluded.model_selection_json,
+            projection_thread_messages.model_selection_json
+          ),
           attachments_json = COALESCE(
             excluded.attachments_json,
             projection_thread_messages.attachments_json
@@ -122,6 +139,7 @@ const makeProjectionThreadMessageRepository = Effect.gen(function* () {
           role,
           text,
           employee_id AS "employeeId",
+          model_selection_json AS "modelSelection",
           attachments_json AS "attachments",
           is_streaming AS "isStreaming",
           created_at AS "createdAt",
@@ -144,6 +162,7 @@ const makeProjectionThreadMessageRepository = Effect.gen(function* () {
           role,
           text,
           employee_id AS "employeeId",
+          model_selection_json AS "modelSelection",
           attachments_json AS "attachments",
           is_streaming AS "isStreaming",
           created_at AS "createdAt",

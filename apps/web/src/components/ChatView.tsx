@@ -51,6 +51,7 @@ import {
 import { CHAT_LIST_ANCHOR_OFFSET } from "@t3tools/shared/chatList";
 import { projectScriptCwd, projectScriptRuntimeEnv } from "@t3tools/shared/projectScripts";
 import { truncate } from "@t3tools/shared/String";
+import { executeThreadGoalCommand } from "@t3tools/shared/threadGoal";
 import { nextTerminalId, resolveTerminalSessionLabel } from "@t3tools/shared/terminalLabels";
 import { Debouncer } from "@tanstack/react-pacer";
 import { useAtomValue } from "@effect/atom-react";
@@ -82,7 +83,9 @@ import { readLocalApi } from "../localApi";
 import { useDiffPanelStore } from "../diffPanelStore";
 import {
   collapseExpandedComposerCursor,
+  parseStandaloneComposerGoalCommand,
   parseStandaloneComposerSlashCommand,
+  type ComposerGoalCommand,
 } from "../composer-logic";
 import {
   derivePendingApprovals,
@@ -4958,6 +4961,71 @@ function ChatViewContent(props: ChatViewProps) {
     ],
   );
 
+  const onPruneOlderMessages = useCallback(
+    async (messageIds: ReadonlyArray<MessageId>) => {
+      const localApi = readLocalApi();
+      const uniqueMessageIds = [...new Set(messageIds)];
+      if (!localApi || !activeThread || uniqueMessageIds.length === 0 || isRevertingCheckpoint) {
+        return;
+      }
+
+      if (activeEnvironmentUnavailable && activeEnvironmentUnavailableLabel) {
+        setThreadError(
+          activeThread.id,
+          `Reconnect ${activeEnvironmentUnavailableLabel} before pruning older messages.`,
+        );
+        return;
+      }
+      if (phase === "running" || isSendBusy || isConnecting) {
+        setThreadError(activeThread.id, "Interrupt the current turn before pruning messages.");
+        return;
+      }
+
+      const confirmed = await localApi.dialogs.confirm(
+        [
+          "Delete older messages from this thread?",
+          `This removes ${uniqueMessageIds.length} older messages from this thread only. It will not change files or Git history, and it cannot be undone.`,
+        ].join("\n"),
+        { variant: "destructive" },
+      );
+      if (!confirmed) return;
+
+      setIsRevertingCheckpoint(true);
+      setThreadError(activeThread.id, null);
+      try {
+        const result = await deleteThreadMessage({
+          environmentId,
+          input: {
+            threadId: activeThread.id,
+            messageId: uniqueMessageIds[0]!,
+            messageIds: uniqueMessageIds,
+          },
+        });
+        if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+          const error = squashAtomCommandFailure(result);
+          setThreadError(
+            activeThread.id,
+            error instanceof Error ? error.message : "Failed to prune older messages.",
+          );
+        }
+      } finally {
+        setIsRevertingCheckpoint(false);
+      }
+    },
+    [
+      activeEnvironmentUnavailable,
+      activeEnvironmentUnavailableLabel,
+      activeThread,
+      deleteThreadMessage,
+      environmentId,
+      isConnecting,
+      isRevertingCheckpoint,
+      isSendBusy,
+      phase,
+      setThreadError,
+    ],
+  );
+
   const onEmployeeFeedback = useCallback(
     (_messageId: MessageId) => {
       const inserted = composerRef.current?.insertTextAtEnd(
@@ -4977,6 +5045,37 @@ function ChatViewContent(props: ChatViewProps) {
       );
     },
     [composerRef],
+  );
+
+  const onGoalCommand = useCallback(
+    async (command: ComposerGoalCommand) => {
+      const thread = activeThread;
+      const feedback = await executeThreadGoalCommand({
+        command,
+        currentGoal: thread?.goal ?? null,
+        hasThread: Boolean(thread),
+        canPersist: isServerThread,
+        now: new Date().toISOString(),
+        persist: async (goal) => {
+          if (!thread) return "No active thread.";
+          const result = await updateThreadMetadata({
+            environmentId,
+            input: { threadId: thread.id, goal },
+          });
+          return result._tag === "Failure"
+            ? chatActionErrorMessage(squashAtomCommandFailure(result))
+            : null;
+        },
+      });
+      toastManager.add(
+        stackedThreadToast({
+          type: feedback.tone,
+          title: feedback.title,
+          description: feedback.description,
+        }),
+      );
+    },
+    [activeThread, environmentId, isServerThread, updateThreadMetadata],
   );
 
   const onSend = async (
@@ -5093,6 +5192,22 @@ function ChatViewContent(props: ChatViewProps) {
         text: followUp.text,
         interactionMode: followUp.interactionMode,
       });
+      return;
+    }
+    const standaloneGoalCommand =
+      !directAnnotation &&
+      composerImages.length === 0 &&
+      sendableComposerTerminalContexts.length === 0 &&
+      composerElementContexts.length === 0 &&
+      composerPreviewAnnotations.length === 0 &&
+      composerReviewComments.length === 0
+        ? parseStandaloneComposerGoalCommand(trimmed)
+        : null;
+    if (standaloneGoalCommand) {
+      await onGoalCommand(standaloneGoalCommand);
+      promptRef.current = "";
+      clearComposerDraftContent(composerDraftTarget);
+      composerRef.current?.resetCursorState();
       return;
     }
     // Legacy plan mode: /plan and /default only act when the beta flag is on;
@@ -6941,6 +7056,7 @@ function ChatViewContent(props: ChatViewProps) {
                             onSteerQueuedMessage={onSteerQueuedMessage}
                             onSend={onSend}
                             onInterrupt={onInterrupt}
+                            onPruneOlderMessages={onPruneOlderMessages}
                             onImplementPlanInNewThread={onImplementPlanInNewThread}
                             onRespondToApproval={onRespondToApproval}
                             onSelectActivePendingUserInputOption={

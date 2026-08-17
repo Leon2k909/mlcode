@@ -164,7 +164,9 @@ export const DEFAULT_EMPLOYEES: EmployeeMap = Schema.decodeSync(EmployeeMap)({
     role: "Chief executive — decides and delegates",
     avatar: "🧠",
     providerInstanceId: DEFAULT_ROSTER_INSTANCE_ID,
+    modelMode: "override",
     model: DEFAULT_LEAD_MODEL,
+    modelOptions: [{ id: "reasoningEffort", value: "ultra" }],
     enabled: true,
     instructions: [
       "You are the routing CEO of this team. You own the decision, not the typing.",

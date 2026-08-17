@@ -11,6 +11,7 @@ import {
   OrchestrationGetFullThreadDiffInput,
   OrchestrationGetTurnDiffInput,
   OrchestrationLatestTurn,
+  OrchestrationMessage,
   ProjectCreatedPayload,
   ProjectMetaUpdatedPayload,
   OrchestrationProposedPlan,
@@ -38,6 +39,7 @@ const decodeThreadTurnStartRequestedPayload = Schema.decodeUnknownEffect(
   ThreadTurnStartRequestedPayload,
 );
 const decodeOrchestrationLatestTurn = Schema.decodeUnknownEffect(OrchestrationLatestTurn);
+const decodeOrchestrationMessage = Schema.decodeUnknownEffect(OrchestrationMessage);
 const decodeOrchestrationProposedPlan = Schema.decodeUnknownEffect(OrchestrationProposedPlan);
 const decodeOrchestrationSession = Schema.decodeUnknownEffect(OrchestrationSession);
 const decodeOrchestrationThread = Schema.decodeUnknownEffect(OrchestrationThread);
@@ -54,6 +56,38 @@ const decodeThreadCreatedPayload = Schema.decodeUnknownEffect(ThreadCreatedPaylo
 const decodeOrchestrationCommand = Schema.decodeUnknownEffect(OrchestrationCommand);
 const decodeOrchestrationEvent = Schema.decodeUnknownEffect(OrchestrationEvent);
 const decodeThreadMetaUpdatedPayload = Schema.decodeUnknownEffect(ThreadMetaUpdatedPayload);
+
+it.effect("decodes durable assistant model selections while keeping legacy rows valid", () =>
+  Effect.gen(function* () {
+    const baseMessage = {
+      id: "assistant-1",
+      role: "assistant",
+      text: "Done",
+      turnId: null,
+      streaming: false,
+      createdAt: "2026-08-17T12:00:00.000Z",
+      updatedAt: "2026-08-17T12:00:00.000Z",
+    };
+    const legacy = yield* decodeOrchestrationMessage(baseMessage);
+    const routed = yield* decodeOrchestrationMessage({
+      ...baseMessage,
+      modelSelection: {
+        instanceId: "codex",
+        model: "gpt-5.6-luna",
+        options: [{ id: "reasoningEffort", value: "low" }],
+        employeeId: "worker_alpha",
+      },
+    });
+
+    assert.strictEqual(legacy.modelSelection, undefined);
+    assert.deepStrictEqual(routed.modelSelection, {
+      instanceId: ProviderInstanceId.make("codex"),
+      model: "gpt-5.6-luna",
+      options: [{ id: "reasoningEffort", value: "low" }],
+      employeeId: EmployeeId.make("worker_alpha"),
+    });
+  }),
+);
 
 it.effect("parses turn diff input when fromTurnCount <= toTurnCount", () =>
   Effect.gen(function* () {
@@ -452,8 +486,10 @@ it.effect("defaults settled fields when decoding historical thread data", () =>
 
     assert.strictEqual(thread.settledOverride, null);
     assert.strictEqual(thread.settledAt, null);
+    assert.strictEqual(thread.goal, undefined);
     assert.strictEqual(shell.settledOverride, null);
     assert.strictEqual(shell.settledAt, null);
+    assert.strictEqual(shell.goal, undefined);
   }),
 );
 

@@ -13,8 +13,8 @@ Open **Settings → Employees** and choose **Add employee**.
 - **Avatar** — an emoji. Falls back to initials if you leave it empty.
 - **Runs on** — which provider does the work. Several employees can share one provider, so a single
   Claude or Codex setup can back a whole team.
-- **Model override** — pins this employee to one model. Leave it blank to use whatever the thread is
-  set to.
+- **Model routing** — **Auto** lets the group CEO choose a Codex model and reasoning level for each
+  task. **Override** pins the employee to the model and provider defaults you select.
 - **Standing instructions** — how this employee works. Up to 8,000 characters.
 
 Toggle an employee off to keep them configured but idle.
@@ -44,9 +44,16 @@ Only employees selected for that group can take part. Employee replies show thei
 and a handoff is marked in the timeline so the conversation reads like a small Slack or Teams
 channel rather than one anonymous agent.
 
-The default CEO is routing-only in a group: it chooses a worker before any tool use. If it attempts
-a tool instead of handing off, ML Code blocks that tool and continues the request automatically
-with an enabled worker rather than ending the conversation.
+The default CEO is routing-only in a group and stays on GPT-5.6 Sol with Ultra reasoning. For Codex
+workers set to **Auto**, it assigns Luna with Low reasoning for routine work, Terra with Medium or
+High reasoning for normal work, Sol with High reasoning for complex or high-risk work, and Sol with
+Ultra reasoning only for exceptional work. A worker set to **Override** keeps its saved model and
+provider defaults instead. Other providers keep the chat selection until they have an equivalent
+automatic routing policy.
+
+If the CEO attempts a tool instead of handing off, ML Code blocks that tool and continues the
+request automatically with an enabled worker rather than ending the conversation. That recovery
+uses Luna with Low reasoning for an Auto-routed Codex worker.
 
 The composer and sidebar list the employees by name. If you change the group while an employee is
 already working, the picker says **Next turn**: the running turn keeps its original membership, and

@@ -116,6 +116,7 @@ import { ContextWindowMeter } from "./ContextWindowMeter";
 import {
   resolveContextWindowFastMode,
   resolveContextWindowModelDisplayName,
+  type ContextPrunableMessage,
 } from "./ContextWindowMeter.logic";
 import { buildExpandedImagePreview, type ExpandedImagePreview } from "./ExpandedImagePreview";
 import { basenameOfPath } from "../../pierre-icons";
@@ -407,6 +408,9 @@ const ComposerFooterModeControls = memo(function ComposerFooterModeControls(prop
 const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(props: {
   compact: boolean;
   activeContextWindow: ReturnType<typeof deriveLatestContextWindowSnapshot>;
+  contextMessages: ReadonlyArray<ContextPrunableMessage<MessageId>>;
+  prunePromptKey: string | null;
+  onPruneOlderMessages: (messageIds: ReadonlyArray<MessageId>) => void;
   activeThreadProviderDisplayName: string | null;
   activeThreadModelDisplayName: string | null;
   activeThreadFastMode: boolean | null;
@@ -438,6 +442,9 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
       {props.activeContextWindow ? (
         <ContextWindowMeter
           usage={props.activeContextWindow}
+          messages={props.contextMessages}
+          prunePromptKey={props.prunePromptKey}
+          onPruneOlderMessages={props.onPruneOlderMessages}
           providerDisplayName={props.activeThreadProviderDisplayName}
           modelDisplayName={props.activeThreadModelDisplayName}
           fastMode={props.activeThreadFastMode}
@@ -814,6 +821,7 @@ export interface ChatComposerProps {
     mode?: ThreadTurnDispatchMode,
   ) => void;
   onInterrupt: () => void;
+  onPruneOlderMessages: (messageIds: ReadonlyArray<MessageId>) => void;
   onImplementPlanInNewThread: () => void;
   onRespondToApproval: (
     requestId: ApprovalRequestId,
@@ -920,6 +928,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     onSteerQueuedMessage,
     onSend,
     onInterrupt,
+    onPruneOlderMessages,
     onImplementPlanInNewThread,
     onRespondToApproval,
     onSelectActivePendingUserInputOption,
@@ -1377,6 +1386,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           command: "model",
           label: "/model",
           description: "Switch response model for this thread",
+        },
+        {
+          id: "slash:goal",
+          type: "slash-command",
+          command: "goal",
+          label: "/goal",
+          description: "Set or manage a persistent thread goal",
         },
         ...(planModeUiEnabled
           ? ([
@@ -2018,6 +2034,24 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           if (applied) {
             setComposerHighlightedItemId(null);
             setIsComposerModelPickerOpen(true);
+          }
+          return;
+        }
+        if (item.command === "goal") {
+          const replacement = "/goal ";
+          const replacementRangeEnd = extendReplacementRangeForTrailingSpace(
+            snapshot.value,
+            trigger.rangeEnd,
+            replacement,
+          );
+          const applied = applyPromptReplacement(
+            trigger.rangeStart,
+            replacementRangeEnd,
+            replacement,
+            { expectedText: snapshot.value.slice(trigger.rangeStart, replacementRangeEnd) },
+          );
+          if (applied) {
+            setComposerHighlightedItemId(null);
           }
           return;
         }
@@ -3563,6 +3597,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 <ComposerFooterPrimaryActions
                   compact={isComposerPrimaryActionsCompact}
                   activeContextWindow={activeContextWindow}
+                  contextMessages={activeThread?.messages ?? []}
+                  prunePromptKey={activeThread?.id ?? null}
+                  onPruneOlderMessages={onPruneOlderMessages}
                   activeThreadProviderDisplayName={activeThreadProviderDisplayName}
                   activeThreadModelDisplayName={activeThreadModelDisplayName}
                   activeThreadFastMode={activeThreadFastMode}

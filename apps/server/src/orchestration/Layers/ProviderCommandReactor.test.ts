@@ -576,6 +576,132 @@ describe("ProviderCommandReactor", () => {
     expect(thread?.session?.runtimeMode).toBe("approval-required");
   });
 
+  it("includes an active persistent goal in the provider input", async () => {
+    const harness = await createHarness();
+    const now = "2026-08-17T10:00:00.000Z";
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.meta.update",
+        commandId: CommandId.make("cmd-goal-active"),
+        threadId: ThreadId.make("thread-1"),
+        goal: {
+          objective: "Ship onboarding",
+          status: "active",
+          createdAt: now,
+          updatedAt: now,
+        },
+      }),
+    );
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-turn-goal-active"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-message-goal-active"),
+          role: "user",
+          text: "Continue the work",
+          attachments: [],
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: now,
+      }),
+    );
+
+    await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+    expect(harness.sendTurn.mock.calls[0]?.[0]).toMatchObject({
+      input:
+        "[Persistent thread goal]\nObjective: Ship onboarding\nContinue working toward this objective unless the user explicitly changes or clears it.\n\nContinue the work",
+    });
+  });
+
+  it("does not include a paused persistent goal in the provider input", async () => {
+    const harness = await createHarness();
+    const now = "2026-08-17T10:00:00.000Z";
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.meta.update",
+        commandId: CommandId.make("cmd-goal-paused"),
+        threadId: ThreadId.make("thread-1"),
+        goal: {
+          objective: "Ship onboarding",
+          status: "paused",
+          createdAt: now,
+          updatedAt: now,
+        },
+      }),
+    );
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-turn-goal-paused"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-message-goal-paused"),
+          role: "user",
+          text: "Continue without the goal",
+          attachments: [],
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: now,
+      }),
+    );
+
+    await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+    expect(harness.sendTurn.mock.calls[0]?.[0]).toMatchObject({
+      input: "Continue without the goal",
+    });
+  });
+
+  it("does not resurrect a cleared persistent goal in the provider input", async () => {
+    const harness = await createHarness();
+    const now = "2026-08-17T10:00:00.000Z";
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.meta.update",
+        commandId: CommandId.make("cmd-goal-before-clear"),
+        threadId: ThreadId.make("thread-1"),
+        goal: {
+          objective: "Ship onboarding",
+          status: "active",
+          createdAt: now,
+          updatedAt: now,
+        },
+      }),
+    );
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.meta.update",
+        commandId: CommandId.make("cmd-goal-cleared"),
+        threadId: ThreadId.make("thread-1"),
+        goal: null,
+      }),
+    );
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-turn-goal-cleared"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-message-goal-cleared"),
+          role: "user",
+          text: "Continue after clearing",
+          attachments: [],
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: now,
+      }),
+    );
+
+    await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+    expect(harness.sendTurn.mock.calls[0]?.[0]).toMatchObject({
+      input: "Continue after clearing",
+    });
+  });
+
   it("repairs a uniquely renamed project folder before starting the provider", async () => {
     const workspaceParent = NodeFS.mkdtempSync(
       NodePath.join(NodeOS.tmpdir(), "t3code-reactor-relocation-"),
@@ -2631,6 +2757,70 @@ describe("ProviderCommandReactor", () => {
         ],
         employeeId: workerId,
       },
+    });
+  });
+
+  it("keeps the routing CEO on its configured Sol Ultra override", async () => {
+    const ceoId = EmployeeId.make("ceo");
+    const workerId = EmployeeId.make("worker_alpha");
+    const harness = await createHarness({
+      serverSettings: {
+        employees: {
+          [ceoId]: {
+            displayName: "Ceo",
+            role: "Chief executive",
+            providerInstanceId: ProviderInstanceId.make("codex"),
+            modelMode: "override",
+            model: "gpt-5.6-sol",
+            modelOptions: [{ id: "reasoningEffort", value: "ultra" }],
+            instructions: "Route the task.",
+            enabled: true,
+          },
+          [workerId]: {
+            displayName: "Alpha",
+            role: "Implementation",
+            providerInstanceId: ProviderInstanceId.make("codex"),
+            modelMode: "auto",
+            instructions: "Implement the task.",
+            enabled: true,
+          },
+        },
+      },
+    });
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-ceo-sol-ultra"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-ceo-sol-ultra"),
+          role: "user",
+          text: "Route this task.",
+          attachments: [],
+        },
+        modelSelection: {
+          instanceId: ProviderInstanceId.make("codex"),
+          model: "gpt-5.6-luna",
+          options: [{ id: "reasoningEffort", value: "low" }],
+          employeeId: ceoId,
+          employeeIds: [ceoId, workerId],
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: "2026-08-17T15:00:00.000Z",
+      }),
+    );
+
+    await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+    expect(harness.sendTurn.mock.calls[0]?.[0]).toMatchObject({
+      modelSelection: {
+        instanceId: ProviderInstanceId.make("codex"),
+        model: "gpt-5.6-sol",
+        options: [{ id: "reasoningEffort", value: "ultra" }],
+        employeeId: ceoId,
+      },
+      toolPolicy: "deny-all",
     });
   });
 

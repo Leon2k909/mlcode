@@ -1023,18 +1023,8 @@ function resolveTimelineEmployee(employees: EmployeeMap, employeeId: EmployeeId)
   return Object.hasOwn(employees, employeeId) ? employees[employeeId] : undefined;
 }
 
-function resolveTimelineModel(
-  modelSelection: ModelSelection | null,
-  employee: ReturnType<typeof resolveTimelineEmployee>,
-) {
-  if (modelSelection === null) return undefined;
-  // The server applies an employee's saved model only when the requested
-  // provider instance is that employee's default instance. When the chat
-  // explicitly uses another provider, the chat model wins.
-  if (employee?.model !== undefined && employee.providerInstanceId === modelSelection.instanceId) {
-    return employee.model;
-  }
-  return modelSelection.model;
+function resolveTimelineModel(modelSelection: ModelSelection | null) {
+  return modelSelection?.model;
 }
 
 const REASONING_OPTION_IDS = new Set(["reasoningEffort", "effort", "reasoning"]);
@@ -1095,23 +1085,30 @@ function resolveEmployeeIdByDisplayName(
 
 function EmployeeTimelineIdentity({
   employeeId,
+  modelSelection,
   suffix,
 }: {
   employeeId: EmployeeId;
+  modelSelection?: ModelSelection | null;
   suffix?: string;
 }) {
   const ctx = use(TimelineRowCtx);
   const employee = resolveTimelineEmployee(ctx.employees, employeeId);
   const displayName = employee?.displayName ?? employeeId;
-  const model = resolveTimelineModel(ctx.modelSelection, employee);
-  const reasoningEffort = resolveTimelineReasoningEffort(ctx.modelSelection);
+  const effectiveModelSelection =
+    modelSelection === undefined ? ctx.modelSelection : modelSelection;
+  const model = resolveTimelineModel(effectiveModelSelection);
+  const reasoningEffort = resolveTimelineReasoningEffort(effectiveModelSelection);
   const reasoningEffortLabel =
     reasoningEffort === undefined ? undefined : formatTimelineReasoningEffort(reasoningEffort);
-  const provider = employee
-    ? formatProviderDisplayName(
-        ctx.modelSelection?.instanceId ?? ctx.providerInstanceId ?? employee.providerInstanceId,
-      )
-    : null;
+  const provider =
+    employee && effectiveModelSelection !== null
+      ? formatProviderDisplayName(
+          effectiveModelSelection?.instanceId ??
+            ctx.providerInstanceId ??
+            employee.providerInstanceId,
+        )
+      : null;
   const hoverLabel =
     model === undefined
       ? undefined
@@ -1414,12 +1411,13 @@ function TurnFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "turn-
 
 function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
   const ctx = use(TimelineRowCtx);
-  // Older assistant rows may predate employee attribution. If the thread is
-  // now routed through an employee, show that active speaker rather than
-  // falling back to an unlabeled provider response.
-  const employeeId = row.message.employeeId ?? ctx.modelSelection?.employeeId;
+  // A thread's current selection cannot describe a historical response. Older
+  // rows without durable metadata stay unlabeled instead of adopting whichever
+  // provider/model the user selects later.
+  const modelSelection = row.message.modelSelection ?? null;
+  const employeeId = row.message.employeeId ?? row.message.modelSelection?.employeeId;
   const rawMessageText = row.message.text ?? "";
-  const reasoningEffort = resolveTimelineReasoningEffort(ctx.modelSelection);
+  const reasoningEffort = resolveTimelineReasoningEffort(modelSelection);
   const reasoningEffortLabel =
     reasoningEffort === undefined ? undefined : formatTimelineReasoningEffort(reasoningEffort);
   const handoff =
@@ -1443,19 +1441,19 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
       <div className="relative min-w-0 px-1 py-0.5">
         {employeeId !== undefined ? (
           <div className="mb-2">
-            <EmployeeTimelineIdentity employeeId={employeeId} />
+            <EmployeeTimelineIdentity employeeId={employeeId} modelSelection={modelSelection} />
           </div>
-        ) : ctx.modelSelection?.model ? (
+        ) : modelSelection?.model ? (
           <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
             <span className="rounded-full border border-border/60 bg-muted/35 px-1.5 py-0.5 font-mono text-[10px]">
-              model {ctx.modelSelection.model}
+              model {modelSelection.model}
             </span>
             {reasoningEffortLabel ? (
               <span className="rounded-full border border-border/60 bg-muted/35 px-1.5 py-0.5 text-[10px]">
                 reasoning {reasoningEffortLabel}
               </span>
             ) : null}
-            <span>via {formatProviderDisplayName(ctx.modelSelection.instanceId)}</span>
+            <span>via {formatProviderDisplayName(modelSelection.instanceId)}</span>
           </div>
         ) : null}
         {messageDisplay.text.length > 0 ? (
@@ -1483,12 +1481,7 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
             </span>
             {targetEmployee ? (
               <span className="text-muted-foreground">
-                via{" "}
-                {formatProviderDisplayName(
-                  ctx.modelSelection?.instanceId ??
-                    ctx.providerInstanceId ??
-                    targetEmployee.providerInstanceId,
-                )}
+                via {formatProviderDisplayName(targetEmployee.providerInstanceId)}
               </span>
             ) : null}
           </div>

@@ -38,6 +38,7 @@ import {
   applyEmployeeGroupWorkflowReminder,
   applyEmployeePreamble,
 } from "../../employee/EmployeeInstructions.ts";
+import { applyPersistentThreadGoal } from "../goal.ts";
 import { checkWorkspacePath, describeMissingWorkspace } from "../../project/WorkspaceRelocation.ts";
 import { increment, orchestrationEventsProcessedTotal } from "../../observability/Metrics.ts";
 import { ProviderAdapterRequestError } from "../../provider/Errors.ts";
@@ -973,12 +974,16 @@ const make = Effect.gen(function* () {
       // Employee options are defaults for the employee's saved provider. A
       // client-supplied selection remains authoritative, while an omitted
       // options field (including older clients) picks up the saved defaults.
+      // The routing CEO is the exception: its configured override must stay
+      // authoritative so a stale composer selection cannot lower the lead.
+      const pinsCeoOptions =
+        selectedEmployeeId === "ceo" && (selectedEmployee.modelOptions?.length ?? 0) > 0;
       const optionsForSelection =
-        options !== undefined
-          ? options
-          : usesEmployeeModelOverride && targetInstanceId === selectedEmployee.providerInstanceId
-            ? selectedEmployee.modelOptions
-            : undefined;
+        usesEmployeeModelOverride &&
+        targetInstanceId === selectedEmployee.providerInstanceId &&
+        (options === undefined || pinsCeoOptions)
+          ? selectedEmployee.modelOptions
+          : options;
       const effectiveSelectionWithEmployeeOptions = applyEmployeeFastMode(
         {
           ...selectionWithoutOptions,
@@ -1068,13 +1073,14 @@ const make = Effect.gen(function* () {
       selection: employeeSelection,
       messageText: messageTextForTurn,
     });
+    const messageTextWithGoal = applyPersistentThreadGoal(routedMessageText, thread.goal);
     const providerSwitchContext = providerChanged
       ? buildProviderSwitchContext(thread.messages, input.messageId)
       : undefined;
     const normalizedInput = toNonEmptyProviderInput(
       providerSwitchContext === undefined
-        ? routedMessageText
-        : `${providerSwitchContext}\n\n[Continue with the new turn]\n\n${routedMessageText}`,
+        ? messageTextWithGoal
+        : `${providerSwitchContext}\n\n[Continue with the new turn]\n\n${messageTextWithGoal}`,
     );
     const normalizedAttachments = input.attachments ?? [];
     const activeSession = yield* providerService

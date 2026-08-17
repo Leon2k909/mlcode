@@ -312,6 +312,7 @@ export function projectEvent(
             archivedAt: null,
             settledOverride: null,
             settledAt: null,
+            goal: null,
             snoozedUntil: null,
             snoozedAt: null,
             deletedAt: null,
@@ -465,6 +466,7 @@ export function projectEvent(
               : {}),
             ...(payload.branch !== undefined ? { branch: payload.branch } : {}),
             ...(payload.worktreePath !== undefined ? { worktreePath: payload.worktreePath } : {}),
+            ...(payload.goal !== undefined ? { goal: payload.goal } : {}),
             updatedAt: payload.updatedAt,
           }),
         })),
@@ -517,6 +519,9 @@ export function projectEvent(
             role: payload.role,
             text: payload.text,
             ...(payload.employeeId !== undefined ? { employeeId: payload.employeeId } : {}),
+            ...(payload.modelSelection !== undefined
+              ? { modelSelection: payload.modelSelection }
+              : {}),
             ...(payload.attachments !== undefined ? { attachments: payload.attachments } : {}),
             turnId: payload.turnId,
             streaming: payload.streaming,
@@ -542,6 +547,9 @@ export function projectEvent(
                     updatedAt: message.updatedAt,
                     turnId: message.turnId,
                     ...(message.employeeId !== undefined ? { employeeId: message.employeeId } : {}),
+                    ...(message.modelSelection !== undefined
+                      ? { modelSelection: message.modelSelection }
+                      : {}),
                     ...(message.attachments !== undefined
                       ? { attachments: message.attachments }
                       : {}),

@@ -9,7 +9,7 @@ import {
 } from "@t3tools/contracts";
 
 const EMPLOYEE_HANDOFF_PATTERN =
-  /<handoff\s+to\s*=\s*["']?([a-zA-Z][a-zA-Z0-9_-]*)["']?\s*>([\s\S]*?)<\/handoff>/i;
+  /<handoff\b(?=[^>]*\bto\s*=\s*["']?([a-zA-Z][a-zA-Z0-9_-]*)["']?)[^>]*>([\s\S]*?)<\/handoff>/i;
 
 export interface MobileEmployeeEntry {
   readonly employeeId: EmployeeId;

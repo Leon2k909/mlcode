@@ -5,6 +5,50 @@ import {
 } from "@t3tools/shared/model";
 import { getTriggerDisplayModelName, type ModelEsque } from "./providerIconUtils";
 
+export type ContextPrunableMessage<MessageId extends string = string> = {
+  readonly id: MessageId;
+  readonly role: "user" | "assistant" | "system";
+};
+
+const CONTEXT_PRUNE_MIN_USER_TURNS = 5;
+const CONTEXT_PRUNE_RETAIN_USER_TURNS = 4;
+const CONTEXT_PRUNE_MIN_USED_PERCENTAGE = 80;
+
+export function shouldOfferContextPrune(input: {
+  usedPercentage: number | null;
+  messageCount: number;
+}): boolean {
+  return (
+    input.messageCount >= CONTEXT_PRUNE_MIN_USER_TURNS * 2 &&
+    input.usedPercentage !== null &&
+    Number.isFinite(input.usedPercentage) &&
+    input.usedPercentage >= CONTEXT_PRUNE_MIN_USED_PERCENTAGE
+  );
+}
+
+/**
+ * Returns the oldest complete portion of a thread while retaining the latest
+ * four user turns. System messages are never selected. The caller still owns
+ * the confirmation and server-side validation before anything is removed.
+ */
+export function selectOldestMessageIdsForPruning<MessageId extends string>(
+  messages: ReadonlyArray<ContextPrunableMessage<MessageId>>,
+): ReadonlyArray<MessageId> {
+  const userMessageIndexes = messages.flatMap((message, index) =>
+    message.role === "user" ? [index] : [],
+  );
+  const pruneUserTurnCount = userMessageIndexes.length - CONTEXT_PRUNE_RETAIN_USER_TURNS;
+  if (pruneUserTurnCount <= 0) return [];
+
+  const cutoffIndex = userMessageIndexes[pruneUserTurnCount];
+  if (cutoffIndex === undefined) return [];
+
+  return messages
+    .slice(0, cutoffIndex)
+    .filter((message) => message.role !== "system")
+    .map((message) => message.id);
+}
+
 export function resolveContextWindowModelDisplayName(
   selection: ModelSelection | null | undefined,
   modelOptionsByInstance: ReadonlyMap<ProviderInstanceId, ReadonlyArray<ModelEsque>>,

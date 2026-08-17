@@ -42,6 +42,31 @@ describe("parseEmployeeHandoff", () => {
     if (result.kind !== "handoff") return;
     expect(result.handoff.toEmployeeId).toBe("reviewer");
     expect(result.handoff.message).toBe("Check the auth path.");
+    expect(result.handoff.codexAssignment).toBeUndefined();
+  });
+
+  it.each([
+    ["gpt-5.6-luna", "low"],
+    ["gpt-5.6-terra", "medium"],
+    ["gpt-5.6-terra", "high"],
+    ["gpt-5.6-sol", "high"],
+    ["gpt-5.6-sol", "ultra"],
+  ] as const)("parses the CEO Codex assignment %s/%s", (model, reasoning) => {
+    const result = parse(
+      `<handoff reasoning="${reasoning}" to="reviewer" model="${model}">Do it.</handoff>`,
+    );
+    if (result.kind !== "handoff") throw new Error("expected handoff");
+    expect(result.handoff.codexAssignment).toEqual({ model, reasoning });
+  });
+
+  it.each([
+    '<handoff to="reviewer" model="gpt-5.6-sol">Do it.</handoff>',
+    '<handoff to="reviewer" model="gpt-5.6-luna" reasoning="ultra">Do it.</handoff>',
+    '<handoff to="reviewer" model="made-up" reasoning="low">Do it.</handoff>',
+  ])("keeps a handoff but discards an invalid assignment", (text) => {
+    const result = parse(text);
+    if (result.kind !== "handoff") throw new Error("expected handoff");
+    expect(result.handoff.codexAssignment).toBeUndefined();
   });
 
   it("strips the block from the text shown in the timeline", () => {

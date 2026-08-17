@@ -52,10 +52,24 @@ import { ServerSettingsService } from "../../serverSettings.ts";
 import { recordUsageLimits } from "../../usage/usageLimits.ts";
 import {
   canContinueHandoffChain,
+  type CodexHandoffAssignment,
   describeHandoffRejection,
   parseEmployeeHandoff,
   resolveAutomaticEmployeeHandoffTarget,
 } from "../../employee/EmployeeHandoff.ts";
+
+const DEFAULT_CODEX_HANDOFF_ASSIGNMENT: CodexHandoffAssignment = {
+  model: "gpt-5.6-luna",
+  reasoning: "low",
+};
+
+const applyCodexHandoffReasoning = (
+  options: ModelSelection["options"],
+  reasoning: CodexHandoffAssignment["reasoning"],
+): NonNullable<ModelSelection["options"]> => [
+  ...(options ?? []).filter((option) => option.id !== "reasoningEffort"),
+  { id: "reasoningEffort", value: reasoning },
+];
 
 const providerTurnKey = (threadId: ThreadId, turnId: TurnId) => `${threadId}:${turnId}`;
 const providerTaskKey = (threadId: ThreadId, taskId: string) => `${threadId}:${taskId}`;
@@ -1216,6 +1230,7 @@ const make = Effect.gen(function* () {
     threadId: ThreadId;
     messageId: MessageId;
     employeeId?: EmployeeId;
+    modelSelection: ModelSelection;
     turnId?: TurnId;
     createdAt: string;
     commandTag: string;
@@ -1233,6 +1248,7 @@ const make = Effect.gen(function* () {
         messageId: input.messageId,
         delta: bufferedText,
         ...(input.employeeId !== undefined ? { employeeId: input.employeeId } : {}),
+        modelSelection: input.modelSelection,
         ...(input.turnId ? { turnId: input.turnId } : {}),
         createdAt: input.createdAt,
       });
@@ -1243,6 +1259,7 @@ const make = Effect.gen(function* () {
     event: ProviderRuntimeEvent;
     threadId: ThreadId;
     employeeId?: EmployeeId;
+    modelSelection: ModelSelection;
     turnId: TurnId;
     createdAt: string;
     commandTag: string;
@@ -1261,6 +1278,7 @@ const make = Effect.gen(function* () {
             threadId: input.threadId,
             messageId,
             ...(input.employeeId !== undefined ? { employeeId: input.employeeId } : {}),
+            modelSelection: input.modelSelection,
             turnId: input.turnId,
             createdAt: input.createdAt,
             commandTag: input.commandTag,
@@ -1279,6 +1297,7 @@ const make = Effect.gen(function* () {
     threadId: ThreadId;
     messageId: MessageId;
     employeeId?: EmployeeId;
+    modelSelection: ModelSelection;
     turnId?: TurnId;
     createdAt: string;
     commandTag: string;
@@ -1304,6 +1323,7 @@ const make = Effect.gen(function* () {
           messageId: input.messageId,
           delta: text,
           ...(input.employeeId !== undefined ? { employeeId: input.employeeId } : {}),
+          modelSelection: input.modelSelection,
           ...(input.turnId ? { turnId: input.turnId } : {}),
           createdAt: input.createdAt,
         });
@@ -1316,6 +1336,7 @@ const make = Effect.gen(function* () {
           threadId: input.threadId,
           messageId: input.messageId,
           ...(input.employeeId !== undefined ? { employeeId: input.employeeId } : {}),
+          modelSelection: input.modelSelection,
           ...(input.turnId ? { turnId: input.turnId } : {}),
           createdAt: input.createdAt,
         });
@@ -1327,6 +1348,7 @@ const make = Effect.gen(function* () {
     event: ProviderRuntimeEvent;
     threadId: ThreadId;
     employeeId?: EmployeeId;
+    modelSelection: ModelSelection;
     turnId: TurnId;
     createdAt: string;
     commandTag: string;
@@ -1348,6 +1370,7 @@ const make = Effect.gen(function* () {
         threadId: input.threadId,
         messageId: activeMessageId.value,
         ...(input.employeeId !== undefined ? { employeeId: input.employeeId } : {}),
+        modelSelection: input.modelSelection,
         turnId: input.turnId,
         createdAt: input.createdAt,
         commandTag: input.commandTag,
@@ -1622,6 +1645,7 @@ const make = Effect.gen(function* () {
     readonly employees: EmployeeMap;
     readonly toEmployeeId: EmployeeId;
     readonly message: string;
+    readonly codexAssignment?: CodexHandoffAssignment;
     readonly completedHandoffs: number;
   }) {
     const selection = input.thread.modelSelection;
@@ -1691,13 +1715,20 @@ const make = Effect.gen(function* () {
     }
 
     const usesEmployeeModelOverride = employeeUsesModelOverride(targetEmployee);
-    const targetModel = usesSelectedProvider
-      ? usesEmployeeModelOverride && targetInstanceId === targetEmployee.providerInstanceId
-        ? (targetEmployee.model ?? selection.model)
-        : selection.model
-      : usesEmployeeModelOverride
-        ? (targetEmployee.model ?? DEFAULT_MODEL_BY_PROVIDER[targetInfo.driverKind])
-        : DEFAULT_MODEL_BY_PROVIDER[targetInfo.driverKind];
+    const appliesEmployeeModelOverride =
+      usesEmployeeModelOverride && targetInstanceId === targetEmployee.providerInstanceId;
+    const ceoCodexAssignment =
+      fromEmployeeId === "ceo" && !usesEmployeeModelOverride && targetInfo.driverKind === "codex"
+        ? (input.codexAssignment ?? DEFAULT_CODEX_HANDOFF_ASSIGNMENT)
+        : undefined;
+    const targetModel = appliesEmployeeModelOverride
+      ? (targetEmployee.model ??
+        (usesSelectedProvider ? selection.model : DEFAULT_MODEL_BY_PROVIDER[targetInfo.driverKind]))
+      : ceoCodexAssignment !== undefined
+        ? ceoCodexAssignment.model
+        : usesSelectedProvider
+          ? selection.model
+          : DEFAULT_MODEL_BY_PROVIDER[targetInfo.driverKind];
     if (!targetModel) {
       consecutiveEmployeeHandoffs.delete(input.thread.id);
       yield* appendEmployeeHandoffActivity({
@@ -1711,13 +1742,20 @@ const make = Effect.gen(function* () {
       return false;
     }
 
+    const inheritedOptions =
+      selection.instanceId === targetInstanceId ? selection.options : undefined;
+    const targetOptions = appliesEmployeeModelOverride
+      ? targetEmployee.modelOptions
+      : ceoCodexAssignment !== undefined
+        ? applyCodexHandoffReasoning(inheritedOptions, ceoCodexAssignment.reasoning)
+        : inheritedOptions;
     const nextModelSelection: ModelSelection = {
       instanceId: targetInstanceId,
       model: targetModel,
       employeeId: input.toEmployeeId,
       employeeIds: [...groupEmployeeIds],
-      ...(selection.instanceId === targetInstanceId && selection.options !== undefined
-        ? { options: selection.options }
+      ...(targetOptions !== undefined && targetOptions.length > 0
+        ? { options: targetOptions }
         : {}),
     };
     const sourceEmployee = resolveEmployee(input.employees, fromEmployeeId);
@@ -1840,6 +1878,9 @@ const make = Effect.gen(function* () {
       employees: settings.employees,
       toEmployeeId: result.handoff.toEmployeeId,
       message: result.handoff.message,
+      ...(result.handoff.codexAssignment !== undefined
+        ? { codexAssignment: result.handoff.codexAssignment }
+        : {}),
       completedHandoffs: consecutiveEmployeeHandoffs.get(input.thread.id) ?? 0,
     });
   });
@@ -2189,6 +2230,7 @@ const make = Effect.gen(function* () {
               messageId: assistantMessageId,
               delta: spillChunk,
               ...(employeeId !== undefined ? { employeeId } : {}),
+              modelSelection: thread.modelSelection,
               ...(turnId ? { turnId } : {}),
               createdAt: now,
             });
@@ -2201,6 +2243,7 @@ const make = Effect.gen(function* () {
             messageId: assistantMessageId,
             delta: assistantDelta,
             ...(employeeId !== undefined ? { employeeId } : {}),
+            modelSelection: thread.modelSelection,
             ...(turnId ? { turnId } : {}),
             createdAt: now,
           });
@@ -2223,6 +2266,7 @@ const make = Effect.gen(function* () {
                 event,
                 threadId: thread.id,
                 ...(employeeId !== undefined ? { employeeId } : {}),
+                modelSelection: thread.modelSelection,
                 turnId: pauseForUserTurnId,
                 createdAt: now,
                 commandTag:
@@ -2235,6 +2279,7 @@ const make = Effect.gen(function* () {
           event,
           threadId: thread.id,
           ...(employeeId !== undefined ? { employeeId } : {}),
+          modelSelection: thread.modelSelection,
           turnId: pauseForUserTurnId,
           createdAt: now,
           commandTag:
@@ -2317,6 +2362,7 @@ const make = Effect.gen(function* () {
             threadId: thread.id,
             messageId: assistantMessageId,
             ...(employeeId !== undefined ? { employeeId } : {}),
+            modelSelection: thread.modelSelection,
             ...(turnId ? { turnId } : {}),
             createdAt: now,
             commandTag: "assistant-complete",
@@ -2365,6 +2411,7 @@ const make = Effect.gen(function* () {
                 threadId: thread.id,
                 messageId: assistantMessageId,
                 ...(employeeId !== undefined ? { employeeId } : {}),
+                modelSelection: thread.modelSelection,
                 turnId,
                 createdAt: now,
                 commandTag: "assistant-complete-finalize",

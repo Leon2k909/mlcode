@@ -49,6 +49,7 @@ import { fromJsonStringPretty, fromLenientJson } from "@t3tools/shared/schemaJso
 import {
   applyServerSettingsPatch,
   isModelSelectionProviderEnabled,
+  normalizeServerSettingsEmployees,
 } from "@t3tools/shared/serverSettings";
 import * as ServerSecretStore from "./auth/ServerSecretStore.ts";
 
@@ -303,7 +304,7 @@ const make = Effect.gen(function* () {
       });
       return DEFAULT_SERVER_SETTINGS;
     }
-    return decoded.value;
+    return normalizeServerSettingsEmployees(decoded.value);
   });
 
   const settingsCache = yield* Cache.make<typeof cacheKey, ServerSettings, ServerSettingsError>({

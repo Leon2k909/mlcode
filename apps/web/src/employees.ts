@@ -21,7 +21,7 @@ const EMPLOYEE_ID_MAX_CHARS = 64;
 /** Mirrors `EMPLOYEE_SLUG_PATTERN` in `packages/contracts/src/employee.ts`. */
 const EMPLOYEE_ID_PATTERN = /^[a-zA-Z][a-zA-Z0-9_-]*$/;
 const EMPLOYEE_HANDOFF_PATTERN =
-  /<handoff\s+to\s*=\s*["']?([a-zA-Z][a-zA-Z0-9_-]*)["']?\s*>([\s\S]*?)<\/handoff>/i;
+  /<handoff\b(?=[^>]*\bto\s*=\s*["']?([a-zA-Z][a-zA-Z0-9_-]*)["']?)[^>]*>([\s\S]*?)<\/handoff>/i;
 
 export interface EmployeeEntry {
   readonly employeeId: EmployeeId;

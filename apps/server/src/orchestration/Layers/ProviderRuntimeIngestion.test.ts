@@ -483,7 +483,7 @@ describe("ProviderRuntimeIngestion", () => {
     });
   });
 
-  it("lets an auto employee inherit the active model through a handoff", async () => {
+  it("uses the CEO's task-sensitive assignment for an auto employee handoff", async () => {
     const ceoId = EmployeeId.make("ceo");
     const workerId = EmployeeId.make("worker_alpha");
     const harness = await createHarness({
@@ -540,7 +540,8 @@ describe("ProviderRuntimeIngestion", () => {
       itemId: asItemId("item-auto-employee-handoff"),
       payload: {
         streamKind: "assistant_text",
-        delta: '<handoff to="worker_alpha">Implement this.</handoff>',
+        delta:
+          'Delegating this routine task.\n\n<handoff to="worker_alpha" model="gpt-5.6-terra" reasoning="high">Implement this.</handoff>',
       },
     });
     harness.emit({
@@ -565,12 +566,26 @@ describe("ProviderRuntimeIngestion", () => {
 
     const thread = await waitForThread(
       harness.readModel,
-      (entry) => entry.modelSelection.employeeId === workerId,
+      (entry) =>
+        entry.modelSelection.employeeId === workerId &&
+        entry.messages.some(
+          (message) =>
+            message.id === "assistant:item-auto-employee-handoff" &&
+            message.modelSelection !== undefined,
+        ),
     );
-    expect(thread.modelSelection).toMatchObject({
-      instanceId: ProviderInstanceId.make("codex"),
+    expect(
+      thread.messages.find((message) => message.id === "assistant:item-auto-employee-handoff")
+        ?.modelSelection,
+    ).toMatchObject({
       model: "gpt-5.6-sol",
       options: [{ id: "reasoningEffort", value: "low" }],
+      employeeId: ceoId,
+    });
+    expect(thread.modelSelection).toMatchObject({
+      instanceId: ProviderInstanceId.make("codex"),
+      model: "gpt-5.6-terra",
+      options: [{ id: "reasoningEffort", value: "high" }],
       employeeId: workerId,
       employeeIds: [ceoId, workerId],
     });
@@ -595,7 +610,7 @@ describe("ProviderRuntimeIngestion", () => {
             displayName: "Briar",
             role: "Research",
             providerInstanceId: ProviderInstanceId.make("codex"),
-            model: "gpt-5-codex",
+            modelMode: "auto",
             instructions: "Research the request.",
             enabled: true,
           },
@@ -603,7 +618,7 @@ describe("ProviderRuntimeIngestion", () => {
             displayName: "Alex",
             role: "Implementation",
             providerInstanceId: ProviderInstanceId.make("codex"),
-            model: "gpt-5-codex",
+            modelMode: "auto",
             instructions: "Implement the request.",
             enabled: true,
           },
@@ -611,7 +626,8 @@ describe("ProviderRuntimeIngestion", () => {
       },
       threadModelSelection: {
         instanceId: ProviderInstanceId.make("codex"),
-        model: "gpt-5-codex",
+        model: "gpt-5.6-terra",
+        options: [{ id: "reasoningEffort", value: "medium" }],
         employeeId: betaId,
         employeeIds: [ceoId, betaId, alphaId],
       },
@@ -677,6 +693,79 @@ describe("ProviderRuntimeIngestion", () => {
     expect(
       thread.activities.some((activity) => activity.summary === "Employee workflow continued"),
     ).toBe(true);
+    expect(thread.modelSelection).toMatchObject({
+      model: "gpt-5.6-terra",
+      options: [{ id: "reasoningEffort", value: "medium" }],
+      employeeId: alphaId,
+    });
+  });
+
+  it("returns the shipped CEO to Sol Ultra after a worker handoff", async () => {
+    const ceoId = EmployeeId.make("ceo");
+    const gammaId = EmployeeId.make("worker_gamma");
+    const harness = await createHarness({
+      threadModelSelection: {
+        instanceId: ProviderInstanceId.make("codex"),
+        model: "gpt-5.6-luna",
+        options: [{ id: "reasoningEffort", value: "low" }],
+        employeeId: gammaId,
+        employeeIds: [ceoId, gammaId],
+      },
+    });
+    const now = "2026-08-17T14:00:00.000Z";
+    const turnId = asTurnId("turn-return-to-ceo");
+
+    harness.emit({
+      type: "turn.started",
+      eventId: asEventId("evt-return-to-ceo-started"),
+      provider: ProviderDriverKind.make("codex"),
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId,
+    });
+    await waitForThread(harness.readModel, (thread) => thread.session?.activeTurnId === turnId);
+    harness.emit({
+      type: "content.delta",
+      eventId: asEventId("evt-return-to-ceo-delta"),
+      provider: ProviderDriverKind.make("codex"),
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId,
+      itemId: asItemId("item-return-to-ceo"),
+      payload: {
+        streamKind: "assistant_text",
+        delta: '<handoff to="ceo">Verification passed.</handoff>',
+      },
+    });
+    harness.emit({
+      type: "item.completed",
+      eventId: asEventId("evt-return-to-ceo-item-complete"),
+      provider: ProviderDriverKind.make("codex"),
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId,
+      itemId: asItemId("item-return-to-ceo"),
+      payload: { itemType: "assistant_message", status: "completed" },
+    });
+    harness.emit({
+      type: "turn.completed",
+      eventId: asEventId("evt-return-to-ceo-complete"),
+      provider: ProviderDriverKind.make("codex"),
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId,
+      payload: { state: "completed" },
+    });
+
+    const thread = await waitForThread(
+      harness.readModel,
+      (entry) => entry.modelSelection.employeeId === ceoId,
+    );
+    expect(thread.modelSelection).toMatchObject({
+      model: "gpt-5.6-sol",
+      options: [{ id: "reasoningEffort", value: "ultra" }],
+      employeeId: ceoId,
+    });
   });
 
   it("blocks CEO group tools and recovers through a worker handoff", async () => {
@@ -699,7 +788,7 @@ describe("ProviderRuntimeIngestion", () => {
             displayName: "Alex",
             role: "Implementation",
             providerInstanceId: ProviderInstanceId.make("codex"),
-            model: "gpt-5-codex",
+            modelMode: "auto",
             instructions: "Implement assigned changes.",
             enabled: true,
           },
@@ -808,6 +897,11 @@ describe("ProviderRuntimeIngestion", () => {
     expect(
       recoveredThread.messages.find((message) => message.id.startsWith("employee-handoff:"))?.text,
     ).toContain("Fix the message controls and verify the prompt can continue.");
+    expect(recoveredThread.modelSelection).toMatchObject({
+      model: "gpt-5.6-luna",
+      options: [{ id: "reasoningEffort", value: "low" }],
+      employeeId: workerId,
+    });
   });
 
   it("applies provider session.state.changed transitions directly", async () => {

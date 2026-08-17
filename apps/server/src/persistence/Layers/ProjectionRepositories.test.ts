@@ -201,4 +201,71 @@ projectionRepositoriesLayer("Projection repositories", (it) => {
       assert.strictEqual(updated?.pinnedAt, null);
     }),
   );
+
+  it.effect("round-trips and clears a persistent thread goal", () =>
+    Effect.gen(function* () {
+      const threads = yield* ProjectionThreadRepository;
+      const sql = yield* SqlClient.SqlClient;
+      const goal = {
+        objective: "Ship onboarding",
+        status: "active" as const,
+        createdAt: "2026-08-17T10:00:00.000Z",
+        updatedAt: "2026-08-17T10:00:00.000Z",
+      };
+
+      yield* threads.upsert({
+        threadId: ThreadId.make("thread-goal"),
+        projectId: ProjectId.make("project-goal"),
+        title: "Goal thread",
+        modelSelection: {
+          instanceId: ProviderInstanceId.make("codex"),
+          model: "gpt-5.6-luna",
+        },
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        branch: null,
+        worktreePath: null,
+        latestTurnId: null,
+        createdAt: "2026-08-17T10:00:00.000Z",
+        updatedAt: "2026-08-17T10:00:00.000Z",
+        archivedAt: null,
+        settledOverride: null,
+        settledAt: null,
+        goal,
+        snoozedUntil: null,
+        snoozedAt: null,
+        pinnedAt: null,
+        latestUserMessageAt: null,
+        pendingApprovalCount: 0,
+        pendingUserInputCount: 0,
+        hasActionableProposedPlan: 0,
+        deletedAt: null,
+      });
+
+      const persisted = yield* threads.getById({ threadId: ThreadId.make("thread-goal") });
+      const row = Option.getOrNull(persisted);
+      assert.deepStrictEqual(row?.goal, goal);
+      const stored = yield* sql<{ readonly goal: string | null }>`
+        SELECT goal_json AS "goal"
+        FROM projection_threads
+        WHERE thread_id = 'thread-goal'
+      `;
+      assert.strictEqual(
+        stored[0]?.goal,
+        // @effect-diagnostics-next-line preferSchemaOverJson:off
+        JSON.stringify(goal),
+      );
+
+      if (!row) return yield* Effect.die("Expected goal projection row to exist.");
+      yield* threads.upsert({ ...row, goal: null });
+      const cleared = yield* threads.getById({ threadId: ThreadId.make("thread-goal") });
+      assert.strictEqual(Option.getOrNull(cleared)?.goal, null);
+      const clearedStored = yield* sql<{ readonly goal: string | null }>`
+        SELECT goal_json AS "goal"
+        FROM projection_threads
+        WHERE thread_id = 'thread-goal'
+      `;
+      assert.strictEqual(clearedStored[0]?.goal, null);
+    }),
+  );
 });

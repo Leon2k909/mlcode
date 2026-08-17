@@ -1047,6 +1047,69 @@ describe("ClaudeAdapterLive", () => {
     );
   });
 
+  it.effect("reads Claude's complete structured usage snapshot on demand", () => {
+    const usageResponse = {
+      subscription_type: "max",
+      rate_limits_available: true,
+      rate_limits: {
+        five_hour: {
+          utilization: 41,
+          resets_at: "2026-08-15T02:50:00.000Z",
+        },
+        seven_day: {
+          utilization: 23,
+          resets_at: "2026-08-17T00:00:00.000Z",
+        },
+        seven_day_opus: {
+          utilization: 9,
+          resets_at: "2026-08-17T00:00:00.000Z",
+        },
+      },
+    } as unknown as SDKControlGetUsageResponse;
+    const harness = makeHarness({ usageResponse });
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+
+      const readAccountRateLimits = adapter.readAccountRateLimits;
+      assert.isDefined(readAccountRateLimits);
+      const snapshot = yield* readAccountRateLimits();
+
+      assert.equal(snapshot?.provider, "claudeAgent");
+      assert.deepEqual(snapshot?.rateLimits, usageResponse);
+      assert.match(snapshot?.readAt ?? "", /^\d{4}-\d{2}-\d{2}T/);
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  it.effect("keeps an unavailable on-demand usage read best-effort", () => {
+    const harness = makeHarness();
+    harness.query.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET = async () => {
+      throw new Error("usage endpoint unavailable");
+    };
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+
+      const readAccountRateLimits = adapter.readAccountRateLimits;
+      assert.isDefined(readAccountRateLimits);
+      assert.isNull(yield* readAccountRateLimits());
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
   it.effect(
     "emits Claude's complete structured usage snapshot when the session initializes",
     () => {

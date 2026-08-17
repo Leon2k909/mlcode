@@ -1,4 +1,4 @@
-import { EmployeeId, MessageId, ThreadId } from "@t3tools/contracts";
+import { EmployeeId, MessageId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -112,12 +112,18 @@ layer("ProjectionThreadMessageRepository", (it) => {
     }),
   );
 
-  it.effect("persists employee identity and preserves it across streaming upserts", () =>
+  it.effect("persists employee routing metadata across streaming upserts", () =>
     Effect.gen(function* () {
       const repository = yield* ProjectionThreadMessageRepository;
       const threadId = ThreadId.make("thread-employee-message");
       const messageId = MessageId.make("assistant-employee-message");
       const employeeId = EmployeeId.make("reviewer");
+      const modelSelection = {
+        instanceId: ProviderInstanceId.make("codex"),
+        model: "gpt-5.6-luna",
+        options: [{ id: "reasoningEffort", value: "low" }],
+        employeeId,
+      };
       const createdAt = "2026-08-13T10:00:00.000Z";
 
       yield* repository.upsert({
@@ -126,6 +132,7 @@ layer("ProjectionThreadMessageRepository", (it) => {
         turnId: null,
         role: "assistant",
         employeeId,
+        modelSelection,
         text: "Reviewing",
         isStreaming: true,
         createdAt,
@@ -144,10 +151,12 @@ layer("ProjectionThreadMessageRepository", (it) => {
 
       const rows = yield* repository.listByThreadId({ threadId });
       assert.equal(rows[0]?.employeeId, employeeId);
+      assert.deepEqual(rows[0]?.modelSelection, modelSelection);
       const rowById = yield* repository.getByMessageId({ messageId });
       assert.equal(rowById._tag, "Some");
       if (rowById._tag === "Some") {
         assert.equal(rowById.value.employeeId, employeeId);
+        assert.deepEqual(rowById.value.modelSelection, modelSelection);
       }
     }),
   );

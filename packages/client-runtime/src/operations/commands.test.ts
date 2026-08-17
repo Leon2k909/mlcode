@@ -1,6 +1,7 @@
 import {
   CommandId,
   EnvironmentId,
+  MessageId,
   ORCHESTRATION_WS_METHODS,
   ProjectId,
   ThreadId,
@@ -24,6 +25,7 @@ import type { WsRpcProtocolClient } from "../rpc/protocol.ts";
 import {
   archiveThread,
   createProject,
+  deleteThreadMessage,
   settleThread,
   stopThreadSession,
   unsettleThread,
@@ -167,6 +169,32 @@ describe("environment commands", () => {
           commandId: "unsettle-command",
           threadId: "thread-1",
           reason: "user",
+        },
+      ]);
+    }).pipe(Effect.provide(TEST_CRYPTO_LAYER)),
+  );
+
+  it.effect("dispatches a batch message-prune command with its first message ID", () =>
+    Effect.gen(function* () {
+      const dispatched: ClientOrchestrationCommand[] = [];
+      const supervisor = yield* makeSupervisor(dispatched);
+
+      yield* deleteThreadMessage({
+        commandId: CommandId.make("prune-command"),
+        threadId: ThreadId.make("thread-1"),
+        messageId: MessageId.make("old-user"),
+        messageIds: [MessageId.make("old-user"), MessageId.make("old-assistant")],
+        createdAt: "2026-06-06T00:02:00.000Z",
+      }).pipe(Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor));
+
+      expect(dispatched).toEqual([
+        {
+          type: "thread.message.delete",
+          commandId: "prune-command",
+          threadId: "thread-1",
+          messageId: "old-user",
+          messageIds: ["old-user", "old-assistant"],
+          createdAt: "2026-06-06T00:02:00.000Z",
         },
       ]);
     }).pipe(Effect.provide(TEST_CRYPTO_LAYER)),

@@ -15,6 +15,7 @@ import {
   applyServerSettingsPatch,
   extractPersistedServerObservabilitySettings,
   isModelSelectionProviderEnabled,
+  normalizeServerSettingsEmployees,
   normalizePersistedServerSettingString,
   parsePersistedServerObservabilitySettings,
   resolveSourceControlWriterModelSelection,
@@ -380,6 +381,36 @@ describe("serverSettings helpers", () => {
       providerInstanceId: ProviderInstanceId.make("codex"),
       fastMode: false,
     });
+  });
+
+  it("pins only a legacy default-shaped CEO to Sol Ultra", () => {
+    const ceoId = EmployeeId.make("ceo");
+    const currentCeo = DEFAULT_SERVER_SETTINGS.employees[ceoId]!;
+    const { modelMode: _mode, modelOptions: _options, ...legacyCeo } = currentCeo;
+    const legacySettings = {
+      ...DEFAULT_SERVER_SETTINGS,
+      employees: { ...DEFAULT_SERVER_SETTINGS.employees, [ceoId]: legacyCeo },
+    } as ServerSettings;
+
+    expect(normalizeServerSettingsEmployees(legacySettings).employees[ceoId]).toMatchObject({
+      modelMode: "override",
+      model: "gpt-5.6-sol",
+      modelOptions: [{ id: "reasoningEffort", value: "ultra" }],
+    });
+
+    const customized = {
+      ...legacySettings,
+      employees: {
+        ...legacySettings.employees,
+        [ceoId]: { ...legacyCeo, instructions: "Use my custom routing policy." },
+      },
+    } as ServerSettings;
+    expect(
+      normalizeServerSettingsEmployees(customized).employees[ceoId]?.modelMode,
+    ).toBeUndefined();
+    expect(
+      normalizeServerSettingsEmployees(customized).employees[ceoId]?.modelOptions,
+    ).toBeUndefined();
   });
 
   it("stores background activity profiles as a versioned object and syncs legacy aliases", () => {

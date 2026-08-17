@@ -230,7 +230,11 @@ describe("DEFAULT_EMPLOYEES", () => {
   });
 
   it("defaults workers to CEO-controlled model routing", () => {
-    expect(DEFAULT_EMPLOYEES[EmployeeId.make("ceo")]?.modelMode).toBeUndefined();
+    expect(DEFAULT_EMPLOYEES[EmployeeId.make("ceo")]).toMatchObject({
+      modelMode: "override",
+      model: "gpt-5.6-sol",
+      modelOptions: [{ id: "reasoningEffort", value: "ultra" }],
+    });
     for (const id of ["worker_alpha", "worker_beta", "worker_gamma"]) {
       expect(DEFAULT_EMPLOYEES[EmployeeId.make(id)]?.modelMode).toBe("auto");
       expect(DEFAULT_EMPLOYEES[EmployeeId.make(id)]?.model).toBeUndefined();

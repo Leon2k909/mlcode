@@ -74,6 +74,9 @@ export interface ProviderServiceShape {
     input: ProviderRealtimeStopInput,
   ) => Effect.Effect<void, ProviderServiceError>;
 
+  /** Best-effort refresh of account quota windows exposed by active providers. */
+  readonly refreshAccountRateLimits?: () => Effect.Effect<void>;
+
   /**
    * Interrupt a running provider turn.
    */

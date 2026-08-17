@@ -3,6 +3,7 @@ import {
   EventId,
   ProjectId,
   ProviderDriverKind,
+  ProviderInstanceId,
   ThreadId,
   type OrchestrationEvent,
 } from "@t3tools/contracts";
@@ -91,6 +92,7 @@ describe("orchestration projector", () => {
         archivedAt: null,
         settledOverride: null,
         settledAt: null,
+        goal: null,
         snoozedUntil: null,
         snoozedAt: null,
         deletedAt: null,
@@ -101,6 +103,72 @@ describe("orchestration projector", () => {
         session: null,
       },
     ]);
+  });
+
+  it("projects a non-null thread goal and clears it", async () => {
+    const now = "2026-08-17T10:00:00.000Z";
+    const created = await Effect.runPromise(
+      projectEvent(
+        createEmptyReadModel(now),
+        makeEvent({
+          sequence: 1,
+          type: "thread.created",
+          aggregateKind: "thread",
+          aggregateId: "thread-goal",
+          occurredAt: now,
+          commandId: "command-thread-goal",
+          payload: {
+            threadId: "thread-goal",
+            projectId: "project-goal",
+            title: "Goal thread",
+            modelSelection: { provider: "codex", model: "gpt-5.6-luna" },
+            runtimeMode: "full-access",
+            interactionMode: "default",
+            branch: null,
+            worktreePath: null,
+            createdAt: now,
+            updatedAt: now,
+          },
+        }),
+      ),
+    );
+    const goal = {
+      objective: "Ship onboarding",
+      status: "active" as const,
+      createdAt: now,
+      updatedAt: now,
+    };
+    const withGoal = await Effect.runPromise(
+      projectEvent(
+        created,
+        makeEvent({
+          sequence: 2,
+          type: "thread.meta-updated",
+          aggregateKind: "thread",
+          aggregateId: "thread-goal",
+          occurredAt: now,
+          commandId: "command-goal-set",
+          payload: { threadId: "thread-goal", goal, updatedAt: now },
+        }),
+      ),
+    );
+    expect(withGoal.threads[0]?.goal).toEqual(goal);
+
+    const cleared = await Effect.runPromise(
+      projectEvent(
+        withGoal,
+        makeEvent({
+          sequence: 3,
+          type: "thread.meta-updated",
+          aggregateKind: "thread",
+          aggregateId: "thread-goal",
+          occurredAt: now,
+          commandId: "command-goal-clear",
+          payload: { threadId: "thread-goal", goal: null, updatedAt: now },
+        }),
+      ),
+    );
+    expect(cleared.threads[0]?.goal).toBeNull();
   });
 
   it("fails when event payload cannot be decoded by runtime schema", async () => {
@@ -448,6 +516,11 @@ describe("orchestration projector", () => {
             messageId: "assistant:msg-1",
             role: "assistant",
             text: "hello",
+            modelSelection: {
+              instanceId: ProviderInstanceId.make("codex"),
+              model: "gpt-5.6-luna",
+              options: [{ id: "reasoningEffort", value: "low" }],
+            },
             turnId: "turn-1",
             streaming: true,
             createdAt: deltaAt,
@@ -472,6 +545,11 @@ describe("orchestration projector", () => {
             messageId: "assistant:msg-1",
             role: "assistant",
             text: "",
+            modelSelection: {
+              instanceId: ProviderInstanceId.make("codex"),
+              model: "gpt-5.6-luna",
+              options: [{ id: "reasoningEffort", value: "low" }],
+            },
             turnId: "turn-1",
             streaming: false,
             createdAt: completeAt,
@@ -486,6 +564,11 @@ describe("orchestration projector", () => {
     expect(message?.text).toBe("hello");
     expect(message?.streaming).toBe(false);
     expect(message?.updatedAt).toBe(completeAt);
+    expect(message?.modelSelection).toEqual({
+      instanceId: ProviderInstanceId.make("codex"),
+      model: "gpt-5.6-luna",
+      options: [{ id: "reasoningEffort", value: "low" }],
+    });
   });
 
   it("prunes reverted turn messages from in-memory thread snapshot", async () => {

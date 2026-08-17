@@ -4,7 +4,7 @@
  * Lets one employee address another inside a thread, the way a person would
  * @-mention a colleague in Slack. An employee ends a turn with:
  *
- *   <handoff to="reviewer">Draft is ready, please check the auth path.</handoff>
+ *   <handoff to="reviewer" model="gpt-5.6-terra" reasoning="high">Draft is ready, please check the auth path.</handoff>
  *
  * The reactor parses that, transfers ownership of the thread to `reviewer`,
  * and starts their turn with the message as input. Ownership passing is the
@@ -25,16 +25,67 @@ const HANDOFF_TAG = "handoff";
  * Deliberately tolerant of attribute quoting style and surrounding
  * whitespace — this is model-generated text, not a wire format.
  */
-const HANDOFF_PATTERN = new RegExp(
-  `<${HANDOFF_TAG}\\s+to\\s*=\\s*["']?([a-zA-Z][a-zA-Z0-9_-]*)["']?\\s*>([\\s\\S]*?)</${HANDOFF_TAG}>`,
-  "i",
-);
+const HANDOFF_PATTERN = new RegExp(`<${HANDOFF_TAG}\\b([^>]*)>([\\s\\S]*?)</${HANDOFF_TAG}>`, "i");
+const HANDOFF_ATTRIBUTE_PATTERN =
+  /([a-zA-Z][a-zA-Z0-9_-]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/g;
+const EMPLOYEE_ID_PATTERN = /^[a-zA-Z][a-zA-Z0-9_-]*$/;
+
+export const CODEX_HANDOFF_MODELS = ["gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol"] as const;
+export type CodexHandoffModel = (typeof CODEX_HANDOFF_MODELS)[number];
+
+export const CODEX_HANDOFF_REASONING_LEVELS = ["low", "medium", "high", "ultra"] as const;
+export type CodexHandoffReasoning = (typeof CODEX_HANDOFF_REASONING_LEVELS)[number];
+
+export interface CodexHandoffAssignment {
+  readonly model: CodexHandoffModel;
+  readonly reasoning: CodexHandoffReasoning;
+}
+
+const VALID_CODEX_HANDOFF_ASSIGNMENTS: ReadonlySet<string> = new Set([
+  "gpt-5.6-luna:low",
+  "gpt-5.6-terra:medium",
+  "gpt-5.6-terra:high",
+  "gpt-5.6-sol:high",
+  "gpt-5.6-sol:ultra",
+]);
+
+const parseHandoffAttributes = (source: string): ReadonlyMap<string, string> => {
+  const attributes = new Map<string, string>();
+  for (const match of source.matchAll(HANDOFF_ATTRIBUTE_PATTERN)) {
+    const name = match[1]?.toLowerCase();
+    const value = match[2] ?? match[3] ?? match[4];
+    if (name !== undefined && value !== undefined) {
+      attributes.set(name, value.trim());
+    }
+  }
+  return attributes;
+};
+
+const parseCodexHandoffAssignment = (
+  attributes: ReadonlyMap<string, string>,
+): CodexHandoffAssignment | undefined => {
+  const model = attributes.get("model")?.toLowerCase();
+  const reasoning = attributes.get("reasoning")?.toLowerCase();
+  if (
+    model === undefined ||
+    reasoning === undefined ||
+    !VALID_CODEX_HANDOFF_ASSIGNMENTS.has(`${model}:${reasoning}`)
+  ) {
+    return undefined;
+  }
+  return {
+    model: model as CodexHandoffModel,
+    reasoning: reasoning as CodexHandoffReasoning,
+  };
+};
 
 export interface EmployeeHandoff {
   /** The teammate taking over the thread. */
   readonly toEmployeeId: EmployeeId;
   /** What the outgoing employee said to them. Never empty. */
   readonly message: string;
+  /** Optional task-sensitive Codex assignment chosen by the CEO. */
+  readonly codexAssignment: CodexHandoffAssignment | undefined;
   /** Assistant text with the handoff block removed, for the timeline. */
   readonly remainingText: string;
 }
@@ -117,7 +168,9 @@ export const parseEmployeeHandoff = (input: {
   const match = HANDOFF_PATTERN.exec(input.text);
   if (match === null) return { kind: "none" };
 
-  const requestedId = match[1] ?? "";
+  const attributes = parseHandoffAttributes(match[1] ?? "");
+  const requestedId = attributes.get("to") ?? "";
+  if (!EMPLOYEE_ID_PATTERN.test(requestedId)) return { kind: "none" };
   const message = (match[2] ?? "").trim();
 
   if (input.fromEmployeeId !== undefined && requestedId === input.fromEmployeeId) {
@@ -144,6 +197,7 @@ export const parseEmployeeHandoff = (input: {
     handoff: {
       toEmployeeId: requestedId as EmployeeId,
       message,
+      codexAssignment: parseCodexHandoffAssignment(attributes),
       remainingText: stripHandoffBlock(input.text),
     },
   };

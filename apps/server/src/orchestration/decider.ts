@@ -835,6 +835,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
             : {}),
           ...(branch !== undefined ? { branch } : {}),
           ...(command.worktreePath !== undefined ? { worktreePath: command.worktreePath } : {}),
+          ...(command.goal !== undefined ? { goal: command.goal } : {}),
           updatedAt: occurredAt,
         },
       };
@@ -1111,18 +1112,61 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         threadId: command.threadId,
       });
-      const message = thread.messages.find((entry) => entry.id === command.messageId);
-      if (!message || message.role !== "user") {
+      const isBatchDelete = command.messageIds !== undefined;
+      const messageIds = command.messageIds ?? [command.messageId];
+      if (
+        messageIds.length === 0 ||
+        !messageIds.includes(command.messageId) ||
+        new Set(messageIds).size !== messageIds.length
+      ) {
         return yield* new OrchestrationCommandInvariantError({
           commandType: command.type,
-          detail: `User message '${command.messageId}' does not exist on thread '${command.threadId}'.`,
+          detail: "Message deletion must include a non-empty, unique batch containing messageId.",
         });
       }
-      if (thread.messages.at(-1)?.id !== command.messageId) {
+
+      const messages = messageIds.map((messageId) =>
+        thread.messages.find((entry) => entry.id === messageId),
+      );
+      const missingIndex = messages.findIndex((message) => message === undefined);
+      if (missingIndex === -1 && messages.some((message) => message?.role === "system")) {
         return yield* new OrchestrationCommandInvariantError({
           commandType: command.type,
-          detail: "Only the latest user message can be deleted without reverting a checkpoint.",
+          detail: "System messages cannot be deleted from a thread.",
         });
+      }
+      if (missingIndex !== -1) {
+        const missingMessageId = messageIds[missingIndex];
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `Message '${missingMessageId}' does not exist on thread '${command.threadId}'.`,
+        });
+      }
+
+      if (!isBatchDelete) {
+        const message = messages[0];
+        if (message?.role !== "user") {
+          return yield* new OrchestrationCommandInvariantError({
+            commandType: command.type,
+            detail: `User message '${command.messageId}' does not exist on thread '${command.threadId}'.`,
+          });
+        }
+        if (thread.messages.at(-1)?.id !== command.messageId) {
+          return yield* new OrchestrationCommandInvariantError({
+            commandType: command.type,
+            detail: "Only the latest user message can be deleted without reverting a checkpoint.",
+          });
+        }
+      } else {
+        const latestUserMessageId = thread.messages
+          .toReversed()
+          .find((entry) => entry.role === "user")?.id;
+        if (latestUserMessageId !== undefined && messageIds.includes(latestUserMessageId)) {
+          return yield* new OrchestrationCommandInvariantError({
+            commandType: command.type,
+            detail: "The latest user message must be kept when pruning older messages.",
+          });
+        }
       }
       if (thread.session?.status === "starting" || thread.session?.status === "running") {
         return yield* new OrchestrationCommandInvariantError({
@@ -1130,20 +1174,24 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           detail: "The current turn must be stopped before deleting its message.",
         });
       }
-      return {
-        ...(yield* withEventBase({
-          aggregateKind: "thread",
-          aggregateId: command.threadId,
-          occurredAt: command.createdAt,
-          commandId: command.commandId,
-        })),
-        type: "thread.message-deleted",
-        payload: {
-          threadId: command.threadId,
-          messageId: command.messageId,
-          deletedAt: command.createdAt,
-        },
-      };
+      const events: PlannedOrchestrationEvent[] = [];
+      for (const messageId of messageIds) {
+        events.push({
+          ...(yield* withEventBase({
+            aggregateKind: "thread",
+            aggregateId: command.threadId,
+            occurredAt: command.createdAt,
+            commandId: command.commandId,
+          })),
+          type: "thread.message-deleted",
+          payload: {
+            threadId: command.threadId,
+            messageId,
+            deletedAt: command.createdAt,
+          },
+        });
+      }
+      return events.length === 1 ? events[0]! : events;
     }
 
     case "thread.checkpoint.revert": {
@@ -1281,6 +1329,9 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           role: "assistant",
           text: command.delta,
           ...(command.employeeId !== undefined ? { employeeId: command.employeeId } : {}),
+          ...(command.modelSelection !== undefined
+            ? { modelSelection: command.modelSelection }
+            : {}),
           turnId: command.turnId ?? null,
           streaming: true,
           createdAt: command.createdAt,
@@ -1309,6 +1360,9 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           role: "assistant",
           text: "",
           ...(command.employeeId !== undefined ? { employeeId: command.employeeId } : {}),
+          ...(command.modelSelection !== undefined
+            ? { modelSelection: command.modelSelection }
+            : {}),
           turnId: command.turnId ?? null,
           streaming: false,
           createdAt: command.createdAt,

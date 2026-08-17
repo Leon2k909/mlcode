@@ -1,11 +1,18 @@
-import type { UsageLimitSnapshot, UsageProviderKind } from "@t3tools/contracts";
+import type { MessageId, UsageLimitSnapshot, UsageProviderKind } from "@t3tools/contracts";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { makeWindow } from "@t3tools/shared/usageFormat";
+import { useLiveRefresh } from "~/hooks/useLiveRefresh";
 import { cn } from "~/lib/utils";
 import { type ContextWindowSnapshot, formatContextWindowTokens } from "~/lib/contextWindow";
 import { useUsage } from "~/state/usage";
+import { Button } from "../ui/button";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
-import { formatContextWindowCompactionMessage } from "./ContextWindowMeter.logic";
+import {
+  formatContextWindowCompactionMessage,
+  selectOldestMessageIdsForPruning,
+  shouldOfferContextPrune,
+  type ContextPrunableMessage,
+} from "./ContextWindowMeter.logic";
 
 function formatPercentage(value: number | null): string | null {
   if (value === null || !Number.isFinite(value)) {
@@ -47,8 +54,11 @@ export function ContextWindowMeter(props: {
   providerDisplayName?: string | null;
   modelDisplayName?: string | null;
   fastMode?: boolean | null;
+  messages?: ReadonlyArray<ContextPrunableMessage<MessageId>>;
+  prunePromptKey?: string | null;
+  onPruneOlderMessages?: (messageIds: ReadonlyArray<MessageId>) => void;
 }) {
-  const { usage, providerDisplayName, modelDisplayName } = props;
+  const { usage, providerDisplayName, modelDisplayName, messages = [] } = props;
   const usageProvider: UsageProviderKind | null = providerDisplayName
     ?.toLowerCase()
     .includes("codex")
@@ -57,8 +67,28 @@ export function ContextWindowMeter(props: {
       ? "claude"
       : null;
   const [open, setOpen] = useState(false);
+  const [prunePromptDismissed, setPrunePromptDismissed] = useState(false);
+  const promptedPruneKey = useRef<string | null>(null);
   const usedPercentage = formatPercentage(usage.usedPercentage);
   const normalizedPercentage = Math.max(0, Math.min(100, usage.usedPercentage ?? 0));
+  const pruneMessageIds = useMemo(() => selectOldestMessageIdsForPruning(messages), [messages]);
+  const showPrunePrompt =
+    props.onPruneOlderMessages !== undefined &&
+    shouldOfferContextPrune({
+      usedPercentage: usage.usedPercentage,
+      messageCount: messages.length,
+    }) &&
+    pruneMessageIds.length > 0 &&
+    !prunePromptDismissed;
+
+  useEffect(() => {
+    const promptKey = props.prunePromptKey;
+    if (!showPrunePrompt || promptKey === null || promptKey === undefined) return;
+    if (promptedPruneKey.current === promptKey) return;
+    promptedPruneKey.current = promptKey;
+    setPrunePromptDismissed(false);
+    setOpen(true);
+  }, [props.prunePromptKey, showPrunePrompt]);
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -70,6 +100,21 @@ export function ContextWindowMeter(props: {
         normalizedPercentage={normalizedPercentage}
         fastMode={props.fastMode}
         loadLimits={open}
+        pruneMessageCount={pruneMessageIds.length}
+        showPrunePrompt={showPrunePrompt}
+        onDismissPrunePrompt={() => {
+          setPrunePromptDismissed(true);
+          setOpen(false);
+        }}
+        onPruneOlderMessages={
+          props.onPruneOlderMessages === undefined
+            ? undefined
+            : () => {
+                setPrunePromptDismissed(true);
+                setOpen(false);
+                props.onPruneOlderMessages?.(pruneMessageIds);
+              }
+        }
       />
     </Popover>
   );
@@ -79,6 +124,7 @@ function ContextUsageLimits({ provider }: { provider: UsageProviderKind }) {
   const usageWindow = useMemo(() => ({ ...makeWindow(1), limitsOnly: true }), []);
   const { environments, isPending, isPartial, refresh } = useUsage(usageWindow);
   const refreshedOnOpen = useRef(false);
+  useLiveRefresh(refresh);
 
   useEffect(() => {
     if (refreshedOnOpen.current || environments.length === 0) return;
@@ -161,6 +207,10 @@ function ContextWindowMeterContent(props: {
   normalizedPercentage: number;
   fastMode: boolean | null | undefined;
   loadLimits: boolean;
+  pruneMessageCount: number;
+  showPrunePrompt: boolean;
+  onDismissPrunePrompt: () => void;
+  onPruneOlderMessages: (() => void) | undefined;
 }) {
   const { usage, modelDisplayName, usageProvider, usedPercentage, normalizedPercentage } = props;
   const radius = 9.75;
@@ -278,6 +328,25 @@ function ContextWindowMeterContent(props: {
               <span className="font-medium tabular-nums text-secondary-label">
                 {props.fastMode ? "On" : "Off"}
               </span>
+            </div>
+          ) : null}
+          {props.showPrunePrompt ? (
+            <div className="mt-1 rounded-md border border-border/70 bg-muted/30 p-2">
+              <div className="font-medium text-muted-foreground text-[11px]">
+                This thread is getting long
+              </div>
+              <p className="mt-1 text-secondary-label text-[11px] leading-4">
+                Delete the {props.pruneMessageCount} oldest messages to make more room for the next
+                turn?
+              </p>
+              <div className="mt-2 flex items-center justify-end gap-1.5">
+                <Button size="xs" variant="ghost" onClick={props.onDismissPrunePrompt}>
+                  Not now
+                </Button>
+                <Button size="xs" variant="destructive" onClick={props.onPruneOlderMessages}>
+                  Delete oldest
+                </Button>
+              </div>
             </div>
           ) : null}
           {props.loadLimits && usageProvider ? (

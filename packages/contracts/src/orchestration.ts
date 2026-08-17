@@ -265,6 +265,8 @@ export const OrchestrationMessage = Schema.Struct({
   // Employee-authored messages carry their durable speaker identity. Human
   // messages omit it.
   employeeId: Schema.optional(EmployeeId),
+  /** Effective provider/model selection used to produce this assistant row. */
+  modelSelection: Schema.optional(ModelSelection),
   attachments: Schema.optional(Schema.Array(ChatAttachment)),
   turnId: Schema.NullOr(TurnId),
   streaming: Schema.Boolean,
@@ -384,6 +386,28 @@ export const ThreadTitleRegeneration = Schema.Struct({
 });
 export type ThreadTitleRegeneration = typeof ThreadTitleRegeneration.Type;
 
+/**
+ * A persistent objective for a thread, modelled after Codex's /goal state.
+ * Optional on thread snapshots so clients can still decode older servers.
+ */
+export const ThreadGoalStatus = Schema.Literals([
+  "active",
+  "paused",
+  "blocked",
+  "usageLimited",
+  "budgetLimited",
+  "complete",
+]);
+export type ThreadGoalStatus = typeof ThreadGoalStatus.Type;
+
+export const ThreadGoal = Schema.Struct({
+  objective: TrimmedNonEmptyString,
+  status: ThreadGoalStatus,
+  createdAt: IsoDateTime,
+  updatedAt: IsoDateTime,
+});
+export type ThreadGoal = typeof ThreadGoal.Type;
+
 export const OrchestrationThread = Schema.Struct({
   id: ThreadId,
   projectId: ProjectId,
@@ -420,6 +444,7 @@ export const OrchestrationThread = Schema.Struct({
   pinOrderKey: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   // Pending-only state. Optional so older servers remain compatible.
   titleRegeneration: Schema.optional(Schema.NullOr(ThreadTitleRegeneration)),
+  goal: Schema.optional(Schema.NullOr(ThreadGoal)),
   deletedAt: Schema.NullOr(IsoDateTime),
   messages: Schema.Array(OrchestrationMessage),
   proposedPlans: Schema.Array(OrchestrationProposedPlan).pipe(
@@ -478,6 +503,7 @@ export const OrchestrationThreadShell = Schema.Struct({
   pinnedAt: Schema.optional(Schema.NullOr(IsoDateTime)),
   pinOrderKey: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   titleRegeneration: Schema.optional(Schema.NullOr(ThreadTitleRegeneration)),
+  goal: Schema.optional(Schema.NullOr(ThreadGoal)),
   session: Schema.NullOr(OrchestrationSession),
   latestUserMessageAt: Schema.NullOr(IsoDateTime),
   hasPendingApprovals: Schema.Boolean,
@@ -781,6 +807,7 @@ const ThreadMetaUpdateCommand = Schema.Struct({
   branch: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   expectedBranch: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   worktreePath: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
+  goal: Schema.optional(Schema.NullOr(ThreadGoal)),
 }).check(
   Schema.makeFilter(
     (input) =>
@@ -907,6 +934,10 @@ const ThreadMessageDeleteCommand = Schema.Struct({
   commandId: CommandId,
   threadId: ThreadId,
   messageId: MessageId,
+  // Batch pruning uses the same command so older clients and servers can
+  // continue to understand the individual thread.message-deleted events.
+  // The first ID must match messageId; the decider validates the whole batch.
+  messageIds: Schema.optional(Schema.Array(MessageId)),
   createdAt: IsoDateTime,
 });
 
@@ -1003,6 +1034,7 @@ const ThreadMessageAssistantDeltaCommand = Schema.Struct({
   messageId: MessageId,
   delta: Schema.String,
   employeeId: Schema.optional(EmployeeId),
+  modelSelection: Schema.optional(ModelSelection),
   turnId: Schema.optional(TurnId),
   createdAt: IsoDateTime,
 });
@@ -1013,6 +1045,7 @@ const ThreadMessageAssistantCompleteCommand = Schema.Struct({
   threadId: ThreadId,
   messageId: MessageId,
   employeeId: Schema.optional(EmployeeId),
+  modelSelection: Schema.optional(ModelSelection),
   turnId: Schema.optional(TurnId),
   createdAt: IsoDateTime,
 });
@@ -1242,6 +1275,7 @@ export const ThreadMetaUpdatedPayload = Schema.Struct({
   modelSelection: Schema.optional(ModelSelection),
   branch: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   worktreePath: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
+  goal: Schema.optional(Schema.NullOr(ThreadGoal)),
   updatedAt: IsoDateTime,
 });
 
@@ -1265,6 +1299,7 @@ export const ThreadMessageSentPayload = Schema.Struct({
   role: OrchestrationMessageRole,
   text: Schema.String,
   employeeId: Schema.optional(EmployeeId),
+  modelSelection: Schema.optional(ModelSelection),
   attachments: Schema.optional(Schema.Array(ChatAttachment)),
   turnId: Schema.NullOr(TurnId),
   streaming: Schema.Boolean,

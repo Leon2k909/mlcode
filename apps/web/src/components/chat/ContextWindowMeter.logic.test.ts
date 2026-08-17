@@ -4,7 +4,50 @@ import {
   formatContextWindowCompactionMessage,
   resolveContextWindowFastMode,
   resolveContextWindowModelDisplayName,
+  selectOldestMessageIdsForPruning,
+  shouldOfferContextPrune,
 } from "./ContextWindowMeter.logic";
+
+describe("context pruning guidance", () => {
+  it("offers pruning only for a long, heavily used thread", () => {
+    expect(shouldOfferContextPrune({ usedPercentage: 79, messageCount: 20 })).toBe(false);
+    expect(shouldOfferContextPrune({ usedPercentage: 80, messageCount: 9 })).toBe(false);
+    expect(shouldOfferContextPrune({ usedPercentage: 80, messageCount: 10 })).toBe(true);
+    expect(shouldOfferContextPrune({ usedPercentage: null, messageCount: 20 })).toBe(false);
+  });
+
+  it("selects old non-system messages while retaining the latest four user turns", () => {
+    const messages = Array.from({ length: 6 }, (_, index) => [
+      { id: `user-${index}`, role: "user" as const },
+      { id: `assistant-${index}`, role: "assistant" as const },
+    ]).flat();
+
+    expect(selectOldestMessageIdsForPruning(messages)).toEqual([
+      "user-0",
+      "assistant-0",
+      "user-1",
+      "assistant-1",
+    ]);
+  });
+
+  it("never selects system messages or a partial tail", () => {
+    expect(
+      selectOldestMessageIdsForPruning([
+        { id: "system", role: "system" },
+        { id: "user-0", role: "user" },
+        { id: "assistant-0", role: "assistant" },
+        { id: "user-1", role: "user" },
+        { id: "assistant-1", role: "assistant" },
+        { id: "user-2", role: "user" },
+        { id: "assistant-2", role: "assistant" },
+        { id: "user-3", role: "user" },
+        { id: "assistant-3", role: "assistant" },
+        { id: "user-4", role: "user" },
+        { id: "assistant-4", role: "assistant" },
+      ]),
+    ).toEqual(["user-0", "assistant-0"]);
+  });
+});
 
 describe("resolveContextWindowModelDisplayName", () => {
   it("uses the selected model from the exact provider instance", () => {

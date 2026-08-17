@@ -55,6 +55,12 @@ export interface ProviderThreadSnapshot {
   readonly turns: ReadonlyArray<ProviderThreadTurnSnapshot>;
 }
 
+export interface ProviderAccountRateLimitsRead {
+  readonly provider: ProviderDriverKind;
+  readonly readAt: string;
+  readonly rateLimits: unknown;
+}
+
 export interface ProviderAdapterShape<TError> {
   /**
    * Provider kind implemented by this adapter.
@@ -95,6 +101,16 @@ export interface ProviderAdapterShape<TError> {
     input: ProviderRealtimeAppendSpeechInput,
   ) => Effect.Effect<void, TError>;
   readonly realtimeStop?: (input: ProviderRealtimeStopInput) => Effect.Effect<void, TError>;
+
+  /**
+   * Read the provider account's current quota windows when the runtime exposes
+   * an on-demand control endpoint. Providers without that capability leave
+   * this undefined.
+   */
+  readonly readAccountRateLimits?: () => Effect.Effect<
+    ProviderAccountRateLimitsRead | null,
+    TError
+  >;
 
   /**
    * Interrupt an active turn.

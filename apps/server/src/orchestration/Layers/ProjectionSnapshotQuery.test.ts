@@ -83,6 +83,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           interaction_mode,
           branch,
           worktree_path,
+          goal_json,
           latest_turn_id,
           latest_user_message_at,
           pending_approval_count,
@@ -103,6 +104,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           'default',
           NULL,
           NULL,
+          '{"objective":"Ship onboarding","status":"active","createdAt":"2026-02-24T00:00:02.000Z","updatedAt":"2026-02-24T00:00:03.000Z"}',
           'turn-1',
           '2026-02-24T00:00:04.000Z',
           1,
@@ -327,6 +329,12 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           pinnedAt: "2026-02-24T00:00:01.000Z",
           pinOrderKey: "gm",
           titleRegeneration: null,
+          goal: {
+            objective: "Ship onboarding",
+            status: "active",
+            createdAt: "2026-02-24T00:00:02.000Z",
+            updatedAt: "2026-02-24T00:00:03.000Z",
+          },
           deletedAt: null,
           messages: [
             {
@@ -446,6 +454,12 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           pinnedAt: "2026-02-24T00:00:01.000Z",
           pinOrderKey: "gm",
           titleRegeneration: null,
+          goal: {
+            objective: "Ship onboarding",
+            status: "active",
+            createdAt: "2026-02-24T00:00:02.000Z",
+            updatedAt: "2026-02-24T00:00:03.000Z",
+          },
           session: {
             threadId: ThreadId.make("thread-1"),
             status: "running",
@@ -468,6 +482,22 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
       assert.equal(threadDetail._tag, "Some");
       if (threadDetail._tag === "Some") {
         assert.deepEqual(threadDetail.value, snapshot.threads[0]);
+      }
+
+      yield* sql`
+        UPDATE projection_threads
+        SET goal_json = NULL
+        WHERE thread_id = 'thread-1'
+      `;
+      const clearedShell = yield* snapshotQuery.getThreadShellById(ThreadId.make("thread-1"));
+      assert.equal(clearedShell._tag, "Some");
+      if (clearedShell._tag === "Some") {
+        assert.equal(clearedShell.value.goal, null);
+      }
+      const clearedDetail = yield* snapshotQuery.getThreadDetailById(ThreadId.make("thread-1"));
+      assert.equal(clearedDetail._tag, "Some");
+      if (clearedDetail._tag === "Some") {
+        assert.equal(clearedDetail.value.goal, null);
       }
     }),
   );

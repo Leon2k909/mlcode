@@ -152,9 +152,33 @@ function repairEmployeeRequiredFields(
   ) {
     repairedFields.providerInstanceId = fallbackEmployee.providerInstanceId;
   }
-  return Object.keys(repairedFields).length === 0
-    ? employee
-    : ({ ...employee, ...repairedFields } as Employee);
+  const repairedEmployee =
+    Object.keys(repairedFields).length === 0
+      ? employee
+      : ({ ...employee, ...repairedFields } as Employee);
+  const isLegacyDefaultCeo =
+    employeeId === "ceo" &&
+    fallbackEmployee !== undefined &&
+    repairedEmployee.displayName === fallbackEmployee.displayName &&
+    repairedEmployee.providerInstanceId === fallbackEmployee.providerInstanceId &&
+    repairedEmployee.role === fallbackEmployee.role &&
+    repairedEmployee.instructions === fallbackEmployee.instructions &&
+    repairedEmployee.avatar === fallbackEmployee.avatar &&
+    repairedEmployee.accentColor === fallbackEmployee.accentColor &&
+    repairedEmployee.fastMode === fallbackEmployee.fastMode &&
+    repairedEmployee.enabled === fallbackEmployee.enabled &&
+    repairedEmployee.model === fallbackEmployee.model &&
+    repairedEmployee.modelMode === undefined &&
+    (repairedEmployee.modelOptions?.length ?? 0) === 0;
+  return isLegacyDefaultCeo
+    ? {
+        ...repairedEmployee,
+        modelMode: fallbackEmployee.modelMode,
+        ...(fallbackEmployee.modelOptions !== undefined
+          ? { modelOptions: [...fallbackEmployee.modelOptions] }
+          : {}),
+      }
+    : repairedEmployee;
 }
 
 function repairEmployeeMap(employees: ServerSettings["employees"]): ServerSettings["employees"] {
@@ -166,6 +190,11 @@ function repairEmployeeMap(employees: ServerSettings["employees"]): ServerSettin
       return [employeeId, repairEmployeeRequiredFields(employeeId, employee, defaultEmployee)];
     }),
   ) as ServerSettings["employees"];
+}
+
+/** Upgrade only shipped/default-shaped employee records while preserving custom personas. */
+export function normalizeServerSettingsEmployees(settings: ServerSettings): ServerSettings {
+  return { ...settings, employees: repairEmployeeMap(settings.employees) };
 }
 
 function repairEmployeePatch(
@@ -199,10 +228,7 @@ export function applyServerSettingsPatch(
     employees,
     ...patchForMerge
   } = patch;
-  const currentWithRepairedEmployees = {
-    ...current,
-    employees: repairEmployeeMap(current.employees),
-  };
+  const currentWithRepairedEmployees = normalizeServerSettingsEmployees(current);
   const patchForMergeWithRepairedEmployees = {
     ...patchForMerge,
     ...(employees !== undefined

@@ -1,5 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
 import { useCallback, useEffect, useMemo } from "react";
+import { Alert } from "react-native";
 
 import {
   CommandId,
@@ -11,7 +12,15 @@ import {
   type ThreadId,
 } from "@t3tools/contracts";
 import { safeErrorLogAttributes } from "@t3tools/client-runtime/errors";
+import {
+  isAtomCommandInterrupted,
+  squashAtomCommandFailure,
+} from "@t3tools/client-runtime/state/runtime";
 import { deriveActiveWorkStartedAt } from "@t3tools/shared/orchestrationTiming";
+import {
+  executeThreadGoalCommand,
+  parseStandaloneThreadGoalCommand,
+} from "@t3tools/shared/threadGoal";
 
 import { makeQueuedMessageMetadata } from "../lib/commandMetadata";
 import {
@@ -23,6 +32,7 @@ import type { DraftComposerImageAttachment } from "../lib/composerImages";
 import { scopedThreadKey } from "../lib/scopedEntities";
 import { buildThreadFeed } from "../lib/threadActivity";
 import { appAtomRegistry } from "../state/atom-registry";
+import { threadEnvironment } from "../state/threads";
 import {
   appendComposerDraftAttachments,
   appendComposerDraftText,
@@ -40,6 +50,7 @@ import { setPendingConnectionError } from "../state/use-remote-environment-regis
 import { useSelectedThreadDetail } from "../state/use-thread-detail";
 import { useThreadSelection } from "../state/use-thread-selection";
 import { enqueueThreadOutboxMessage } from "./thread-outbox";
+import { useAtomCommand } from "./use-atom-command";
 import { useThreadOutboxMessages } from "./use-thread-outbox";
 
 export function appendReviewCommentToDraft(input: {
@@ -78,6 +89,9 @@ export function useThreadComposerState() {
   const selectedThreadDetail = useSelectedThreadDetail();
   const composerDrafts = useAtomValue(composerDraftsAtom);
   const queuedMessagesByThreadKey = useThreadOutboxMessages();
+  const updateThreadMetadata = useAtomCommand(threadEnvironment.updateMetadata, {
+    reportFailure: false,
+  });
 
   useEffect(() => {
     ensureComposerDraftsLoaded();
@@ -147,6 +161,34 @@ export function useThreadComposerState() {
       return null;
     }
 
+    const goalCommand = attachments.length === 0 ? parseStandaloneThreadGoalCommand(text) : null;
+    if (goalCommand) {
+      const currentGoal =
+        selectedThreadDetail?.goal !== undefined
+          ? (selectedThreadDetail.goal ?? null)
+          : (selectedThreadShell.goal ?? null);
+      const feedback = await executeThreadGoalCommand({
+        command: goalCommand,
+        currentGoal,
+        hasThread: true,
+        canPersist: true,
+        now: new Date().toISOString(),
+        persist: async (goal) => {
+          const result = await updateThreadMetadata({
+            environmentId: selectedThreadShell.environmentId,
+            input: { threadId: selectedThreadShell.id, goal },
+          });
+          if (result._tag !== "Failure") return null;
+          if (isAtomCommandInterrupted(result)) return "Goal update was interrupted.";
+          const error = squashAtomCommandFailure(result);
+          return error instanceof Error ? error.message : "Failed to update the thread goal.";
+        },
+      });
+      clearComposerDraftContent(threadKey);
+      Alert.alert(feedback.title, feedback.description);
+      return null;
+    }
+
     const metadata = makeQueuedMessageMetadata();
     const messageId = MessageId.make(metadata.messageId);
     // Enqueue publishes the queued atom synchronously (the durable write
@@ -179,7 +221,7 @@ export function useThreadComposerState() {
       );
     });
     return messageId;
-  }, [selectedThreadDetail, selectedThreadShell]);
+  }, [selectedThreadDetail, selectedThreadShell, updateThreadMetadata]);
 
   const onChangeDraftMessage = useCallback(
     (value: string) => {

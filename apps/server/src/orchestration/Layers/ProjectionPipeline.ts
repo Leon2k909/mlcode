@@ -629,6 +629,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             archivedAt: null,
             settledOverride: null,
             settledAt: null,
+            goal: null,
             snoozedUntil: null,
             snoozedAt: null,
             pinnedAt: null,
@@ -811,6 +812,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             ...(event.payload.worktreePath !== undefined
               ? { worktreePath: event.payload.worktreePath }
               : {}),
+            ...(event.payload.goal !== undefined ? { goal: event.payload.goal } : {}),
             updatedAt: event.payload.updatedAt,
           });
           return;
@@ -995,6 +997,11 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
               ? { employeeId: event.payload.employeeId }
               : previousMessage?.employeeId !== undefined
                 ? { employeeId: previousMessage.employeeId }
+                : {}),
+            ...(event.payload.modelSelection !== undefined
+              ? { modelSelection: event.payload.modelSelection }
+              : previousMessage?.modelSelection !== undefined
+                ? { modelSelection: previousMessage.modelSelection }
                 : {}),
             ...(nextAttachments !== undefined ? { attachments: [...nextAttachments] } : {}),
             isStreaming: event.payload.streaming,

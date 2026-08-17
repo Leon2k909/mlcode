@@ -14,11 +14,12 @@ import {
   ProjectionThreadRepository,
   type ProjectionThreadRepositoryShape,
 } from "../Services/ProjectionThreads.ts";
-import { ModelSelection } from "@t3tools/contracts";
+import { ModelSelection, ThreadGoal } from "@t3tools/contracts";
 
 const ProjectionThreadDbRow = ProjectionThread.mapFields(
   Struct.assign({
     modelSelection: Schema.fromJsonString(ModelSelection),
+    goal: Schema.optional(Schema.NullOr(Schema.fromJsonString(ThreadGoal))),
   }),
 );
 type ProjectionThreadDbRow = typeof ProjectionThreadDbRow.Type;
@@ -45,6 +46,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           archived_at,
           settled_override,
           settled_at,
+          goal_json,
           snoozed_until,
           snoozed_at,
           pinned_at,
@@ -72,6 +74,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           ${row.archivedAt},
           ${row.settledOverride},
           ${row.settledAt},
+          ${row.goal ? JSON.stringify(row.goal) : null},
           ${row.snoozedUntil},
           ${row.snoozedAt},
           ${row.pinnedAt},
@@ -99,6 +102,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           archived_at = excluded.archived_at,
           settled_override = excluded.settled_override,
           settled_at = excluded.settled_at,
+          goal_json = excluded.goal_json,
           snoozed_until = excluded.snoozed_until,
           snoozed_at = excluded.snoozed_at,
           pinned_at = excluded.pinned_at,
@@ -133,6 +137,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           archived_at AS "archivedAt",
           settled_override AS "settledOverride",
           settled_at AS "settledAt",
+          goal_json AS "goal",
           snoozed_until AS "snoozedUntil",
           snoozed_at AS "snoozedAt",
           pinned_at AS "pinnedAt",
@@ -169,6 +174,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           archived_at AS "archivedAt",
           settled_override AS "settledOverride",
           settled_at AS "settledAt",
+          goal_json AS "goal",
           snoozed_until AS "snoozedUntil",
           snoozed_at AS "snoozedAt",
           pinned_at AS "pinnedAt",

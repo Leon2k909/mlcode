@@ -218,6 +218,10 @@
     "./usageFormat": {
       "types": "./src/usageFormat.ts",
       "import": "./src/usageFormat.ts"
+    },
+    "./threadGoal": {
+      "types": "./src/threadGoal.ts",
+      "import": "./src/threadGoal.ts"
     }
   },
   "scripts": {

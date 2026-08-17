@@ -226,6 +226,7 @@ describe("environment entity projections", () => {
       branch: "current-branch",
       worktreePath: "/repo/current-worktree",
     });
+    expect(merged?.goal).toBeUndefined();
     expect(merged?.messages).toBe(messages);
   });
 
