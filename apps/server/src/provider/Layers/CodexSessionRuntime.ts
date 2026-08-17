@@ -9,6 +9,12 @@ import {
   type ProviderEvent,
   type ProviderInteractionMode,
   type ProviderRequestKind,
+  type ProviderRealtimeAppendAudioInput,
+  type ProviderRealtimeAppendSpeechInput,
+  type ProviderRealtimeAppendTextInput,
+  type ProviderRealtimeStartInput,
+  type ProviderRealtimeStartResult,
+  type ProviderRealtimeStopInput,
   type ProviderSession,
   type ThreadTurnDispatchMode,
   type ProviderTurnStartResult,
@@ -139,6 +145,21 @@ export interface CodexSessionRuntimeShape {
   readonly sendTurn: (
     input: CodexSessionRuntimeSendTurnInput,
   ) => Effect.Effect<ProviderTurnStartResult, CodexSessionRuntimeError>;
+  readonly realtimeStart: (
+    input: ProviderRealtimeStartInput,
+  ) => Effect.Effect<ProviderRealtimeStartResult, CodexSessionRuntimeError>;
+  readonly realtimeAppendAudio: (
+    input: ProviderRealtimeAppendAudioInput,
+  ) => Effect.Effect<void, CodexSessionRuntimeError>;
+  readonly realtimeAppendText: (
+    input: ProviderRealtimeAppendTextInput,
+  ) => Effect.Effect<void, CodexSessionRuntimeError>;
+  readonly realtimeAppendSpeech: (
+    input: ProviderRealtimeAppendSpeechInput,
+  ) => Effect.Effect<void, CodexSessionRuntimeError>;
+  readonly realtimeStop: (
+    input: ProviderRealtimeStopInput,
+  ) => Effect.Effect<void, CodexSessionRuntimeError>;
   readonly interruptTurn: (turnId?: TurnId) => Effect.Effect<void, CodexSessionRuntimeError>;
   readonly readThread: Effect.Effect<CodexThreadSnapshot, CodexSessionRuntimeError>;
   readonly rollbackThread: (
@@ -1893,6 +1914,64 @@ export const makeCodexSessionRuntime = (
               ? { resumeCursor: { threadId: resumedProviderThreadId } }
               : {}),
           } satisfies ProviderTurnStartResult;
+        }),
+      realtimeStart: (input) =>
+        Effect.gen(function* () {
+          const providerThreadId = yield* readProviderThreadId;
+          const transport = input.transport ?? { type: "websocket" as const };
+          yield* client.raw.request("thread/realtime/start", {
+            threadId: providerThreadId,
+            outputModality: input.outputModality,
+            transport,
+            ...(input.version !== undefined ? { version: input.version } : {}),
+            ...(input.model !== undefined ? { model: input.model } : {}),
+            ...(input.voice !== undefined ? { voice: input.voice } : {}),
+            ...(input.includeStartupContext !== undefined
+              ? { includeStartupContext: input.includeStartupContext }
+              : {}),
+            ...(input.initialItems !== undefined ? { initialItems: input.initialItems } : {}),
+            ...(input.realtimeStartInstructions !== undefined
+              ? { realtimeStartInstructions: input.realtimeStartInstructions }
+              : {}),
+          });
+          return {
+            threadId: input.threadId,
+            provider: PROVIDER,
+            outputModality: input.outputModality,
+            transport,
+          } satisfies ProviderRealtimeStartResult;
+        }),
+      realtimeAppendAudio: (input) =>
+        Effect.gen(function* () {
+          const providerThreadId = yield* readProviderThreadId;
+          yield* client.raw.request("thread/realtime/appendAudio", {
+            threadId: providerThreadId,
+            audio: input.audio,
+          });
+        }),
+      realtimeAppendText: (input) =>
+        Effect.gen(function* () {
+          const providerThreadId = yield* readProviderThreadId;
+          yield* client.raw.request("thread/realtime/appendText", {
+            threadId: providerThreadId,
+            text: input.text,
+            role: input.role ?? "user",
+          });
+        }),
+      realtimeAppendSpeech: (input) =>
+        Effect.gen(function* () {
+          const providerThreadId = yield* readProviderThreadId;
+          yield* client.raw.request("thread/realtime/appendSpeech", {
+            threadId: providerThreadId,
+            text: input.text,
+          });
+        }),
+      realtimeStop: (_input) =>
+        Effect.gen(function* () {
+          const providerThreadId = yield* readProviderThreadId;
+          yield* client.raw.request("thread/realtime/stop", {
+            threadId: providerThreadId,
+          });
         }),
       interruptTurn: (turnId) =>
         Effect.gen(function* () {

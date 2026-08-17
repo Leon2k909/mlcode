@@ -157,7 +157,10 @@ const ProviderRuntimeEventType = Schema.Literals([
   "thread.token-usage.updated",
   "thread.realtime.started",
   "thread.realtime.item-added",
+  "thread.realtime.transcript.delta",
+  "thread.realtime.transcript.done",
   "thread.realtime.audio.delta",
+  "thread.realtime.sdp",
   "thread.realtime.error",
   "thread.realtime.closed",
   "turn.started",
@@ -208,7 +211,10 @@ const ThreadMetadataUpdatedType = Schema.Literal("thread.metadata.updated");
 const ThreadTokenUsageUpdatedType = Schema.Literal("thread.token-usage.updated");
 const ThreadRealtimeStartedType = Schema.Literal("thread.realtime.started");
 const ThreadRealtimeItemAddedType = Schema.Literal("thread.realtime.item-added");
+const ThreadRealtimeTranscriptDeltaType = Schema.Literal("thread.realtime.transcript.delta");
+const ThreadRealtimeTranscriptDoneType = Schema.Literal("thread.realtime.transcript.done");
 const ThreadRealtimeAudioDeltaType = Schema.Literal("thread.realtime.audio.delta");
+const ThreadRealtimeSdpType = Schema.Literal("thread.realtime.sdp");
 const ThreadRealtimeErrorType = Schema.Literal("thread.realtime.error");
 const ThreadRealtimeClosedType = Schema.Literal("thread.realtime.closed");
 const TurnStartedType = Schema.Literal("turn.started");
@@ -341,10 +347,27 @@ const ThreadRealtimeItemAddedPayload = Schema.Struct({
 });
 export type ThreadRealtimeItemAddedPayload = typeof ThreadRealtimeItemAddedPayload.Type;
 
+const ThreadRealtimeTranscriptDeltaPayload = Schema.Struct({
+  delta: Schema.String,
+  role: Schema.String,
+});
+export type ThreadRealtimeTranscriptDeltaPayload = typeof ThreadRealtimeTranscriptDeltaPayload.Type;
+
+const ThreadRealtimeTranscriptDonePayload = Schema.Struct({
+  role: Schema.String,
+  text: Schema.String,
+});
+export type ThreadRealtimeTranscriptDonePayload = typeof ThreadRealtimeTranscriptDonePayload.Type;
+
 const ThreadRealtimeAudioDeltaPayload = Schema.Struct({
   audio: Schema.Unknown,
 });
 export type ThreadRealtimeAudioDeltaPayload = typeof ThreadRealtimeAudioDeltaPayload.Type;
+
+const ThreadRealtimeSdpPayload = Schema.Struct({
+  sdp: Schema.String,
+});
+export type ThreadRealtimeSdpPayload = typeof ThreadRealtimeSdpPayload.Type;
 
 const ThreadRealtimeErrorPayload = Schema.Struct({
   message: TrimmedNonEmptyStringSchema,
@@ -854,6 +877,22 @@ const ProviderRuntimeThreadRealtimeItemAddedEvent = Schema.Struct({
 export type ProviderRuntimeThreadRealtimeItemAddedEvent =
   typeof ProviderRuntimeThreadRealtimeItemAddedEvent.Type;
 
+const ProviderRuntimeThreadRealtimeTranscriptDeltaEvent = Schema.Struct({
+  ...ProviderRuntimeEventBase.fields,
+  type: ThreadRealtimeTranscriptDeltaType,
+  payload: ThreadRealtimeTranscriptDeltaPayload,
+});
+export type ProviderRuntimeThreadRealtimeTranscriptDeltaEvent =
+  typeof ProviderRuntimeThreadRealtimeTranscriptDeltaEvent.Type;
+
+const ProviderRuntimeThreadRealtimeTranscriptDoneEvent = Schema.Struct({
+  ...ProviderRuntimeEventBase.fields,
+  type: ThreadRealtimeTranscriptDoneType,
+  payload: ThreadRealtimeTranscriptDonePayload,
+});
+export type ProviderRuntimeThreadRealtimeTranscriptDoneEvent =
+  typeof ProviderRuntimeThreadRealtimeTranscriptDoneEvent.Type;
+
 const ProviderRuntimeThreadRealtimeAudioDeltaEvent = Schema.Struct({
   ...ProviderRuntimeEventBase.fields,
   type: ThreadRealtimeAudioDeltaType,
@@ -861,6 +900,14 @@ const ProviderRuntimeThreadRealtimeAudioDeltaEvent = Schema.Struct({
 });
 export type ProviderRuntimeThreadRealtimeAudioDeltaEvent =
   typeof ProviderRuntimeThreadRealtimeAudioDeltaEvent.Type;
+
+const ProviderRuntimeThreadRealtimeSdpEvent = Schema.Struct({
+  ...ProviderRuntimeEventBase.fields,
+  type: ThreadRealtimeSdpType,
+  payload: ThreadRealtimeSdpPayload,
+});
+export type ProviderRuntimeThreadRealtimeSdpEvent =
+  typeof ProviderRuntimeThreadRealtimeSdpEvent.Type;
 
 const ProviderRuntimeThreadRealtimeErrorEvent = Schema.Struct({
   ...ProviderRuntimeEventBase.fields,
@@ -1148,7 +1195,10 @@ export const ProviderRuntimeEventV2 = Schema.Union([
   ProviderRuntimeThreadTokenUsageUpdatedEvent,
   ProviderRuntimeThreadRealtimeStartedEvent,
   ProviderRuntimeThreadRealtimeItemAddedEvent,
+  ProviderRuntimeThreadRealtimeTranscriptDeltaEvent,
+  ProviderRuntimeThreadRealtimeTranscriptDoneEvent,
   ProviderRuntimeThreadRealtimeAudioDeltaEvent,
+  ProviderRuntimeThreadRealtimeSdpEvent,
   ProviderRuntimeThreadRealtimeErrorEvent,
   ProviderRuntimeThreadRealtimeClosedEvent,
   ProviderRuntimeTurnStartedEvent,

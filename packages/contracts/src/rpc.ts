@@ -69,6 +69,18 @@ import {
 } from "./orchestration.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
 import {
+  ProviderRealtimeAppendAudioInput,
+  ProviderRealtimeAppendSpeechInput,
+  ProviderRealtimeAppendTextInput,
+  ProviderRealtimeEmptyResult,
+  ProviderRealtimeEvent,
+  ProviderRealtimeRpcError,
+  ProviderRealtimeStartInput,
+  ProviderRealtimeStartResult,
+  ProviderRealtimeStopInput,
+  ProviderRealtimeSubscriptionInput,
+} from "./providerRealtime.ts";
+import {
   PullRequestActionInput,
   PullRequestActivity,
   PullRequestCommentInput,
@@ -251,6 +263,13 @@ export const WS_METHODS = {
   previewAutomationRespond: "previewAutomation.respond",
   previewAutomationFocusHost: "previewAutomation.focusHost",
 
+  // Experimental Codex realtime voice methods
+  providerRealtimeStart: "provider.realtime.start",
+  providerRealtimeAppendAudio: "provider.realtime.appendAudio",
+  providerRealtimeAppendText: "provider.realtime.appendText",
+  providerRealtimeAppendSpeech: "provider.realtime.appendSpeech",
+  providerRealtimeStop: "provider.realtime.stop",
+
   // Server meta
   serverProbe: "server.probe",
   serverGetConfig: "server.getConfig",
@@ -306,6 +325,7 @@ export const WS_METHODS = {
   subscribeTerminalEvents: "subscribeTerminalEvents",
   subscribeTerminalMetadata: "subscribeTerminalMetadata",
   subscribePreviewEvents: "subscribePreviewEvents",
+  subscribeProviderRealtime: "subscribeProviderRealtime",
   subscribeDiscoveredLocalServers: "subscribeDiscoveredLocalServers",
   subscribeServerConfig: "subscribeServerConfig",
   subscribeServerLifecycle: "subscribeServerLifecycle",
@@ -855,6 +875,43 @@ export const WsSubscribePreviewEventsRpc = Rpc.make(WS_METHODS.subscribePreviewE
   stream: true,
 });
 
+export const WsProviderRealtimeStartRpc = Rpc.make(WS_METHODS.providerRealtimeStart, {
+  payload: ProviderRealtimeStartInput,
+  success: ProviderRealtimeStartResult,
+  error: Schema.Union([ProviderRealtimeRpcError, EnvironmentAuthorizationError]),
+});
+
+export const WsProviderRealtimeAppendAudioRpc = Rpc.make(WS_METHODS.providerRealtimeAppendAudio, {
+  payload: ProviderRealtimeAppendAudioInput,
+  success: ProviderRealtimeEmptyResult,
+  error: Schema.Union([ProviderRealtimeRpcError, EnvironmentAuthorizationError]),
+});
+
+export const WsProviderRealtimeAppendTextRpc = Rpc.make(WS_METHODS.providerRealtimeAppendText, {
+  payload: ProviderRealtimeAppendTextInput,
+  success: ProviderRealtimeEmptyResult,
+  error: Schema.Union([ProviderRealtimeRpcError, EnvironmentAuthorizationError]),
+});
+
+export const WsProviderRealtimeAppendSpeechRpc = Rpc.make(WS_METHODS.providerRealtimeAppendSpeech, {
+  payload: ProviderRealtimeAppendSpeechInput,
+  success: ProviderRealtimeEmptyResult,
+  error: Schema.Union([ProviderRealtimeRpcError, EnvironmentAuthorizationError]),
+});
+
+export const WsProviderRealtimeStopRpc = Rpc.make(WS_METHODS.providerRealtimeStop, {
+  payload: ProviderRealtimeStopInput,
+  success: ProviderRealtimeEmptyResult,
+  error: Schema.Union([ProviderRealtimeRpcError, EnvironmentAuthorizationError]),
+});
+
+export const WsSubscribeProviderRealtimeRpc = Rpc.make(WS_METHODS.subscribeProviderRealtime, {
+  payload: ProviderRealtimeSubscriptionInput,
+  success: ProviderRealtimeEvent,
+  error: Schema.Union([ProviderRealtimeRpcError, EnvironmentAuthorizationError]),
+  stream: true,
+});
+
 export const WsSubscribeDiscoveredLocalServersRpc = Rpc.make(
   WS_METHODS.subscribeDiscoveredLocalServers,
   {
@@ -1067,6 +1124,12 @@ export const WsRpcGroup = RpcGroup.make(
   WsPreviewAutomationRespondRpc,
   WsPreviewAutomationFocusHostRpc,
   WsSubscribePreviewEventsRpc,
+  WsProviderRealtimeStartRpc,
+  WsProviderRealtimeAppendAudioRpc,
+  WsProviderRealtimeAppendTextRpc,
+  WsProviderRealtimeAppendSpeechRpc,
+  WsProviderRealtimeStopRpc,
+  WsSubscribeProviderRealtimeRpc,
   WsSubscribeDiscoveredLocalServersRpc,
   WsSubscribeServerConfigRpc,
   WsSubscribeServerLifecycleRpc,

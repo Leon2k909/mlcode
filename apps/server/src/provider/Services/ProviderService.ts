@@ -17,6 +17,12 @@ import type {
   ProviderRespondToRequestInput,
   ProviderRespondToUserInputInput,
   ProviderRuntimeEvent,
+  ProviderRealtimeAppendAudioInput,
+  ProviderRealtimeAppendSpeechInput,
+  ProviderRealtimeAppendTextInput,
+  ProviderRealtimeStartInput,
+  ProviderRealtimeStartResult,
+  ProviderRealtimeStopInput,
   ProviderSendTurnInput,
   ProviderSession,
   ProviderSessionStartInput,
@@ -50,6 +56,23 @@ export interface ProviderServiceShape {
   readonly sendTurn: (
     input: ProviderSendTurnInput,
   ) => Effect.Effect<ProviderTurnStartResult, ProviderServiceError>;
+
+  /** Experimental Codex realtime voice facade. */
+  readonly realtimeStart?: (
+    input: ProviderRealtimeStartInput,
+  ) => Effect.Effect<ProviderRealtimeStartResult, ProviderServiceError>;
+  readonly realtimeAppendAudio?: (
+    input: ProviderRealtimeAppendAudioInput,
+  ) => Effect.Effect<void, ProviderServiceError>;
+  readonly realtimeAppendText?: (
+    input: ProviderRealtimeAppendTextInput,
+  ) => Effect.Effect<void, ProviderServiceError>;
+  readonly realtimeAppendSpeech?: (
+    input: ProviderRealtimeAppendSpeechInput,
+  ) => Effect.Effect<void, ProviderServiceError>;
+  readonly realtimeStop?: (
+    input: ProviderRealtimeStopInput,
+  ) => Effect.Effect<void, ProviderServiceError>;
 
   /**
    * Interrupt a running provider turn.

@@ -13,6 +13,12 @@ import type {
   ProviderDriverKind,
   ProviderUserInputAnswers,
   ProviderRuntimeEvent,
+  ProviderRealtimeAppendAudioInput,
+  ProviderRealtimeAppendSpeechInput,
+  ProviderRealtimeAppendTextInput,
+  ProviderRealtimeStartInput,
+  ProviderRealtimeStartResult,
+  ProviderRealtimeStopInput,
   ProviderSendTurnInput,
   ProviderSession,
   ProviderSessionStartInput,
@@ -69,6 +75,26 @@ export interface ProviderAdapterShape<TError> {
   readonly sendTurn: (
     input: ProviderSendTurnInput,
   ) => Effect.Effect<ProviderTurnStartResult, TError>;
+
+  /**
+   * Optional provider-native realtime voice operations. Codex is currently
+   * the only adapter that implements the experimental protocol; other
+   * providers deliberately leave these undefined so the facade can return a
+   * typed unsupported error.
+   */
+  readonly realtimeStart?: (
+    input: ProviderRealtimeStartInput,
+  ) => Effect.Effect<ProviderRealtimeStartResult, TError>;
+  readonly realtimeAppendAudio?: (
+    input: ProviderRealtimeAppendAudioInput,
+  ) => Effect.Effect<void, TError>;
+  readonly realtimeAppendText?: (
+    input: ProviderRealtimeAppendTextInput,
+  ) => Effect.Effect<void, TError>;
+  readonly realtimeAppendSpeech?: (
+    input: ProviderRealtimeAppendSpeechInput,
+  ) => Effect.Effect<void, TError>;
+  readonly realtimeStop?: (input: ProviderRealtimeStopInput) => Effect.Effect<void, TError>;
 
   /**
    * Interrupt an active turn.

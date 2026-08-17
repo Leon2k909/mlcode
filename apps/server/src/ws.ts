@@ -50,6 +50,8 @@ import {
   AssetWorkspaceContextResolutionError,
   RpcClientId,
   EnvironmentAuthorizationError,
+  ProviderRealtimeRpcError,
+  type ProviderRealtimeStartResult,
   ThreadId,
   type TerminalAttachStreamEvent,
   type TerminalError,
@@ -79,6 +81,8 @@ import {
   observeRpcStreamEffect as instrumentRpcStreamEffect,
 } from "./observability/RpcInstrumentation.ts";
 import * as ProviderRegistry from "./provider/Services/ProviderRegistry.ts";
+import * as ProviderService from "./provider/Services/ProviderService.ts";
+import type { ProviderServiceError } from "./provider/Errors.ts";
 import * as ProviderMaintenanceRunner from "./provider/providerMaintenanceRunner.ts";
 import * as ServerSelfUpdate from "./cloud/selfUpdate.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
@@ -372,6 +376,9 @@ const makeWsRpcLayer = (
       const previewManager = yield* PreviewManager.PreviewManager;
       const portDiscovery = yield* PortScanner.PortDiscovery;
       const providerRegistry = yield* ProviderRegistry.ProviderRegistry;
+      const providerService = Option.getOrUndefined(
+        yield* Effect.serviceOption(ProviderService.ProviderService),
+      );
       const providerMaintenanceRunner = yield* ProviderMaintenanceRunner.ProviderMaintenanceRunner;
       const serverSelfUpdate = yield* ServerSelfUpdate.ServerSelfUpdate;
       const config = yield* ServerConfig.ServerConfig;
@@ -480,6 +487,33 @@ const makeWsRpcLayer = (
               message: cause instanceof Error ? cause.message : fallbackMessage,
               cause,
             });
+      const isProviderRealtimeRpcError = Schema.is(ProviderRealtimeRpcError);
+      const toProviderRealtimeRpcError = (
+        cause: ProviderServiceError | ProviderRealtimeRpcError,
+        operation: string,
+      ) =>
+        isProviderRealtimeRpcError(cause)
+          ? cause
+          : new ProviderRealtimeRpcError({
+              code: String(cause._tag ?? "provider_realtime_error"),
+              message: cause.message ?? `Provider realtime operation '${operation}' failed.`,
+            });
+      const providerRealtimeCall = <A>(
+        operation: string,
+        effect: Effect.Effect<A, ProviderServiceError> | undefined,
+      ): Effect.Effect<A, ProviderRealtimeRpcError> => {
+        const fallback: Effect.Effect<A, ProviderRealtimeRpcError> = Effect.fail(
+          new ProviderRealtimeRpcError({
+            code: "unsupported",
+            message: `Provider realtime operation '${operation}' is unavailable.`,
+          }),
+        );
+        const request: Effect.Effect<A, ProviderServiceError | ProviderRealtimeRpcError> =
+          effect ?? fallback;
+        return request.pipe(
+          Effect.mapError((cause) => toProviderRealtimeRpcError(cause, operation)),
+        );
+      };
       const randomUUID = crypto.randomUUIDv4.pipe(
         Effect.mapError((cause) =>
           toDispatchCommandError(cause, "Failed to generate orchestration command identifier."),
@@ -2147,6 +2181,73 @@ const makeWsRpcLayer = (
             WS_METHODS.previewAutomationFocusHost,
             previewAutomationBroker.focusHost(input),
             { "rpc.aggregate": "preview-automation" },
+          ),
+        [WS_METHODS.providerRealtimeStart]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.providerRealtimeStart,
+            providerRealtimeCall<ProviderRealtimeStartResult>(
+              WS_METHODS.providerRealtimeStart,
+              providerService?.realtimeStart?.(input),
+            ),
+            { "rpc.aggregate": "provider-realtime" },
+          ),
+        [WS_METHODS.providerRealtimeAppendAudio]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.providerRealtimeAppendAudio,
+            providerRealtimeCall<void>(
+              WS_METHODS.providerRealtimeAppendAudio,
+              providerService?.realtimeAppendAudio?.(input),
+            ).pipe(Effect.map(() => ({}))),
+            { "rpc.aggregate": "provider-realtime" },
+          ),
+        [WS_METHODS.providerRealtimeAppendText]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.providerRealtimeAppendText,
+            providerRealtimeCall<void>(
+              WS_METHODS.providerRealtimeAppendText,
+              providerService?.realtimeAppendText?.(input),
+            ).pipe(Effect.map(() => ({}))),
+            { "rpc.aggregate": "provider-realtime" },
+          ),
+        [WS_METHODS.providerRealtimeAppendSpeech]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.providerRealtimeAppendSpeech,
+            providerRealtimeCall<void>(
+              WS_METHODS.providerRealtimeAppendSpeech,
+              providerService?.realtimeAppendSpeech?.(input),
+            ).pipe(Effect.map(() => ({}))),
+            { "rpc.aggregate": "provider-realtime" },
+          ),
+        [WS_METHODS.providerRealtimeStop]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.providerRealtimeStop,
+            providerRealtimeCall<void>(
+              WS_METHODS.providerRealtimeStop,
+              providerService?.realtimeStop?.(input),
+            ).pipe(Effect.map(() => ({}))),
+            { "rpc.aggregate": "provider-realtime" },
+          ),
+        [WS_METHODS.subscribeProviderRealtime]: (input) =>
+          observeRpcStream(
+            WS_METHODS.subscribeProviderRealtime,
+            providerService === undefined
+              ? Stream.fail(
+                  new ProviderRealtimeRpcError({
+                    code: "unavailable",
+                    message: "Provider realtime events are unavailable in this environment.",
+                  }),
+                )
+              : providerService.streamEvents.pipe(
+                  Stream.filter(
+                    (event) =>
+                      event.threadId === input.threadId &&
+                      event.type.startsWith("thread.realtime."),
+                  ),
+                  Stream.mapError((cause) =>
+                    toProviderRealtimeRpcError(cause, WS_METHODS.subscribeProviderRealtime),
+                  ),
+                ),
+            { "rpc.aggregate": "provider-realtime" },
           ),
         [WS_METHODS.subscribePreviewEvents]: (_input) =>
           observeRpcStream(WS_METHODS.subscribePreviewEvents, previewManager.events, {

@@ -12,6 +12,12 @@ import {
   ProviderItemId,
   type ProviderApprovalDecision,
   type ProviderEvent,
+  type ProviderRealtimeAppendAudioInput,
+  type ProviderRealtimeAppendSpeechInput,
+  type ProviderRealtimeAppendTextInput,
+  type ProviderRealtimeStartInput,
+  type ProviderRealtimeStartResult,
+  type ProviderRealtimeStopInput,
   type ProviderSession,
   type ProviderTurnStartResult,
   type ProviderUserInputAnswers,
@@ -129,6 +135,31 @@ class FakeCodexRuntime implements CodexSessionRuntimeShape {
 
   sendTurn(input: CodexSessionRuntimeSendTurnInput) {
     return Effect.promise(() => this.sendTurnImpl(input));
+  }
+
+  realtimeStart(input: ProviderRealtimeStartInput) {
+    return Effect.succeed({
+      threadId: input.threadId,
+      provider: ProviderDriverKind.make("codex"),
+      outputModality: input.outputModality,
+      transport: input.transport ?? { type: "websocket" },
+    } satisfies ProviderRealtimeStartResult);
+  }
+
+  realtimeAppendAudio(_input: ProviderRealtimeAppendAudioInput) {
+    return Effect.void;
+  }
+
+  realtimeAppendText(_input: ProviderRealtimeAppendTextInput) {
+    return Effect.void;
+  }
+
+  realtimeAppendSpeech(_input: ProviderRealtimeAppendSpeechInput) {
+    return Effect.void;
+  }
+
+  realtimeStop(_input: ProviderRealtimeStopInput) {
+    return Effect.void;
   }
 
   interruptTurn(turnId?: TurnId) {
@@ -826,6 +857,52 @@ lifecycleLayer("CodexAdapterLive lifecycle", (it) => {
       }
       NodeAssert.equal(firstEvent.value.threadId, "thread-1");
       NodeAssert.equal(firstEvent.value.payload.realtimeSessionId, "realtime-session-1");
+    }),
+  );
+
+  it.effect("maps realtime transcript and SDP notifications to canonical events", () =>
+    Effect.gen(function* () {
+      const { adapter, runtime } = yield* startLifecycleRuntime();
+      const eventsFiber = yield* Stream.runCollect(Stream.take(adapter.streamEvents, 2)).pipe(
+        Effect.forkChild,
+      );
+
+      yield* runtime.emit({
+        id: asEventId("evt-realtime-transcript-delta"),
+        kind: "notification",
+        provider: ProviderDriverKind.make("codex"),
+        threadId: asThreadId("thread-1"),
+        createdAt: "2026-01-01T00:00:00.000Z",
+        method: "thread/realtime/transcript/delta",
+        payload: {
+          threadId: "thread-1",
+          delta: "Hello",
+          role: "user",
+        },
+      } satisfies ProviderEvent);
+      yield* runtime.emit({
+        id: asEventId("evt-realtime-sdp"),
+        kind: "notification",
+        provider: ProviderDriverKind.make("codex"),
+        threadId: asThreadId("thread-1"),
+        createdAt: "2026-01-01T00:00:00.000Z",
+        method: "thread/realtime/sdp",
+        payload: {
+          threadId: "thread-1",
+          sdp: "v=0\\r\\n",
+        },
+      } satisfies ProviderEvent);
+
+      const events = Array.from(yield* Fiber.join(eventsFiber));
+      NodeAssert.equal(events[0]?.type, "thread.realtime.transcript.delta");
+      if (events[0]?.type === "thread.realtime.transcript.delta") {
+        NodeAssert.equal(events[0].payload.delta, "Hello");
+        NodeAssert.equal(events[0].payload.role, "user");
+      }
+      NodeAssert.equal(events[1]?.type, "thread.realtime.sdp");
+      if (events[1]?.type === "thread.realtime.sdp") {
+        NodeAssert.equal(events[1].payload.sdp, "v=0\\r\\n");
+      }
     }),
   );
 
