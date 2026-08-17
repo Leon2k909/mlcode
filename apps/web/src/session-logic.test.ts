@@ -1092,7 +1092,7 @@ describe("deriveWorkLogEntries", () => {
     ];
 
     const [entry] = deriveWorkLogEntries(activities);
-    expect(entry?.toolTitle).toBe("t3-code · preview_status");
+    expect(entry?.toolTitle).toBe("ML Code · preview_status");
     expect(entry?.toolData).toEqual(item);
   });
 
@@ -1127,6 +1127,7 @@ describe("deriveWorkLogEntries", () => {
     ];
 
     const [entry] = deriveWorkLogEntries(activities);
+    expect(entry?.label).toBe("ML Code · preview_snapshot");
     expect(entry?.toolData).toEqual(item);
   });
 

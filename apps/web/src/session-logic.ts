@@ -837,7 +837,7 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
     id: activity.id,
     createdAt: activity.createdAt,
     turnId: activity.turnId,
-    label: taskLabel || activity.summary,
+    label: formatLegacyProductName(taskLabel || activity.summary),
     tone:
       activity.kind === "task.progress"
         ? "thinking"
@@ -1312,7 +1312,12 @@ function extractToolCommand(payload: Record<string, unknown> | null): {
 }
 
 function extractToolTitle(payload: Record<string, unknown> | null): string | null {
-  return asTrimmedString(payload?.title);
+  const title = asTrimmedString(payload?.title);
+  return title ? formatLegacyProductName(title) : null;
+}
+
+function formatLegacyProductName(value: string): string {
+  return value.replace(/\bt3[- ]code\b/gi, "ML Code");
 }
 
 function extractToolCallId(payload: Record<string, unknown> | null): string | null {

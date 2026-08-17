@@ -1,7 +1,7 @@
 /**
  * Employee contracts.
  *
- * An **employee** is a named persona that does work in T3 Code: a display
+ * An **employee** is a named persona that does work in ML Code: a display
  * name, an avatar, a role, and a block of standing instructions, with a saved
  * default provider instance. Employees sit *above* the provider layer —
  * several employees can share a single provider instance (three teammates on

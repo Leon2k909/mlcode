@@ -1,6 +1,6 @@
 # Employees
 
-> For maintainers. Using T3 Code? See [docs/user](../user/).
+> For maintainers. Using ML Code? See [docs/user](../user/).
 
 An **employee** is a named persona that does work: a display name, an avatar, a role, and a block
 of standing instructions, bound to one provider instance.
@@ -97,7 +97,7 @@ timeline.
 The command reactor treats only this explicit group transition as permission to cross provider
 drivers. A cross-driver handoff starts a fresh provider session without the previous driver's resume
 cursor; ordinary provider changes in an established thread remain forbidden. Both employees still
-share the thread and workspace history persisted by T3 Code.
+share the thread and workspace history persisted by ML Code.
 
 Only one recipient can take ownership at a time, and a chain stops after eight handoffs without a
 human message. Invalid, disabled, self, out-of-group, and empty handoffs become visible activities

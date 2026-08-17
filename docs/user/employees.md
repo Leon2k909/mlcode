@@ -1,6 +1,6 @@
 # Employees
 
-An employee is a named teammate in T3 Code: a name, an avatar, a role, and a set of standing
+An employee is a named teammate in ML Code: a name, an avatar, a role, and a set of standing
 instructions. Employees do the work through the providers you have already set up, so an employee is
 a _who_, not a new agent to install.
 
@@ -45,7 +45,7 @@ and a handoff is marked in the timeline so the conversation reads like a small S
 channel rather than one anonymous agent.
 
 The default CEO is routing-only in a group: it chooses a worker before any tool use. If it attempts
-a tool instead of handing off, T3 Code blocks that tool and continues the request automatically
+a tool instead of handing off, ML Code blocks that tool and continues the request automatically
 with an enabled worker rather than ending the conversation.
 
 The composer and sidebar list the employees by name. If you change the group while an employee is
