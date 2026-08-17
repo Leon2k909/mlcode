@@ -1,7 +1,9 @@
 import {
+  DEFAULT_EMPLOYEES,
   isProviderDriverKind,
   isProviderAvailable,
   type ModelSelection,
+  type Employee,
   type ProviderDriverKind,
   type ServerProvider,
   ServerSettings,
@@ -121,6 +123,69 @@ function mergeModelSelectionOptionsById(input: {
   return [...merged.entries()].map(([id, value]) => ({ id, value }));
 }
 
+/**
+ * Repair required employee fields that older/sparse settings patches may omit
+ * before the strict server-settings encoder sees them. Valid entries are
+ * returned unchanged; missing names use the persisted id as a last-resort
+ * label, while provider ids use the current or shipped roster when available.
+ */
+function repairEmployeeRequiredFields(
+  employeeId: string,
+  employee: Employee,
+  fallbackEmployee: Employee | undefined,
+): Employee {
+  const rawEmployee = employee as unknown as {
+    displayName?: unknown;
+    providerInstanceId?: unknown;
+  };
+  const repairedFields: {
+    displayName?: string;
+    providerInstanceId?: Employee["providerInstanceId"];
+  } = {};
+  if (typeof rawEmployee.displayName !== "string" || rawEmployee.displayName.trim().length === 0) {
+    repairedFields.displayName = fallbackEmployee?.displayName ?? employeeId;
+  }
+  if (
+    (typeof rawEmployee.providerInstanceId !== "string" ||
+      rawEmployee.providerInstanceId.trim().length === 0) &&
+    fallbackEmployee?.providerInstanceId !== undefined
+  ) {
+    repairedFields.providerInstanceId = fallbackEmployee.providerInstanceId;
+  }
+  return Object.keys(repairedFields).length === 0
+    ? employee
+    : ({ ...employee, ...repairedFields } as Employee);
+}
+
+function repairEmployeeMap(employees: ServerSettings["employees"]): ServerSettings["employees"] {
+  return Object.fromEntries(
+    Object.entries(employees).map(([employeeId, employee]) => {
+      const defaultEmployee = (DEFAULT_EMPLOYEES as unknown as Record<string, Employee>)[
+        employeeId
+      ];
+      return [employeeId, repairEmployeeRequiredFields(employeeId, employee, defaultEmployee)];
+    }),
+  ) as ServerSettings["employees"];
+}
+
+function repairEmployeePatch(
+  currentEmployees: ServerSettings["employees"],
+  employeesPatch: NonNullable<ServerSettingsPatch["employees"]>,
+): NonNullable<ServerSettingsPatch["employees"]> {
+  return Object.fromEntries(
+    Object.entries(employeesPatch).map(([employeeId, employee]) => {
+      const currentEmployee = (currentEmployees as unknown as Record<string, Employee>)[employeeId];
+      const defaultEmployee = (DEFAULT_EMPLOYEES as unknown as Record<string, Employee>)[
+        employeeId
+      ];
+      return [
+        employeeId,
+        repairEmployeeRequiredFields(employeeId, employee, currentEmployee ?? defaultEmployee),
+      ];
+    }),
+  ) as NonNullable<ServerSettingsPatch["employees"]>;
+}
+
 export function applyServerSettingsPatch(
   current: ServerSettings,
   patch: ServerSettingsPatch,
@@ -131,8 +196,21 @@ export function applyServerSettingsPatch(
     providerHealthRefreshInterval,
     backgroundActivityProfile,
     backgroundActivity,
+    employees,
     ...patchForMerge
   } = patch;
+  const currentWithRepairedEmployees = {
+    ...current,
+    employees: repairEmployeeMap(current.employees),
+  };
+  const patchForMergeWithRepairedEmployees = {
+    ...patchForMerge,
+    ...(employees !== undefined
+      ? {
+          employees: repairEmployeePatch(currentWithRepairedEmployees.employees, employees),
+        }
+      : {}),
+  };
   const currentBackgroundActivity = normalizeServerBackgroundActivitySettings(current);
   const backgroundActivityPatch =
     backgroundActivityProfile !== undefined
@@ -168,7 +246,7 @@ export function applyServerSettingsPatch(
             },
           }
         : undefined;
-  const next = deepMerge(current, patchForMerge);
+  const next = deepMerge(currentWithRepairedEmployees, patchForMergeWithRepairedEmployees);
   const nextWithReplacementsBase = {
     ...next,
     ...(backgroundActivity !== undefined

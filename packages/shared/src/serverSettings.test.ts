@@ -3,6 +3,8 @@ import {
   EmployeeId,
   ProviderDriverKind,
   ProviderInstanceId,
+  type ServerSettings,
+  type ServerSettingsPatch,
   type ServerProvider,
 } from "@t3tools/contracts";
 import * as Duration from "effect/Duration";
@@ -324,6 +326,33 @@ describe("serverSettings helpers", () => {
     });
 
     expect(next.employees[employeeId]?.fastMode).toBe(false);
+  });
+
+  it("repairs sparse legacy employee patches before strict settings encoding", () => {
+    const employeeId = EmployeeId.make("worker_alpha");
+    const current = {
+      ...DEFAULT_SERVER_SETTINGS,
+      employees: {
+        [employeeId]: {
+          instructions: "Implement the requested change.",
+          fastMode: true,
+          enabled: true,
+        },
+      },
+    } as unknown as ServerSettings;
+    const patch = {
+      employees: {
+        [employeeId]: { fastMode: false },
+      },
+    } as unknown as ServerSettingsPatch;
+
+    const next = applyServerSettingsPatch(current, patch);
+
+    expect(next.employees[employeeId]).toMatchObject({
+      displayName: "Alpha",
+      providerInstanceId: ProviderInstanceId.make("codex"),
+      fastMode: false,
+    });
   });
 
   it("stores background activity profiles as a versioned object and syncs legacy aliases", () => {
