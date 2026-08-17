@@ -28,6 +28,12 @@ Each employee can have its own provider, model override, standing instructions, 
 
 This workflow is designed to improve speed and quality by matching work to a focused role while keeping verification separate from implementation. It is still an early-alpha feature: inspect the employee's report and test important changes before shipping them.
 
+## Browser computer use
+
+ML Code supports computer-use-style automation inside its collaborative browser preview. When an automation-capable preview is attached, a provider can open and navigate pages, inspect a semantic snapshot and screenshot, click, type, press keys, scroll, evaluate page JavaScript, wait for page conditions, and record the session.
+
+This capability is limited to the embedded preview browser. It does not control arbitrary Windows applications, the global mouse or keyboard, or the entire desktop. ML Code does not currently provide a general OS-level `computer_use` bridge like a full desktop automation host.
+
 > [!WARNING]
 > Install and authenticate at least one provider before use:
 >
