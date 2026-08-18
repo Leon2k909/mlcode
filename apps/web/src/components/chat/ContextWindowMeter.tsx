@@ -10,6 +10,7 @@ import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import {
   formatContextWindowCompactionMessage,
   selectOldestMessageIdsForPruning,
+  shouldAutoOpenContextPrunePrompt,
   shouldOfferContextPrune,
   type ContextPrunableMessage,
 } from "./ContextWindowMeter.logic";
@@ -50,7 +51,7 @@ function formatUsageStatus(value: string | null): string | null {
 }
 
 export function ContextWindowMeter(props: {
-  usage: ContextWindowSnapshot;
+  usage: ContextWindowSnapshot | null;
   providerDisplayName?: string | null;
   modelDisplayName?: string | null;
   fastMode?: boolean | null;
@@ -69,10 +70,9 @@ export function ContextWindowMeter(props: {
   const [open, setOpen] = useState(false);
   const [prunePromptDismissed, setPrunePromptDismissed] = useState(false);
   const promptedPruneKey = useRef<string | null>(null);
-  const usedPercentage = formatPercentage(usage.usedPercentage);
-  const normalizedPercentage = Math.max(0, Math.min(100, usage.usedPercentage ?? 0));
   const pruneMessageIds = useMemo(() => selectOldestMessageIdsForPruning(messages), [messages]);
   const showPrunePrompt =
+    usage !== null &&
     props.onPruneOlderMessages !== undefined &&
     shouldOfferContextPrune({
       usedPercentage: usage.usedPercentage,
@@ -82,13 +82,45 @@ export function ContextWindowMeter(props: {
     !prunePromptDismissed;
 
   useEffect(() => {
+    if (usage === null) {
+      setOpen(false);
+    }
+  }, [usage]);
+
+  useEffect(() => {
+    if (
+      !shouldAutoOpenContextPrunePrompt({
+        promptKey: props.prunePromptKey,
+        showPrunePrompt,
+        promptedPruneKey: promptedPruneKey.current,
+      })
+    ) {
+      return;
+    }
     const promptKey = props.prunePromptKey;
-    if (!showPrunePrompt || promptKey === null || promptKey === undefined) return;
-    if (promptedPruneKey.current === promptKey) return;
+    if (promptKey === null || promptKey === undefined) return;
     promptedPruneKey.current = promptKey;
     setPrunePromptDismissed(false);
     setOpen(true);
   }, [props.prunePromptKey, showPrunePrompt]);
+
+  if (usage === null) {
+    return (
+      <span
+        className="inline-flex size-7 items-center justify-center text-muted-foreground"
+        aria-label="Waiting for fresh context usage"
+        role="status"
+      >
+        <span
+          className="size-5 rounded-full border-2 border-muted-foreground/25"
+          aria-hidden="true"
+        />
+      </span>
+    );
+  }
+
+  const usedPercentage = formatPercentage(usage.usedPercentage);
+  const normalizedPercentage = Math.max(0, Math.min(100, usage.usedPercentage ?? 0));
 
   return (
     <Popover open={open} onOpenChange={setOpen}>

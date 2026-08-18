@@ -439,17 +439,15 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
 }) {
   return (
     <>
-      {props.activeContextWindow ? (
-        <ContextWindowMeter
-          usage={props.activeContextWindow}
-          messages={props.contextMessages}
-          prunePromptKey={props.prunePromptKey}
-          onPruneOlderMessages={props.onPruneOlderMessages}
-          providerDisplayName={props.activeThreadProviderDisplayName}
-          modelDisplayName={props.activeThreadModelDisplayName}
-          fastMode={props.activeThreadFastMode}
-        />
-      ) : null}
+      <ContextWindowMeter
+        usage={props.activeContextWindow}
+        messages={props.contextMessages}
+        prunePromptKey={props.prunePromptKey}
+        onPruneOlderMessages={props.onPruneOlderMessages}
+        providerDisplayName={props.activeThreadProviderDisplayName}
+        modelDisplayName={props.activeThreadModelDisplayName}
+        fastMode={props.activeThreadFastMode}
+      />
       {props.isPreparingWorktree ? (
         <span className="text-secondary-label text-xs">Preparing worktree...</span>
       ) : null}
