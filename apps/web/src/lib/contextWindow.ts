@@ -1,4 +1,8 @@
-import type { OrchestrationThreadActivity, ThreadTokenUsageSnapshot } from "@t3tools/contracts";
+import type {
+  ModelSelection,
+  OrchestrationThreadActivity,
+  ThreadTokenUsageSnapshot,
+} from "@t3tools/contracts";
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" ? (value as Record<string, unknown>) : null;
@@ -49,9 +53,16 @@ export function formatProviderDisplayName(provider: string | null | undefined): 
 
 export function deriveLatestContextWindowSnapshot(
   activities: ReadonlyArray<OrchestrationThreadActivity>,
+  activeModelSelection?: Pick<ModelSelection, "instanceId" | "model"> | null,
 ): ContextWindowSnapshot | null {
   for (let index = activities.length - 1; index >= 0; index -= 1) {
     const activity = activities[index];
+    if (activity?.kind === "context-compaction") {
+      // A pre-compaction sample no longer describes the live prompt. Wait for
+      // the provider's next token update instead of reviving the old count on
+      // reload.
+      return null;
+    }
     if (!activity || activity.kind !== "context-window.updated") {
       continue;
     }
@@ -60,6 +71,19 @@ export function deriveLatestContextWindowSnapshot(
     const usedTokens = asFiniteNumber(payload?.usedTokens);
     if (usedTokens === null || usedTokens < 0) {
       continue;
+    }
+
+    if (activeModelSelection !== undefined && activeModelSelection !== null) {
+      const reportedSelection = asRecord(payload?.modelSelection);
+      if (
+        reportedSelection?.instanceId !== activeModelSelection.instanceId ||
+        reportedSelection.model !== activeModelSelection.model
+      ) {
+        // Legacy samples carry no selection identity, and a sample from a
+        // different provider/model is equally stale. Do not guess which
+        // historical count belongs to the current composer.
+        return null;
+      }
     }
 
     const maxTokens = asFiniteNumber(payload?.maxTokens);

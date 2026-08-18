@@ -2824,6 +2824,86 @@ describe("ProviderCommandReactor", () => {
     });
   });
 
+  it("returns each human-authored group task to the CEO before worker routing", async () => {
+    const ceoId = EmployeeId.make("ceo");
+    const workerId = EmployeeId.make("worker_alpha");
+    const workerSelection: ModelSelection = {
+      instanceId: ProviderInstanceId.make("codex"),
+      model: "gpt-5.6-sol",
+      options: [{ id: "reasoningEffort", value: "ultra" }],
+      employeeId: workerId,
+      employeeIds: [ceoId, workerId],
+    };
+    const harness = await createHarness({
+      threadModelSelection: workerSelection,
+      serverSettings: {
+        employees: {
+          [ceoId]: {
+            displayName: "Ceo",
+            role: "Chief executive",
+            providerInstanceId: ProviderInstanceId.make("codex"),
+            modelMode: "override",
+            model: "gpt-5.6-sol",
+            modelOptions: [{ id: "reasoningEffort", value: "ultra" }],
+            instructions: "Route each new task.",
+            enabled: true,
+          },
+          [workerId]: {
+            displayName: "Alpha",
+            role: "Implementation",
+            providerInstanceId: ProviderInstanceId.make("codex"),
+            modelMode: "auto",
+            instructions: "Implement assigned work.",
+            enabled: true,
+          },
+        },
+      },
+    });
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-human-group-return-to-ceo"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-human-group-return-to-ceo"),
+          role: "user",
+          text: "Handle this new easy task efficiently.",
+          attachments: [],
+        },
+        modelSelection: workerSelection,
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: "2026-08-18T09:00:00.000Z",
+      }),
+    );
+
+    await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+    expect(harness.sendTurn.mock.calls[0]?.[0]).toMatchObject({
+      modelSelection: {
+        instanceId: ProviderInstanceId.make("codex"),
+        model: "gpt-5.6-sol",
+        options: [{ id: "reasoningEffort", value: "ultra" }],
+        employeeId: ceoId,
+        employeeIds: [ceoId, workerId],
+      },
+      toolPolicy: "deny-all",
+    });
+    await waitFor(async () => {
+      const readModel = await harness.readModel();
+      const thread = readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
+      return thread?.modelSelection.employeeId === ceoId;
+    });
+    const readModel = await harness.readModel();
+    expect(
+      readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"))?.modelSelection,
+    ).toMatchObject({
+      model: "gpt-5.6-sol",
+      options: [{ id: "reasoningEffort", value: "ultra" }],
+      employeeId: ceoId,
+    });
+  });
+
   it("lets an auto employee inherit the active model and reasoning", async () => {
     const workerId = EmployeeId.make("worker_alpha");
     const harness = await createHarness({

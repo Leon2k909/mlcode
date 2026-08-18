@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vite-plus/test";
-import { EventId, type OrchestrationThreadActivity, TurnId } from "@t3tools/contracts";
+import {
+  EventId,
+  type OrchestrationThreadActivity,
+  ProviderInstanceId,
+  TurnId,
+} from "@t3tools/contracts";
 
 import { deriveLatestContextWindowSnapshot, formatContextWindowTokens } from "./contextWindow";
 
@@ -80,5 +85,57 @@ describe("contextWindow", () => {
 
     expect(snapshot?.usedTokens).toBe(81_659);
     expect(snapshot?.totalProcessedTokens).toBe(748_126);
+  });
+
+  it("does not revive a pre-compaction usage sample", () => {
+    const snapshot = deriveLatestContextWindowSnapshot([
+      makeActivity("activity-1", "context-window.updated", {
+        usedTokens: 81_659,
+        maxTokens: 258_400,
+      }),
+      makeActivity("activity-2", "context-compaction", { state: "compacted" }),
+    ]);
+
+    expect(snapshot).toBeNull();
+  });
+
+  it("only shows usage attributed to the active provider and model", () => {
+    const activeSelection = {
+      instanceId: ProviderInstanceId.make("codex"),
+      model: "gpt-5.6-sol",
+    } as const;
+    const matching = deriveLatestContextWindowSnapshot(
+      [
+        makeActivity("activity-1", "context-window.updated", {
+          usedTokens: 12_000,
+          maxTokens: 258_400,
+          modelSelection: activeSelection,
+        }),
+      ],
+      activeSelection,
+    );
+    const legacy = deriveLatestContextWindowSnapshot(
+      [
+        makeActivity("activity-2", "context-window.updated", {
+          usedTokens: 80_000,
+          maxTokens: 258_400,
+        }),
+      ],
+      activeSelection,
+    );
+    const otherModel = deriveLatestContextWindowSnapshot(
+      [
+        makeActivity("activity-3", "context-window.updated", {
+          usedTokens: 80_000,
+          maxTokens: 258_400,
+          modelSelection: { instanceId: "claudeAgent", model: "claude-fable-5" },
+        }),
+      ],
+      activeSelection,
+    );
+
+    expect(matching?.usedTokens).toBe(12_000);
+    expect(legacy).toBeNull();
+    expect(otherModel).toBeNull();
   });
 });

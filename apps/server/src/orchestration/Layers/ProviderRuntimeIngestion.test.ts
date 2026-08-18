@@ -3560,6 +3560,10 @@ describe("ProviderRuntimeIngestion", () => {
       reasoningOutputTokens: 25,
       lastUsedTokens: 1075,
       compactsAutomatically: true,
+      modelSelection: {
+        instanceId: ProviderInstanceId.make("codex"),
+        model: "gpt-5-codex",
+      },
     });
   });
 
@@ -3617,7 +3621,12 @@ describe("ProviderRuntimeIngestion", () => {
   });
 
   it("projects Claude usage snapshots with context window into normalized thread activities", async () => {
-    const harness = await createHarness();
+    const harness = await createHarness({
+      threadModelSelection: {
+        instanceId: ProviderInstanceId.make("claudeAgent"),
+        model: "claude-fable-5",
+      },
+    });
     const now = "2026-01-01T00:00:00.000Z";
 
     harness.emit({
@@ -3657,6 +3666,10 @@ describe("ProviderRuntimeIngestion", () => {
       maxTokens: 200_000,
       toolUses: 25,
       durationMs: 43_567,
+      modelSelection: {
+        instanceId: ProviderInstanceId.make("claudeAgent"),
+        model: "claude-fable-5",
+      },
     });
   });
 

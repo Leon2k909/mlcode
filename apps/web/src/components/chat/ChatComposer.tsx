@@ -1249,8 +1249,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // Context window
   // ------------------------------------------------------------------
   const activeContextWindow = useMemo(
-    () => deriveLatestContextWindowSnapshot(activeThreadActivities ?? []),
-    [activeThreadActivities],
+    () =>
+      deriveLatestContextWindowSnapshot(activeThreadActivities ?? [], activeThreadModelSelection),
+    [activeThreadActivities, activeThreadModelSelection],
   );
   const activeThreadProviderDisplayName = useMemo(() => {
     if (!activeThreadModelSelection) return null;

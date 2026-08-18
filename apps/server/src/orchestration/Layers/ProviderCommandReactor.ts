@@ -10,7 +10,7 @@ import {
   ProviderDriverKind,
   type ProjectId,
   type OrchestrationSession,
-  type EmployeeId,
+  EmployeeId,
   employeeUsesModelOverride,
   resolveEmployee,
   ThreadId,
@@ -61,6 +61,7 @@ import { VcsStatusBroadcaster } from "../../vcs/VcsStatusBroadcaster.ts";
 import { GitWorkflowService } from "../../git/GitWorkflowService.ts";
 const isProviderAdapterRequestError = Schema.is(ProviderAdapterRequestError);
 const isProviderDriverKind = Schema.is(ProviderDriverKind);
+const ROUTING_CEO_EMPLOYEE_ID = EmployeeId.make("ceo");
 
 type ProviderIntentEvent = Extract<
   OrchestrationEvent,
@@ -95,7 +96,26 @@ function isEmployeeGroupHandoff(current: ModelSelection, requested: ModelSelecti
 }
 
 function isCeoGroupRoutingSelection(selection: ModelSelection): boolean {
-  return selection.employeeId === "ceo" && (selection.employeeIds?.length ?? 0) >= 2;
+  return (
+    selection.employeeId === ROUTING_CEO_EMPLOYEE_ID && (selection.employeeIds?.length ?? 0) >= 2
+  );
+}
+
+function routeHumanEmployeeGroupToCeo(
+  selection: ModelSelection,
+  sourceEmployeeId: EmployeeId | undefined,
+): ModelSelection {
+  const participants = selection.employeeIds;
+  if (
+    sourceEmployeeId !== undefined ||
+    participants === undefined ||
+    participants.length < 2 ||
+    !participants.includes(ROUTING_CEO_EMPLOYEE_ID) ||
+    selection.employeeId === ROUTING_CEO_EMPLOYEE_ID
+  ) {
+    return selection;
+  }
+  return { ...selection, employeeId: ROUTING_CEO_EMPLOYEE_ID };
 }
 
 function applyEmployeeFastMode(
@@ -919,6 +939,7 @@ const make = Effect.gen(function* () {
     readonly messageText: string;
     readonly attachments?: ReadonlyArray<ChatAttachment>;
     readonly modelSelection?: ModelSelection;
+    readonly sourceEmployeeId?: EmployeeId;
     readonly interactionMode?: "default" | "plan";
     readonly mode?: ThreadTurnDispatchMode;
     readonly createdAt: string;
@@ -931,7 +952,15 @@ const make = Effect.gen(function* () {
     }
     const previousModelSelection =
       threadModelSelections.get(input.threadId) ?? thread.modelSelection;
-    const requestedModelSelection = input.modelSelection ?? previousModelSelection;
+    const originalRequestedModelSelection = input.modelSelection ?? previousModelSelection;
+    const requestedModelSelection = routeHumanEmployeeGroupToCeo(
+      originalRequestedModelSelection,
+      input.sourceEmployeeId,
+    );
+    const reroutedHumanGroup = !Equal.equals(
+      requestedModelSelection,
+      originalRequestedModelSelection,
+    );
     const selectedEmployeeId = requestedModelSelection.employeeId;
     const settings =
       selectedEmployeeId === undefined ? undefined : yield* serverSettingsService.getSettings;
@@ -977,7 +1006,8 @@ const make = Effect.gen(function* () {
       // The routing CEO is the exception: its configured override must stay
       // authoritative so a stale composer selection cannot lower the lead.
       const pinsCeoOptions =
-        selectedEmployeeId === "ceo" && (selectedEmployee.modelOptions?.length ?? 0) > 0;
+        selectedEmployeeId === ROUTING_CEO_EMPLOYEE_ID &&
+        (selectedEmployee.modelOptions?.length ?? 0) > 0;
       const optionsForSelection =
         usesEmployeeModelOverride &&
         targetInstanceId === selectedEmployee.providerInstanceId &&
@@ -1015,6 +1045,14 @@ const make = Effect.gen(function* () {
             "CEO group routing requires a native deny-all policy or guarded runtime recovery. The selected provider supports neither.",
         });
       }
+    }
+    if (reroutedHumanGroup) {
+      yield* orchestrationEngine.dispatch({
+        type: "thread.meta.update",
+        commandId: yield* serverCommandId("employee-group-return-to-ceo"),
+        threadId: input.threadId,
+        modelSelection: effectiveModelSelection,
+      });
     }
     const allowProviderChange =
       isEmployeeGroupHandoff(previousModelSelection, effectiveModelSelection) ||
@@ -1500,6 +1538,7 @@ const make = Effect.gen(function* () {
       ...(event.payload.modelSelection !== undefined
         ? { modelSelection: event.payload.modelSelection }
         : {}),
+      ...(message.employeeId !== undefined ? { sourceEmployeeId: message.employeeId } : {}),
       interactionMode: event.payload.interactionMode,
       ...(event.payload.mode !== undefined ? { mode: event.payload.mode } : {}),
       createdAt: event.payload.createdAt,

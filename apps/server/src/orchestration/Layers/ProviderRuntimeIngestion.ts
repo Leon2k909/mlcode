@@ -285,11 +285,15 @@ function assistantSegmentMessageId(baseKey: string, segmentIndex: number): Messa
 }
 function buildContextWindowActivityPayload(
   event: ProviderRuntimeEvent,
-): ThreadTokenUsageSnapshot | undefined {
+  modelSelection: ModelSelection | undefined,
+): (ThreadTokenUsageSnapshot & { readonly modelSelection?: ModelSelection }) | undefined {
   if (event.type !== "thread.token-usage.updated" || event.payload.usage.usedTokens <= 0) {
     return undefined;
   }
-  return event.payload.usage;
+  return {
+    ...event.payload.usage,
+    ...(modelSelection !== undefined ? { modelSelection } : {}),
+  };
 }
 
 function normalizeRuntimeTurnState(
@@ -398,6 +402,7 @@ function taskLinkageActivityFields(payload: Record<string, unknown>): Record<str
 export function runtimeEventToActivities(
   event: ProviderRuntimeEvent,
   taskTitle?: string,
+  modelSelection?: ModelSelection,
 ): ReadonlyArray<OrchestrationThreadActivity> {
   const maybeSequence = (() => {
     const eventWithSequence = event as ProviderRuntimeEvent & { sessionSequence?: number };
@@ -800,7 +805,7 @@ export function runtimeEventToActivities(
     }
 
     case "thread.token-usage.updated": {
-      const payload = buildContextWindowActivityPayload(event);
+      const payload = buildContextWindowActivityPayload(event, modelSelection);
       if (!payload) {
         return [];
       }
@@ -2644,7 +2649,7 @@ const make = Effect.gen(function* () {
       const activities =
         routingOnlyToolBlockedThreads.has(thread.id) && isToolLifecycleEvent(event)
           ? []
-          : runtimeEventToActivities(event, taskTitle);
+          : runtimeEventToActivities(event, taskTitle, thread.modelSelection);
       yield* Effect.forEach(activities, (activity) =>
         providerCommandId(event, "thread-activity-append").pipe(
           Effect.flatMap((commandId) =>
