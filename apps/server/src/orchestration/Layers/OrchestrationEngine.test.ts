@@ -22,11 +22,13 @@ import { describe, expect, it } from "vite-plus/test";
 import { PersistenceSqlError } from "../../persistence/Errors.ts";
 import { OrchestrationCommandReceiptRepositoryLive } from "../../persistence/Layers/OrchestrationCommandReceipts.ts";
 import { OrchestrationEventStoreLive } from "../../persistence/Layers/OrchestrationEventStore.ts";
+import { ProjectionThreadMessageRepositoryLive } from "../../persistence/Layers/ProjectionThreadMessages.ts";
 import { SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite.ts";
 import {
   OrchestrationEventStore,
   type OrchestrationEventStoreShape,
 } from "../../persistence/Services/OrchestrationEventStore.ts";
+import { ProjectionThreadMessageRepository } from "../../persistence/Services/ProjectionThreadMessages.ts";
 import * as RepositoryIdentityResolver from "../../project/RepositoryIdentityResolver.ts";
 import { OrchestrationEngineLive } from "./OrchestrationEngine.ts";
 import { OrchestrationProjectionPipelineLive } from "./ProjectionPipeline.ts";
@@ -56,6 +58,7 @@ async function createOrchestrationSystem() {
       Layer.provide(OrchestrationProjectionPipelineLive),
     ),
     OrchestrationProjectionSnapshotQueryLive,
+    ProjectionThreadMessageRepositoryLive,
   ).pipe(
     Layer.provide(ThreadBackgroundLiveness.layer),
     Layer.provide(ThreadPlanProgress.layer),
@@ -69,8 +72,12 @@ async function createOrchestrationSystem() {
   const runtime = ManagedRuntime.make(orchestrationLayer);
   const engine = await runtime.runPromise(Effect.service(OrchestrationEngineService));
   const snapshotQuery = await runtime.runPromise(Effect.service(ProjectionSnapshotQuery));
+  const messageRepository = await runtime.runPromise(
+    Effect.service(ProjectionThreadMessageRepository),
+  );
   return {
     engine,
+    messageRepository,
     readModel: () => runtime.runPromise(snapshotQuery.getSnapshot()),
     run: <A, E>(effect: Effect.Effect<A, E>) => runtime.runPromise(effect),
     dispose: () => runtime.dispose(),
@@ -299,6 +306,84 @@ describe("OrchestrationEngine", () => {
     const readModelA = await system.readModel();
     const readModelB = await system.readModel();
     expect(readModelB).toEqual(readModelA);
+    await system.dispose();
+  });
+
+  it("prunes persisted messages that are absent from the lightweight command read model", async () => {
+    const createdAt = now();
+    const system = await createOrchestrationSystem();
+    const { engine, messageRepository } = system;
+    const projectId = asProjectId("project-persisted-prune");
+    const threadId = ThreadId.make("thread-persisted-prune");
+
+    await system.run(
+      engine.dispatch({
+        type: "project.create",
+        commandId: CommandId.make("cmd-project-persisted-prune-create"),
+        projectId,
+        title: "Persisted Prune Project",
+        workspaceRoot: "/tmp/project-persisted-prune",
+        defaultModelSelection: {
+          instanceId: ProviderInstanceId.make("codex"),
+          model: "gpt-5-codex",
+        },
+        createdAt,
+      }),
+    );
+    await system.run(
+      engine.dispatch({
+        type: "thread.create",
+        commandId: CommandId.make("cmd-thread-persisted-prune-create"),
+        threadId,
+        projectId,
+        title: "Persisted Prune Thread",
+        modelSelection: {
+          instanceId: ProviderInstanceId.make("codex"),
+          model: "gpt-5-codex",
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "full-access",
+        branch: null,
+        worktreePath: null,
+        createdAt,
+      }),
+    );
+
+    for (const [messageId, role, text, timestamp] of [
+      ["persisted-old-user", "user", "Old question", "2026-01-01T00:00:01.000Z"],
+      ["persisted-old-assistant", "assistant", "Old answer", "2026-01-01T00:00:02.000Z"],
+      ["persisted-latest-user", "user", "Keep this", "2026-01-01T00:00:03.000Z"],
+    ] as const) {
+      await system.run(
+        messageRepository.upsert({
+          messageId: asMessageId(messageId),
+          threadId,
+          turnId: null,
+          role,
+          text,
+          isStreaming: false,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        }),
+      );
+    }
+
+    await system.run(
+      engine.dispatch({
+        type: "thread.message.delete",
+        commandId: CommandId.make("cmd-thread-persisted-prune"),
+        threadId,
+        messageId: asMessageId("persisted-old-user"),
+        messageIds: [asMessageId("persisted-old-user"), asMessageId("persisted-old-assistant")],
+        createdAt: "2026-01-01T00:00:04.000Z",
+      }),
+    );
+
+    expect(
+      (await system.readModel()).threads
+        .find((thread) => thread.id === threadId)
+        ?.messages.map((message) => message.id),
+    ).toEqual([asMessageId("persisted-latest-user")]);
     await system.dispose();
   });
 

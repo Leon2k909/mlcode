@@ -160,4 +160,48 @@ layer("ProjectionThreadMessageRepository", (it) => {
       }
     }),
   );
+
+  it.effect("lists ordered message headers without hydrating message bodies", () =>
+    Effect.gen(function* () {
+      const repository = yield* ProjectionThreadMessageRepository;
+      const threadId = ThreadId.make("thread-message-headers");
+
+      yield* repository.upsert({
+        messageId: MessageId.make("message-header-2"),
+        threadId,
+        turnId: null,
+        role: "assistant",
+        text: "This body is intentionally excluded from the header query.",
+        isStreaming: false,
+        createdAt: "2026-08-17T21:00:02.000Z",
+        updatedAt: "2026-08-17T21:00:02.000Z",
+      });
+      yield* repository.upsert({
+        messageId: MessageId.make("message-header-1"),
+        threadId,
+        turnId: null,
+        role: "user",
+        text: "This body is also intentionally excluded.",
+        isStreaming: false,
+        createdAt: "2026-08-17T21:00:01.000Z",
+        updatedAt: "2026-08-17T21:00:01.000Z",
+      });
+
+      const headers = yield* repository.listHeadersByThreadId({ threadId });
+      assert.deepEqual(headers, [
+        {
+          messageId: MessageId.make("message-header-1"),
+          threadId,
+          role: "user",
+          createdAt: "2026-08-17T21:00:01.000Z",
+        },
+        {
+          messageId: MessageId.make("message-header-2"),
+          threadId,
+          role: "assistant",
+          createdAt: "2026-08-17T21:00:02.000Z",
+        },
+      ]);
+    }),
+  );
 });

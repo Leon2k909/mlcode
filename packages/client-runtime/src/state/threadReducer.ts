@@ -286,6 +286,10 @@ export function applyThreadDetailEvent(
         id: event.payload.messageId,
         role: event.payload.role,
         text: event.payload.text,
+        ...(event.payload.employeeId !== undefined ? { employeeId: event.payload.employeeId } : {}),
+        ...(event.payload.modelSelection !== undefined
+          ? { modelSelection: event.payload.modelSelection }
+          : {}),
         ...(event.payload.attachments !== undefined
           ? { attachments: event.payload.attachments }
           : {}),
@@ -309,6 +313,10 @@ export function applyThreadDetailEvent(
                       : entry.text,
                   streaming: message.streaming,
                   ...(message.turnId !== undefined ? { turnId: message.turnId } : {}),
+                  ...(message.employeeId !== undefined ? { employeeId: message.employeeId } : {}),
+                  ...(message.modelSelection !== undefined
+                    ? { modelSelection: message.modelSelection }
+                    : {}),
                   ...(message.streaming ? {} : { updatedAt: message.updatedAt }),
                   ...(message.attachments !== undefined
                     ? { attachments: message.attachments }

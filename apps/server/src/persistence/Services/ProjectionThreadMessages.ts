@@ -38,6 +38,14 @@ export const ProjectionThreadMessage = Schema.Struct({
 });
 export type ProjectionThreadMessage = typeof ProjectionThreadMessage.Type;
 
+export const ProjectionThreadMessageHeader = Schema.Struct({
+  messageId: MessageId,
+  threadId: ThreadId,
+  role: OrchestrationMessageRole,
+  createdAt: IsoDateTime,
+});
+export type ProjectionThreadMessageHeader = typeof ProjectionThreadMessageHeader.Type;
+
 export const ListProjectionThreadMessagesInput = Schema.Struct({
   threadId: ThreadId,
 });
@@ -81,6 +89,15 @@ export interface ProjectionThreadMessageRepositoryShape {
   readonly listByThreadId: (
     input: ListProjectionThreadMessagesInput,
   ) => Effect.Effect<ReadonlyArray<ProjectionThreadMessage>, ProjectionRepositoryError>;
+
+  /**
+   * List only the identity and ordering fields needed to validate message deletion.
+   *
+   * Returned in ascending creation order without hydrating message bodies.
+   */
+  readonly listHeadersByThreadId: (
+    input: ListProjectionThreadMessagesInput,
+  ) => Effect.Effect<ReadonlyArray<ProjectionThreadMessageHeader>, ProjectionRepositoryError>;
 
   /**
    * Delete projected thread messages by thread.

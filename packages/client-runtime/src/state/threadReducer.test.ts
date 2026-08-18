@@ -3,6 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   CheckpointRef,
   CommandId,
+  EmployeeId,
   EventId,
   MessageId,
   ProjectId,
@@ -374,6 +375,74 @@ describe("applyThreadDetailEvent", () => {
       if (result.kind === "updated") {
         expect(result.thread.messages).toHaveLength(1);
         expect(result.thread.messages[0]?.text).toBe("Hello, world!");
+      }
+    });
+
+    it("retains employee attribution when appending and completing assistant messages", () => {
+      const employeeId = EmployeeId.make("worker_alpha");
+      const modelSelection = {
+        instanceId: ProviderInstanceId.make("codex"),
+        model: "gpt-5.6-luna",
+        options: [{ id: "reasoningEffort", value: "low" }],
+        employeeId,
+      };
+      const messageId = MessageId.make("employee-message");
+      const turnId = TurnId.make("turn-employee");
+
+      const appended = applyThreadDetailEvent(baseThread, {
+        ...baseEventFields,
+        sequence: 8,
+        occurredAt: "2026-04-01T07:00:00.000Z",
+        aggregateKind: "thread",
+        aggregateId: ThreadId.make("thread-1"),
+        type: "thread.message-sent",
+        payload: {
+          threadId: ThreadId.make("thread-1"),
+          messageId,
+          role: "assistant",
+          text: "Working on it.",
+          employeeId,
+          modelSelection,
+          turnId,
+          streaming: true,
+          createdAt: "2026-04-01T07:00:00.000Z",
+          updatedAt: "2026-04-01T07:00:00.000Z",
+        },
+      });
+
+      expect(appended.kind).toBe("updated");
+      if (appended.kind !== "updated") return;
+      expect(appended.thread.messages[0]).toMatchObject({ employeeId, modelSelection });
+
+      const completed = applyThreadDetailEvent(appended.thread, {
+        ...baseEventFields,
+        sequence: 9,
+        occurredAt: "2026-04-01T07:01:00.000Z",
+        aggregateKind: "thread",
+        aggregateId: ThreadId.make("thread-1"),
+        type: "thread.message-sent",
+        payload: {
+          threadId: ThreadId.make("thread-1"),
+          messageId,
+          role: "assistant",
+          text: "Done.",
+          employeeId,
+          modelSelection,
+          turnId,
+          streaming: false,
+          createdAt: "2026-04-01T07:00:00.000Z",
+          updatedAt: "2026-04-01T07:01:00.000Z",
+        },
+      });
+
+      expect(completed.kind).toBe("updated");
+      if (completed.kind === "updated") {
+        expect(completed.thread.messages[0]).toMatchObject({
+          text: "Done.",
+          employeeId,
+          modelSelection,
+          streaming: false,
+        });
       }
     });
 

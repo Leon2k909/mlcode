@@ -12,7 +12,7 @@ export type ContextPrunableMessage<MessageId extends string = string> = {
 
 const CONTEXT_PRUNE_MIN_USER_TURNS = 5;
 const CONTEXT_PRUNE_RETAIN_USER_TURNS = 4;
-const CONTEXT_PRUNE_MIN_USED_PERCENTAGE = 80;
+const CONTEXT_PRUNE_MIN_USED_PERCENTAGE = 50;
 
 export function shouldOfferContextPrune(input: {
   usedPercentage: number | null;

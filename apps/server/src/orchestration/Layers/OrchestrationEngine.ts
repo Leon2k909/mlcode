@@ -31,6 +31,8 @@ import {
 import { toPersistenceSqlError } from "../../persistence/Errors.ts";
 import { OrchestrationEventStore } from "../../persistence/Services/OrchestrationEventStore.ts";
 import { OrchestrationCommandReceiptRepository } from "../../persistence/Services/OrchestrationCommandReceipts.ts";
+import { ProjectionThreadMessageRepositoryLive } from "../../persistence/Layers/ProjectionThreadMessages.ts";
+import { ProjectionThreadMessageRepository } from "../../persistence/Services/ProjectionThreadMessages.ts";
 import {
   OrchestrationCommandInvariantError,
   OrchestrationCommandPreviouslyRejectedError,
@@ -82,6 +84,7 @@ const makeOrchestrationEngine = Effect.gen(function* () {
   const commandReceiptRepository = yield* OrchestrationCommandReceiptRepository;
   const projectionPipeline = yield* OrchestrationProjectionPipeline;
   const projectionSnapshotQuery = yield* ProjectionSnapshotQuery;
+  const projectionThreadMessageRepository = yield* ProjectionThreadMessageRepository;
   const crypto = yield* Crypto.Crypto;
 
   const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
@@ -101,6 +104,42 @@ const makeOrchestrationEngine = Effect.gen(function* () {
       }
       return nextReadModel;
     });
+
+  const readModelForCommand = Effect.fn("OrchestrationEngine.readModelForCommand")(function* (
+    command: OrchestrationCommand,
+  ) {
+    if (command.type !== "thread.message.delete") {
+      return commandReadModel;
+    }
+
+    const thread = commandReadModel.threads.find((entry) => entry.id === command.threadId);
+    if (!thread) {
+      return commandReadModel;
+    }
+
+    const messageHeaders = yield* projectionThreadMessageRepository.listHeadersByThreadId({
+      threadId: command.threadId,
+    });
+    return {
+      ...commandReadModel,
+      threads: commandReadModel.threads.map((entry) =>
+        entry.id === command.threadId
+          ? {
+              ...entry,
+              messages: messageHeaders.map((message) => ({
+                id: message.messageId,
+                role: message.role,
+                text: "",
+                turnId: null,
+                streaming: false,
+                createdAt: message.createdAt,
+                updatedAt: message.createdAt,
+              })),
+            }
+          : entry,
+      ),
+    } satisfies OrchestrationReadModel;
+  });
 
   const processEnvelope = (envelope: CommandEnvelope): Effect.Effect<void> => {
     const dispatchStartSequence = commandReadModel.snapshotSequence;
@@ -150,9 +189,10 @@ const makeOrchestrationEngine = Effect.gen(function* () {
           });
         }
 
+        const decisionReadModel = yield* readModelForCommand(envelope.command);
         const eventBase = yield* decideOrchestrationCommand({
           command: envelope.command,
-          readModel: commandReadModel,
+          readModel: decisionReadModel,
         }).pipe(
           Effect.provideService(Crypto.Crypto, crypto),
           Effect.mapError((cause) =>
@@ -340,4 +380,4 @@ const makeOrchestrationEngine = Effect.gen(function* () {
 export const OrchestrationEngineLive = Layer.effect(
   OrchestrationEngineService,
   makeOrchestrationEngine,
-);
+).pipe(Layer.provide(ProjectionThreadMessageRepositoryLive));

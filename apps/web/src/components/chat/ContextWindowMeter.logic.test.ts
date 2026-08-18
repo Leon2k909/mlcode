@@ -9,10 +9,10 @@ import {
 } from "./ContextWindowMeter.logic";
 
 describe("context pruning guidance", () => {
-  it("offers pruning only for a long, heavily used thread", () => {
-    expect(shouldOfferContextPrune({ usedPercentage: 79, messageCount: 20 })).toBe(false);
-    expect(shouldOfferContextPrune({ usedPercentage: 80, messageCount: 9 })).toBe(false);
-    expect(shouldOfferContextPrune({ usedPercentage: 80, messageCount: 10 })).toBe(true);
+  it("offers pruning once a long thread reaches half of its context window", () => {
+    expect(shouldOfferContextPrune({ usedPercentage: 49, messageCount: 20 })).toBe(false);
+    expect(shouldOfferContextPrune({ usedPercentage: 50, messageCount: 9 })).toBe(false);
+    expect(shouldOfferContextPrune({ usedPercentage: 50, messageCount: 10 })).toBe(true);
     expect(shouldOfferContextPrune({ usedPercentage: null, messageCount: 20 })).toBe(false);
   });
 
