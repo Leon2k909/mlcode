@@ -108,6 +108,17 @@ export function make(): ThreadBackgroundLivenessService["Service"] {
         drop(input.threadId, input.taskId);
         return;
       }
+      // Status-free progress is a description tick, not a restart. A delayed
+      // progress event after idle must not put the task back in the live set.
+      if (input.kind === "progress" && input.status === undefined) {
+        const existing = stateByThreadId.get(input.threadId);
+        const stillLive =
+          existing !== undefined &&
+          (existing.agents.has(input.taskId) || existing.monitors.has(input.taskId));
+        if (!stillLive) {
+          return;
+        }
+      }
       // A subagent's internal non-agent work (its own shells/monitors) is
       // covered by the owning agent's liveness. Nested agents fall through:
       // they can outlive their parent (review finding).
