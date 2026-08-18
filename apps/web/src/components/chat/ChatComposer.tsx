@@ -789,6 +789,8 @@ export interface ChatComposerProps {
 
   // Context window
   activeThreadActivities: Thread["activities"] | undefined;
+  threadDetailLoading: boolean;
+  environmentConnectionPhase: EnvironmentConnectionPresentation["phase"];
 
   // Misc
   resolvedTheme: "light" | "dark";
@@ -909,6 +911,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     activeProjectDefaultModelSelection,
     activeThreadModelSelection,
     activeThreadActivities,
+    threadDetailLoading,
+    environmentConnectionPhase,
     resolvedTheme,
     settings,
     keybindings,
@@ -1248,11 +1252,70 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // ------------------------------------------------------------------
   // Context window
   // ------------------------------------------------------------------
-  const activeContextWindow = useMemo(
+  const contextWindowPreviousConnectionPhaseRef = useRef(environmentConnectionPhase);
+  const [contextWindowConnectionCycle, setContextWindowConnectionCycle] = useState(0);
+  useEffect(() => {
+    const wasConnected = contextWindowPreviousConnectionPhaseRef.current === "connected";
+    contextWindowPreviousConnectionPhaseRef.current = environmentConnectionPhase;
+    if (!wasConnected && environmentConnectionPhase === "connected") {
+      setContextWindowConnectionCycle((current) => current + 1);
+    }
+  }, [environmentConnectionPhase]);
+  const contextWindowFreshnessKey = useMemo(
     () =>
-      deriveLatestContextWindowSnapshot(activeThreadActivities ?? [], activeThreadModelSelection),
-    [activeThreadActivities, activeThreadModelSelection],
+      JSON.stringify([
+        activeThreadId ?? null,
+        activeThreadModelSelection?.instanceId ?? null,
+        activeThreadModelSelection?.model ?? null,
+        activeThreadModelSelection?.employeeId ?? null,
+        contextWindowConnectionCycle,
+      ]),
+    [
+      activeThreadId,
+      activeThreadModelSelection?.employeeId,
+      activeThreadModelSelection?.instanceId,
+      activeThreadModelSelection?.model,
+      contextWindowConnectionCycle,
+    ],
   );
+  const [contextWindowFreshness, setContextWindowFreshness] = useState(() => ({
+    key: contextWindowFreshnessKey,
+    ready: !threadDetailLoading,
+    ignoredActivityIds: new Set((activeThreadActivities ?? []).map((activity) => activity.id)),
+  }));
+
+  useEffect(() => {
+    if (threadDetailLoading) {
+      return;
+    }
+    setContextWindowFreshness((current) => {
+      if (current.key === contextWindowFreshnessKey && current.ready) {
+        return current;
+      }
+      return {
+        key: contextWindowFreshnessKey,
+        ready: true,
+        ignoredActivityIds: new Set((activeThreadActivities ?? []).map((activity) => activity.id)),
+      };
+    });
+  }, [activeThreadActivities, contextWindowFreshnessKey, threadDetailLoading]);
+  const activeContextWindow = useMemo(() => {
+    if (!contextWindowFreshness.ready || contextWindowFreshness.key !== contextWindowFreshnessKey) {
+      return null;
+    }
+    return deriveLatestContextWindowSnapshot(
+      activeThreadActivities ?? [],
+      activeThreadModelSelection,
+      {
+        ignoredActivityIds: contextWindowFreshness.ignoredActivityIds,
+      },
+    );
+  }, [
+    activeThreadActivities,
+    activeThreadModelSelection,
+    contextWindowFreshness,
+    contextWindowFreshnessKey,
+  ]);
   const activeThreadProviderDisplayName = useMemo(() => {
     if (!activeThreadModelSelection) return null;
     const entry = providerStatuses.find(

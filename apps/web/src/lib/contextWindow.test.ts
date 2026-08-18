@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 import {
+  EmployeeId,
   EventId,
   type OrchestrationThreadActivity,
   ProviderInstanceId,
@@ -137,5 +138,55 @@ describe("contextWindow", () => {
     expect(matching?.usedTokens).toBe(12_000);
     expect(legacy).toBeNull();
     expect(otherModel).toBeNull();
+  });
+
+  it("waits for a usage report received after composer hydration", () => {
+    const activeSelection = {
+      instanceId: ProviderInstanceId.make("codex"),
+      model: "gpt-5.6-terra",
+      employeeId: EmployeeId.make("worker_alpha"),
+    } as const;
+    const historical = makeActivity("activity-before-hydration", "context-window.updated", {
+      usedTokens: 159_000,
+      maxTokens: 258_000,
+      modelSelection: activeSelection,
+    });
+    const fresh = makeActivity("activity-after-hydration", "context-window.updated", {
+      usedTokens: 25_000,
+      maxTokens: 258_000,
+      modelSelection: activeSelection,
+    });
+
+    expect(
+      deriveLatestContextWindowSnapshot([historical], activeSelection, {
+        ignoredActivityIds: new Set([historical.id]),
+      }),
+    ).toBeNull();
+    expect(
+      deriveLatestContextWindowSnapshot([historical, fresh], activeSelection, {
+        ignoredActivityIds: new Set([historical.id]),
+      })?.usedTokens,
+    ).toBe(25_000);
+  });
+
+  it("does not show a matching model's usage for a different employee", () => {
+    const activeSelection = {
+      instanceId: ProviderInstanceId.make("codex"),
+      model: "gpt-5.6-terra",
+      employeeId: EmployeeId.make("worker_alpha"),
+    } as const;
+
+    expect(
+      deriveLatestContextWindowSnapshot(
+        [
+          makeActivity("activity-worker-beta", "context-window.updated", {
+            usedTokens: 159_000,
+            maxTokens: 258_000,
+            modelSelection: { ...activeSelection, employeeId: EmployeeId.make("worker_beta") },
+          }),
+        ],
+        activeSelection,
+      ),
+    ).toBeNull();
   });
 });

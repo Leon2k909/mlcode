@@ -7034,6 +7034,8 @@ function ChatViewContent(props: ChatViewProps) {
                             }
                             activeThreadModelSelection={activeThread?.modelSelection}
                             activeThreadActivities={activeThread?.activities}
+                            threadDetailLoading={threadDetailLoading}
+                            environmentConnectionPhase={activeEnvironmentConnectionPhase}
                             resolvedTheme={resolvedTheme}
                             settings={settings}
                             keybindings={keybindings}

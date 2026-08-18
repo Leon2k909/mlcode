@@ -29,6 +29,15 @@ export type ContextWindowSnapshot = NullableContextWindowUsage & {
   readonly updatedAt: string;
 };
 
+export type ContextWindowSnapshotOptions = {
+  /**
+   * Usage activities that were already present when this composer session
+   * hydrated. They describe an earlier provider context, so wait for a new
+   * provider report instead of restoring them as live usage.
+   */
+  readonly ignoredActivityIds?: ReadonlySet<string>;
+};
+
 /** Map a provider driver kind to a user-facing display name. */
 export function formatProviderDisplayName(provider: string | null | undefined): string {
   if (!provider) return "This agent";
@@ -53,7 +62,8 @@ export function formatProviderDisplayName(provider: string | null | undefined): 
 
 export function deriveLatestContextWindowSnapshot(
   activities: ReadonlyArray<OrchestrationThreadActivity>,
-  activeModelSelection?: Pick<ModelSelection, "instanceId" | "model"> | null,
+  activeModelSelection?: Pick<ModelSelection, "instanceId" | "model" | "employeeId"> | null,
+  options?: ContextWindowSnapshotOptions,
 ): ContextWindowSnapshot | null {
   for (let index = activities.length - 1; index >= 0; index -= 1) {
     const activity = activities[index];
@@ -64,6 +74,9 @@ export function deriveLatestContextWindowSnapshot(
       return null;
     }
     if (!activity || activity.kind !== "context-window.updated") {
+      continue;
+    }
+    if (options?.ignoredActivityIds?.has(activity.id)) {
       continue;
     }
 
@@ -77,7 +90,8 @@ export function deriveLatestContextWindowSnapshot(
       const reportedSelection = asRecord(payload?.modelSelection);
       if (
         reportedSelection?.instanceId !== activeModelSelection.instanceId ||
-        reportedSelection.model !== activeModelSelection.model
+        reportedSelection.model !== activeModelSelection.model ||
+        reportedSelection.employeeId !== activeModelSelection.employeeId
       ) {
         // Legacy samples carry no selection identity, and a sample from a
         // different provider/model is equally stale. Do not guess which
