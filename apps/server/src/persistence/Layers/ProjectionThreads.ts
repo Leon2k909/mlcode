@@ -14,12 +14,13 @@ import {
   ProjectionThreadRepository,
   type ProjectionThreadRepositoryShape,
 } from "../Services/ProjectionThreads.ts";
-import { ModelSelection, ThreadGoal } from "@t3tools/contracts";
+import { ModelSelection, ThreadContinuation, ThreadGoal } from "@t3tools/contracts";
 
 const ProjectionThreadDbRow = ProjectionThread.mapFields(
   Struct.assign({
     modelSelection: Schema.fromJsonString(ModelSelection),
     goal: Schema.optional(Schema.NullOr(Schema.fromJsonString(ThreadGoal))),
+    continuation: Schema.optional(Schema.NullOr(Schema.fromJsonString(ThreadContinuation))),
   }),
 );
 type ProjectionThreadDbRow = typeof ProjectionThreadDbRow.Type;
@@ -47,6 +48,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           settled_override,
           settled_at,
           goal_json,
+          continuation_json,
           snoozed_until,
           snoozed_at,
           pinned_at,
@@ -75,6 +77,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           ${row.settledOverride},
           ${row.settledAt},
           ${row.goal ? JSON.stringify(row.goal) : null},
+          ${row.continuation ? JSON.stringify(row.continuation) : null},
           ${row.snoozedUntil},
           ${row.snoozedAt},
           ${row.pinnedAt},
@@ -103,6 +106,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           settled_override = excluded.settled_override,
           settled_at = excluded.settled_at,
           goal_json = excluded.goal_json,
+          continuation_json = excluded.continuation_json,
           snoozed_until = excluded.snoozed_until,
           snoozed_at = excluded.snoozed_at,
           pinned_at = excluded.pinned_at,
@@ -138,6 +142,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           settled_override AS "settledOverride",
           settled_at AS "settledAt",
           goal_json AS "goal",
+          continuation_json AS "continuation",
           snoozed_until AS "snoozedUntil",
           snoozed_at AS "snoozedAt",
           pinned_at AS "pinnedAt",
@@ -175,6 +180,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           settled_override AS "settledOverride",
           settled_at AS "settledAt",
           goal_json AS "goal",
+          continuation_json AS "continuation",
           snoozed_until AS "snoozedUntil",
           snoozed_at AS "snoozedAt",
           pinned_at AS "pinnedAt",

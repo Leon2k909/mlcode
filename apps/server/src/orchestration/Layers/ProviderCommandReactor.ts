@@ -463,6 +463,7 @@ const make = Effect.gen(function* () {
    * re-sends a persona, which is harmless.
    */
   const threadInjectedEmployees = new Map<string, EmployeeId>();
+  const pendingContinuationConsumption = new Set<ThreadId>();
 
   const appendProviderFailureActivity = (input: {
     readonly threadId: ThreadId;
@@ -1112,13 +1113,23 @@ const make = Effect.gen(function* () {
       messageText: messageTextForTurn,
     });
     const messageTextWithGoal = applyPersistentThreadGoal(routedMessageText, thread.goal);
+    const shouldApplyContinuation =
+      sessionOutcome.contextReset &&
+      thread.continuation !== null &&
+      thread.continuation !== undefined;
+    const messageTextWithContinuation = shouldApplyContinuation
+      ? `${thread.continuation.context}\n\n[Continue with the new user turn]\n\n${messageTextWithGoal}`
+      : messageTextWithGoal;
+    if (shouldApplyContinuation) {
+      pendingContinuationConsumption.add(thread.id);
+    }
     const providerSwitchContext = providerChanged
       ? buildProviderSwitchContext(thread.messages, input.messageId)
       : undefined;
     const normalizedInput = toNonEmptyProviderInput(
       providerSwitchContext === undefined
-        ? messageTextWithGoal
-        : `${providerSwitchContext}\n\n[Continue with the new turn]\n\n${messageTextWithGoal}`,
+        ? messageTextWithContinuation
+        : `${providerSwitchContext}\n\n[Continue with the new turn]\n\n${messageTextWithContinuation}`,
     );
     const normalizedAttachments = input.attachments ?? [];
     const activeSession = yield* providerService
@@ -1519,7 +1530,8 @@ const make = Effect.gen(function* () {
     });
 
     const recoverTurnStartFailure = (cause: Cause.Cause<unknown>) =>
-      handleTurnStartFailure(cause).pipe(
+      Effect.sync(() => pendingContinuationConsumption.delete(event.payload.threadId)).pipe(
+        Effect.andThen(handleTurnStartFailure(cause)),
         Effect.catchCause((recoveryCause) =>
           Effect.logWarning("provider command reactor failed to recover turn start failure", {
             eventType: event.type,
@@ -1551,9 +1563,21 @@ const make = Effect.gen(function* () {
       return;
     }
 
-    yield* providerService
-      .sendTurn(sendTurnRequest.value)
-      .pipe(Effect.catchCause(recoverTurnStartFailure), Effect.forkScoped);
+    yield* providerService.sendTurn(sendTurnRequest.value).pipe(
+      Effect.tap(() =>
+        Effect.gen(function* () {
+          if (!pendingContinuationConsumption.delete(event.payload.threadId)) return;
+          yield* orchestrationEngine.dispatch({
+            type: "thread.meta.update",
+            commandId: yield* serverCommandId("consume-context-continuation"),
+            threadId: event.payload.threadId,
+            continuation: null,
+          });
+        }),
+      ),
+      Effect.catchCause(recoverTurnStartFailure),
+      Effect.forkScoped,
+    );
   });
 
   const processTurnInterruptRequested = Effect.fn("processTurnInterruptRequested")(function* (

@@ -2,6 +2,7 @@ import {
   ApprovalRequestId,
   type AssistantDeliveryMode,
   CommandId,
+  type ContextManagementMode,
   DEFAULT_MODEL_BY_PROVIDER,
   type EmployeeId,
   type EmployeeMap,
@@ -34,6 +35,11 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
 import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
+import {
+  buildContextContinuation,
+  CONTEXT_AUTO_MANAGE_MIN_USED_PERCENTAGE,
+  selectOldestMessageIdsForContextPruning,
+} from "@t3tools/shared/contextManagement";
 
 import { ProviderService } from "../../provider/Services/ProviderService.ts";
 import { ProjectionTurnRepository } from "../../persistence/Services/ProjectionTurns.ts";
@@ -52,6 +58,7 @@ import { ServerSettingsService } from "../../serverSettings.ts";
 import { recordUsageLimits } from "../../usage/usageLimits.ts";
 import {
   canContinueHandoffChain,
+  type ClaudeHandoffAssignment,
   type CodexHandoffAssignment,
   describeHandoffRejection,
   parseEmployeeHandoff,
@@ -909,6 +916,38 @@ export function runtimeEventToActivities(
   return [];
 }
 
+// A pending automatic context-management action is only valid for the
+// provider/model/employee it was scheduled against. A CEO->worker handoff
+// (or a plain model switch) between the qualifying usage sample and the safe
+// idle boundary must invalidate it rather than let stale-model usage delete
+// or roll over a now-different session.
+interface ContextManagementIdentity {
+  readonly instanceId: string;
+  readonly model: string;
+  readonly employeeId: string | undefined;
+}
+
+function contextManagementIdentityFromThread(thread: {
+  readonly modelSelection: ModelSelection;
+}): ContextManagementIdentity {
+  return {
+    instanceId: thread.modelSelection.instanceId,
+    model: thread.modelSelection.model,
+    employeeId: thread.modelSelection.employeeId,
+  };
+}
+
+function contextManagementIdentityEquals(
+  left: ContextManagementIdentity,
+  right: ContextManagementIdentity,
+): boolean {
+  return (
+    left.instanceId === right.instanceId &&
+    left.model === right.model &&
+    left.employeeId === right.employeeId
+  );
+}
+
 const make = Effect.gen(function* () {
   const threadBackgroundLiveness = yield* ThreadBackgroundLivenessService;
   const threadPlanProgress = yield* ThreadPlanProgressService;
@@ -954,6 +993,20 @@ const make = Effect.gen(function* () {
   // that same turn do not leak a misleading "ran" activity into the UI.
   const routingOnlyToolBlockedThreads = new Set<ThreadId>();
   const pendingCeoRoutingRecoveryTurnByThreadId = new Map<ThreadId, TurnId | null>();
+  const pendingContextManagementByThreadId = new Map<
+    ThreadId,
+    {
+      readonly mode: Exclude<ContextManagementMode, "manual">;
+      readonly eventId: EventId;
+      readonly identity: ContextManagementIdentity;
+    }
+  >();
+  // Settings are read on-demand per event, so a mode round-trip (auto ->
+  // manual -> the same auto mode) with no intervening thread event in
+  // between would otherwise leave a stale pending action's mode check
+  // passing. Tracking the last-observed mode via the live settings stream
+  // catches every transition, not just ones a runtime event happens to see.
+  let lastSeenContextManagementMode: ContextManagementMode | undefined;
 
   const assistantSegmentStateByTurnKey = yield* Cache.make<string, AssistantSegmentState>({
     capacity: TURN_MESSAGE_IDS_BY_TURN_CACHE_CAPACITY,
@@ -1650,6 +1703,7 @@ const make = Effect.gen(function* () {
     readonly employees: EmployeeMap;
     readonly toEmployeeId: EmployeeId;
     readonly message: string;
+    readonly claudeAssignment?: ClaudeHandoffAssignment;
     readonly codexAssignment?: CodexHandoffAssignment;
     readonly completedHandoffs: number;
   }) {
@@ -1726,14 +1780,23 @@ const make = Effect.gen(function* () {
       fromEmployeeId === "ceo" && !usesEmployeeModelOverride && targetInfo.driverKind === "codex"
         ? (input.codexAssignment ?? DEFAULT_CODEX_HANDOFF_ASSIGNMENT)
         : undefined;
+    const ceoClaudeAssignment =
+      fromEmployeeId === "ceo" &&
+      !usesEmployeeModelOverride &&
+      targetInfo.driverKind === "claudeAgent" &&
+      (selection.model === "claude-fable-5" || selection.model === "claude-opus-5")
+        ? input.claudeAssignment
+        : undefined;
     const targetModel = appliesEmployeeModelOverride
       ? (targetEmployee.model ??
         (usesSelectedProvider ? selection.model : DEFAULT_MODEL_BY_PROVIDER[targetInfo.driverKind]))
       : ceoCodexAssignment !== undefined
         ? ceoCodexAssignment.model
-        : usesSelectedProvider
-          ? selection.model
-          : DEFAULT_MODEL_BY_PROVIDER[targetInfo.driverKind];
+        : ceoClaudeAssignment !== undefined
+          ? ceoClaudeAssignment.model
+          : usesSelectedProvider
+            ? selection.model
+            : DEFAULT_MODEL_BY_PROVIDER[targetInfo.driverKind];
     if (!targetModel) {
       consecutiveEmployeeHandoffs.delete(input.thread.id);
       yield* appendEmployeeHandoffActivity({
@@ -1753,7 +1816,9 @@ const make = Effect.gen(function* () {
       ? targetEmployee.modelOptions
       : ceoCodexAssignment !== undefined
         ? applyCodexHandoffReasoning(inheritedOptions, ceoCodexAssignment.reasoning)
-        : inheritedOptions;
+        : ceoClaudeAssignment !== undefined
+          ? undefined
+          : inheritedOptions;
     const nextModelSelection: ModelSelection = {
       instanceId: targetInstanceId,
       model: targetModel,
@@ -1886,6 +1951,9 @@ const make = Effect.gen(function* () {
       ...(result.handoff.codexAssignment !== undefined
         ? { codexAssignment: result.handoff.codexAssignment }
         : {}),
+      ...(result.handoff.claudeAssignment !== undefined
+        ? { claudeAssignment: result.handoff.claudeAssignment }
+        : {}),
       completedHandoffs: consecutiveEmployeeHandoffs.get(input.thread.id) ?? 0,
     });
   });
@@ -1985,6 +2053,157 @@ const make = Effect.gen(function* () {
     return true;
   };
 
+  // Executes a queued auto-prune/auto-new-thread action once it is safe to
+  // do so. Shared by the turn.completed settle path and by qualifying usage
+  // reports that arrive with no active turn (e.g. session init), so an idle
+  // report is not stuck waiting for a future turn that may not come soon.
+  // Re-validates mode, identity (provider/model/employee), and idleness
+  // immediately before acting, since all three can have drifted since the
+  // sample that queued the action.
+  const applyPendingContextManagement = (input: {
+    event: ProviderRuntimeEvent;
+    threadId: ThreadId;
+    eventTurnId: TurnId | undefined;
+  }) =>
+    Effect.gen(function* () {
+      const pending = pendingContextManagementByThreadId.get(input.threadId);
+      if (pending === undefined) return;
+
+      const currentContextManagementMode = (yield* serverSettingsService.getSettings)
+        .contextManagementMode;
+      if (currentContextManagementMode !== pending.mode) {
+        pendingContextManagementByThreadId.delete(input.threadId);
+        return;
+      }
+
+      const currentShell = yield* resolveThreadShell(input.threadId);
+      if (!currentShell) return;
+      const stillBusy =
+        currentShell.session?.status === "starting" || currentShell.session?.status === "running";
+      if (stillBusy) return;
+
+      if (
+        !contextManagementIdentityEquals(
+          pending.identity,
+          contextManagementIdentityFromThread(currentShell),
+        )
+      ) {
+        // The provider/model/employee changed since this action was queued
+        // (e.g. a CEO->worker handoff) — drop it rather than act against a
+        // session it was never scheduled for.
+        pendingContextManagementByThreadId.delete(input.threadId);
+        return;
+      }
+
+      const currentDetail = yield* resolveThreadDetail(input.threadId);
+      if (!currentDetail) return;
+
+      const now = input.event.createdAt;
+      const pruneMessageIds = selectOldestMessageIdsForContextPruning(currentDetail.messages);
+      const continuationContext = buildContextContinuation({
+        sourceThreadId: currentDetail.id,
+        sourceThreadTitle: currentDetail.title,
+        messages: currentDetail.messages.filter((message) => !pruneMessageIds.includes(message.id)),
+      });
+      if (pruneMessageIds.length === 0 || !continuationContext) {
+        return;
+      }
+
+      if (pending.mode === "auto-prune") {
+        yield* orchestrationEngine.dispatch({
+          type: "thread.meta.update",
+          commandId: yield* providerCommandId(input.event, "context-auto-prune-carryover"),
+          threadId: input.threadId,
+          continuation: {
+            sourceThreadId: input.threadId,
+            sourceThreadTitle: currentDetail.title,
+            context: continuationContext,
+            createdAt: now,
+          },
+        });
+        yield* orchestrationEngine.dispatch({
+          type: "thread.message.delete",
+          commandId: yield* providerCommandId(input.event, "context-auto-prune"),
+          threadId: input.threadId,
+          messageId: pruneMessageIds[0]!,
+          messageIds: [...pruneMessageIds],
+          createdAt: now,
+        });
+        yield* orchestrationEngine.dispatch({
+          type: "thread.session.stop",
+          commandId: yield* providerCommandId(input.event, "context-auto-prune-reset"),
+          threadId: input.threadId,
+          createdAt: now,
+        });
+        yield* orchestrationEngine.dispatch({
+          type: "thread.activity.append",
+          commandId: yield* providerCommandId(input.event, "context-auto-prune-activity"),
+          threadId: input.threadId,
+          activity: {
+            id: EventId.make(yield* crypto.randomUUIDv4),
+            tone: "info",
+            kind: "context-management.pruned",
+            summary: `Automatically removed ${pruneMessageIds.length} old messages`,
+            payload: {
+              mode: pending.mode,
+              triggerEventId: pending.eventId,
+              removedMessageCount: pruneMessageIds.length,
+            },
+            turnId: input.eventTurnId ?? null,
+            createdAt: now,
+          },
+          createdAt: now,
+        });
+      } else {
+        const successorThreadId = ThreadId.make(
+          `${input.threadId}-continuation-${pending.eventId}`,
+        );
+        const existingSuccessor = yield* resolveThreadShell(successorThreadId);
+        if (existingSuccessor === undefined) {
+          yield* orchestrationEngine.dispatch({
+            type: "thread.create",
+            commandId: yield* providerCommandId(input.event, "context-auto-rollover-create"),
+            threadId: successorThreadId,
+            projectId: currentDetail.projectId,
+            title: `${currentDetail.title} (continued)`,
+            modelSelection: currentDetail.modelSelection,
+            runtimeMode: currentDetail.runtimeMode,
+            interactionMode: currentDetail.interactionMode,
+            branch: currentDetail.branch,
+            worktreePath: currentDetail.worktreePath,
+            goal: currentDetail.goal ?? null,
+            continuation: {
+              sourceThreadId: currentDetail.id,
+              sourceThreadTitle: currentDetail.title,
+              context: continuationContext,
+              createdAt: now,
+            },
+            createdAt: now,
+          });
+        }
+        yield* orchestrationEngine.dispatch({
+          type: "thread.activity.append",
+          commandId: yield* providerCommandId(input.event, "context-auto-rollover-activity"),
+          threadId: input.threadId,
+          activity: {
+            id: EventId.make(yield* crypto.randomUUIDv4),
+            tone: "info",
+            kind: "context-management.rollover",
+            summary: "Created a continuation thread",
+            payload: {
+              mode: pending.mode,
+              triggerEventId: pending.eventId,
+              successorThreadId,
+            },
+            turnId: input.eventTurnId ?? null,
+            createdAt: now,
+          },
+          createdAt: now,
+        });
+      }
+      pendingContextManagementByThreadId.delete(input.threadId);
+    });
+
   const processRuntimeEvent = (event: ProviderRuntimeEvent) =>
     Effect.gen(function* () {
       if (event.type === "account.rate-limits.updated") {
@@ -2002,6 +2221,76 @@ const make = Effect.gen(function* () {
           loadedThreadDetail = (yield* resolveThreadDetail(thread.id)) ?? null;
           return loadedThreadDetail;
         });
+
+      if (event.type === "thread.token-usage.updated") {
+        const settings = yield* serverSettingsService.getSettings;
+        const mode = settings.contextManagementMode;
+        const usage = event.payload.usage;
+        const usedPercentage =
+          usage.maxTokens === undefined || usage.maxTokens <= 0
+            ? null
+            : (usage.usedTokens / usage.maxTokens) * 100;
+        const selectedProvider = yield* providerService.getInstanceInfo(
+          thread.modelSelection.instanceId,
+        );
+        const matchesCurrentProvider =
+          event.provider === selectedProvider.driverKind &&
+          (event.providerInstanceId === undefined ||
+            event.providerInstanceId === thread.modelSelection.instanceId);
+        const currentIdentity = contextManagementIdentityFromThread(thread);
+        const existingPending = pendingContextManagementByThreadId.get(thread.id);
+
+        // Any of these invalidate a queued action outright: the mode was
+        // switched away (including a manual round-trip — a fresh qualifying
+        // sample is required after re-enabling, not the stale trigger), or
+        // the provider/model/employee identity it was scheduled against no
+        // longer matches (e.g. a CEO->worker handoff).
+        if (
+          existingPending !== undefined &&
+          (mode === "manual" ||
+            existingPending.mode !== mode ||
+            !contextManagementIdentityEquals(existingPending.identity, currentIdentity))
+        ) {
+          pendingContextManagementByThreadId.delete(thread.id);
+        }
+
+        if (mode !== "manual" && matchesCurrentProvider && usedPercentage !== null) {
+          if (usedPercentage < CONTEXT_AUTO_MANAGE_MIN_USED_PERCENTAGE) {
+            // A fresher matching sample dropping back below threshold (e.g.
+            // the provider auto-compacted) cancels any queued action rather
+            // than letting a stale trigger still prune/roll over later.
+            pendingContextManagementByThreadId.delete(thread.id);
+          } else if (!pendingContextManagementByThreadId.has(thread.id)) {
+            const detail = yield* getLoadedThreadDetail();
+            const pruneIds = selectOldestMessageIdsForContextPruning(detail?.messages ?? []);
+            const alreadyRolledOver =
+              mode === "auto-new-thread" &&
+              detail?.activities.some(
+                (activity) => activity.kind === "context-management.rollover",
+              );
+            if (pruneIds.length > 0 && !alreadyRolledOver) {
+              pendingContextManagementByThreadId.set(thread.id, {
+                mode,
+                eventId: event.eventId,
+                identity: currentIdentity,
+              });
+            }
+          }
+        }
+
+        // A qualifying sample can legitimately arrive with no active turn
+        // (session init, a late result). Act at this safe idle boundary
+        // instead of waiting for a future turn.completed that may not come
+        // soon — applyPendingContextManagement re-checks idleness itself, so
+        // this is a no-op while the session is actually busy.
+        if (pendingContextManagementByThreadId.has(thread.id)) {
+          yield* applyPendingContextManagement({
+            event,
+            threadId: thread.id,
+            eventTurnId: undefined,
+          });
+        }
+      }
 
       const now = event.createdAt;
       const eventTurnId = toTurnId(event.turnId);
@@ -2471,6 +2760,17 @@ const make = Effect.gen(function* () {
             });
           }
         }
+
+        if (
+          shouldApplyThreadLifecycle &&
+          normalizeRuntimeTurnState(event.payload.state) === "completed"
+        ) {
+          yield* applyPendingContextManagement({
+            event,
+            threadId: thread.id,
+            eventTurnId,
+          });
+        }
       }
 
       if (event.type === "session.exited") {
@@ -2710,6 +3010,23 @@ const make = Effect.gen(function* () {
           }
           return worker.enqueue({ source: "domain", event });
         }),
+      );
+      lastSeenContextManagementMode = yield* serverSettingsService.getSettings.pipe(
+        Effect.map((settings) => settings.contextManagementMode),
+        Effect.orElseSucceed(() => undefined),
+      );
+      yield* forkParked(
+        Stream.runForEach(serverSettingsService.streamChanges, (settings) =>
+          Effect.sync(() => {
+            if (lastSeenContextManagementMode !== settings.contextManagementMode) {
+              lastSeenContextManagementMode = settings.contextManagementMode;
+              // Any transition — including a manual round-trip back to the
+              // same automatic mode — drops queued actions. A fresh
+              // qualifying usage sample is required to re-arm.
+              pendingContextManagementByThreadId.clear();
+            }
+          }),
+        ),
       );
     });
 

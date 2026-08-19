@@ -336,6 +336,72 @@ describe("ProviderRuntimeIngestion", () => {
     };
   }
 
+  async function completeConversationTurn(
+    harness: Awaited<ReturnType<typeof createHarness>>,
+    index: number,
+    beforeCompletion?: (turnId: TurnId) => void,
+  ) {
+    const createdAt = `2026-01-01T00:00:${String(index).padStart(2, "0")}.000Z`;
+    const messageId = asMessageId(`context-user-${index}`);
+    await harness.dispatch({
+      type: "thread.turn.start",
+      commandId: CommandId.make(`context-turn-${index}`),
+      threadId: asThreadId("thread-1"),
+      message: {
+        messageId,
+        role: "user",
+        text: `User turn ${index}`,
+        attachments: [],
+      },
+      runtimeMode: "approval-required",
+      interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+      createdAt,
+    });
+    await waitForThread(harness.readModel, (thread) => thread.messages.at(-1)?.id === messageId);
+    const turnId = asTurnId(`context-turn-${index}`);
+    harness.emit({
+      type: "turn.started",
+      eventId: asEventId(`context-turn-started-${index}`),
+      provider: ProviderDriverKind.make("codex"),
+      providerInstanceId: ProviderInstanceId.make("codex"),
+      threadId: asThreadId("thread-1"),
+      turnId,
+      createdAt,
+    });
+    await harness.dispatch({
+      type: "thread.message.assistant.delta",
+      commandId: CommandId.make(`context-assistant-delta-${index}`),
+      threadId: asThreadId("thread-1"),
+      messageId: asMessageId(`context-assistant-${index}`),
+      delta: `Assistant turn ${index}`,
+      turnId,
+      createdAt,
+    });
+    await harness.dispatch({
+      type: "thread.message.assistant.complete",
+      commandId: CommandId.make(`context-assistant-complete-${index}`),
+      threadId: asThreadId("thread-1"),
+      messageId: asMessageId(`context-assistant-${index}`),
+      turnId,
+      createdAt,
+    });
+    beforeCompletion?.(turnId);
+    harness.emit({
+      type: "turn.completed",
+      eventId: asEventId(`context-turn-completed-${index}`),
+      provider: ProviderDriverKind.make("codex"),
+      providerInstanceId: ProviderInstanceId.make("codex"),
+      threadId: asThreadId("thread-1"),
+      turnId,
+      createdAt,
+      payload: { state: "completed" },
+    });
+    await waitForThread(
+      harness.readModel,
+      (thread) => thread.latestTurn?.state === "completed" && thread.session?.status === "ready",
+    );
+  }
+
   it("maps turn started/completed events into thread session updates", async () => {
     const harness = await createHarness();
     const now = "2026-01-01T00:00:00.000Z";
@@ -586,6 +652,101 @@ describe("ProviderRuntimeIngestion", () => {
       instanceId: ProviderInstanceId.make("codex"),
       model: "gpt-5.6-terra",
       options: [{ id: "reasoningEffort", value: "high" }],
+      employeeId: workerId,
+      employeeIds: [ceoId, workerId],
+    });
+  });
+
+  it("uses a Claude CEO assignment for an auto worker without leaking CEO options", async () => {
+    const ceoId = EmployeeId.make("ceo");
+    const workerId = EmployeeId.make("worker_alpha");
+    const harness = await createHarness({
+      serverSettings: {
+        employees: {
+          [ceoId]: {
+            displayName: "Casey",
+            role: "CEO",
+            providerInstanceId: ProviderInstanceId.make("claudeAgent"),
+            modelMode: "override",
+            model: "claude-fable-5",
+            modelOptions: [{ id: "effort", value: "ultracode" }],
+            instructions: "Route the request.",
+            enabled: true,
+          },
+          [workerId]: {
+            displayName: "Alex",
+            role: "Implementation",
+            providerInstanceId: ProviderInstanceId.make("claudeAgent"),
+            modelMode: "auto",
+            instructions: "Implement the request.",
+            enabled: true,
+          },
+        },
+      },
+      threadModelSelection: {
+        instanceId: ProviderInstanceId.make("claudeAgent"),
+        model: "claude-fable-5",
+        options: [
+          { id: "effort", value: "ultracode" },
+          { id: "contextWindow", value: "1m" },
+        ],
+        employeeId: ceoId,
+        employeeIds: [ceoId, workerId],
+      },
+    });
+    const now = "2026-08-18T15:00:00.000Z";
+    const turnId = asTurnId("turn-claude-ceo-handoff");
+
+    harness.emit({
+      type: "turn.started",
+      eventId: asEventId("evt-claude-ceo-handoff-started"),
+      provider: ProviderDriverKind.make("claudeAgent"),
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId,
+    });
+    await waitForThread(harness.readModel, (thread) => thread.session?.activeTurnId === turnId);
+    harness.emit({
+      type: "content.delta",
+      eventId: asEventId("evt-claude-ceo-handoff-delta"),
+      provider: ProviderDriverKind.make("claudeAgent"),
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId,
+      itemId: asItemId("item-claude-ceo-handoff"),
+      payload: {
+        streamKind: "assistant_text",
+        delta:
+          'Delegate the implementation.\n\n<handoff to="worker_alpha" model="claude-sonnet-5">Implement it.</handoff>',
+      },
+    });
+    harness.emit({
+      type: "item.completed",
+      eventId: asEventId("evt-claude-ceo-handoff-item-complete"),
+      provider: ProviderDriverKind.make("claudeAgent"),
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId,
+      itemId: asItemId("item-claude-ceo-handoff"),
+      payload: { itemType: "assistant_message", status: "completed" },
+    });
+    harness.emit({
+      type: "turn.completed",
+      eventId: asEventId("evt-claude-ceo-handoff-turn-complete"),
+      provider: ProviderDriverKind.make("claudeAgent"),
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId,
+      payload: { state: "completed" },
+    });
+
+    const thread = await waitForThread(
+      harness.readModel,
+      (entry) => entry.modelSelection.employeeId === workerId,
+    );
+    expect(thread.modelSelection).toEqual({
+      instanceId: ProviderInstanceId.make("claudeAgent"),
+      model: "claude-sonnet-5",
       employeeId: workerId,
       employeeIds: [ceoId, workerId],
     });
@@ -3565,6 +3726,90 @@ describe("ProviderRuntimeIngestion", () => {
         model: "gpt-5-codex",
       },
     });
+  });
+
+  it("defers automatic pruning to a completed turn and resets provider context", async () => {
+    const harness = await createHarness({
+      serverSettings: { contextManagementMode: "auto-prune" },
+    });
+    for (let index = 1; index < 5; index += 1) {
+      await completeConversationTurn(harness, index);
+    }
+
+    await completeConversationTurn(harness, 5, () => {
+      harness.emit({
+        type: "thread.token-usage.updated",
+        eventId: asEventId("context-auto-prune-usage"),
+        provider: ProviderDriverKind.make("codex"),
+        providerInstanceId: ProviderInstanceId.make("codex"),
+        createdAt: "2026-01-01T00:00:05.000Z",
+        threadId: asThreadId("thread-1"),
+        payload: { usage: { usedTokens: 75_000, maxTokens: 100_000 } },
+      });
+    });
+
+    const thread = await waitForThread(harness.readModel, (entry) =>
+      entry.activities.some((activity) => activity.kind === "context-management.pruned"),
+    );
+    expect(thread.messages.map((message) => message.id)).not.toContain("context-user-1");
+    expect(thread.messages.map((message) => message.id)).not.toContain("context-assistant-1");
+    expect(thread.messages.map((message) => message.id)).toContain("context-user-5");
+    expect(thread.continuation?.context).toContain("User turn 5");
+  });
+
+  it("creates one unsent continuation thread and carries thread state", async () => {
+    const harness = await createHarness({
+      serverSettings: { contextManagementMode: "auto-new-thread" },
+    });
+    await harness.dispatch({
+      type: "thread.meta.update",
+      commandId: CommandId.make("context-goal"),
+      threadId: asThreadId("thread-1"),
+      goal: {
+        objective: "Finish the long task",
+        status: "active",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+    });
+    for (let index = 1; index < 5; index += 1) {
+      await completeConversationTurn(harness, index);
+    }
+    await completeConversationTurn(harness, 5, () => {
+      harness.emit({
+        type: "thread.token-usage.updated",
+        eventId: asEventId("context-auto-new-thread-usage"),
+        provider: ProviderDriverKind.make("codex"),
+        providerInstanceId: ProviderInstanceId.make("codex"),
+        createdAt: "2026-01-01T00:00:05.000Z",
+        threadId: asThreadId("thread-1"),
+        payload: { usage: { usedTokens: 80_000, maxTokens: 100_000 } },
+      });
+    });
+
+    const source = await waitForThread(harness.readModel, (entry) =>
+      entry.activities.some((activity) => activity.kind === "context-management.rollover"),
+    );
+    const rollover = source.activities.find(
+      (activity) => activity.kind === "context-management.rollover",
+    );
+    const successorThreadId = (rollover?.payload as { successorThreadId?: ThreadId } | undefined)
+      ?.successorThreadId;
+    if (successorThreadId === undefined) throw new Error("Expected successor thread id");
+    const successor = await waitForThread(harness.readModel, () => true, 2_000, successorThreadId);
+    expect(successor).toMatchObject({
+      projectId: source.projectId,
+      modelSelection: source.modelSelection,
+      runtimeMode: source.runtimeMode,
+      interactionMode: source.interactionMode,
+      branch: source.branch,
+      worktreePath: source.worktreePath,
+      goal: source.goal,
+      latestTurn: null,
+      messages: [],
+      session: null,
+    });
+    expect(successor.continuation?.sourceThreadId).toBe(source.id);
   });
 
   it("projects Codex camelCase token usage payloads into normalized thread activities", async () => {

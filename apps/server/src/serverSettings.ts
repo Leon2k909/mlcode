@@ -160,6 +160,7 @@ const makeTest = (overrides: DeepPartial<ServerSettings> = {}) =>
         : {}),
     });
     const currentSettingsRef = yield* Ref.make<ServerSettings>(initialSettings);
+    const changesPubSub = yield* PubSub.unbounded<ServerSettings>();
 
     return {
       start: Effect.void,
@@ -171,9 +172,16 @@ const makeTest = (overrides: DeepPartial<ServerSettings> = {}) =>
           Effect.flatMap(normalizeServerSettings),
           Effect.tap((nextSettings) => Ref.set(currentSettingsRef, nextSettings)),
           Effect.map(resolveTextGenerationProvider),
+          Effect.tap((nextSettings) => PubSub.publish(changesPubSub, nextSettings)),
         ),
-      streamChanges: Stream.empty,
-      subscribeChanges: Effect.succeed(Stream.empty),
+      get streamChanges() {
+        return Stream.fromPubSub(changesPubSub);
+      },
+      get subscribeChanges() {
+        return PubSub.subscribe(changesPubSub).pipe(
+          Effect.map((subscription) => Stream.fromSubscription(subscription)),
+        );
+      },
     } satisfies ServerSettingsService["Service"];
   });
 

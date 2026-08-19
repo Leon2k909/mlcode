@@ -576,6 +576,53 @@ describe("ProviderCommandReactor", () => {
     expect(thread?.session?.runtimeMode).toBe("approval-required");
   });
 
+  it("injects a continuation once after a context reset", async () => {
+    const harness = await createHarness();
+    const now = "2026-01-01T00:00:00.000Z";
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.meta.update",
+        commandId: CommandId.make("cmd-set-context-continuation"),
+        threadId: ThreadId.make("thread-1"),
+        continuation: {
+          sourceThreadId: ThreadId.make("source-thread"),
+          sourceThreadTitle: "Source thread",
+          context: "USER:\nRetained context",
+          createdAt: now,
+        },
+      }),
+    );
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-turn-start-with-context"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-message-with-context"),
+          role: "user",
+          text: "Continue the task",
+          attachments: [],
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: now,
+      }),
+    );
+
+    await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+    expect(harness.sendTurn.mock.calls[0]?.[0]).toMatchObject({
+      input: expect.stringContaining("USER:\nRetained context"),
+    });
+    expect(harness.sendTurn.mock.calls[0]?.[0]).toMatchObject({
+      input: expect.stringContaining("Continue the task"),
+    });
+    await waitFor(async () => {
+      const snapshot = await harness.readModel();
+      return snapshot.threads[0]?.continuation === null;
+    });
+  });
+
   it("includes an active persistent goal in the provider input", async () => {
     const harness = await createHarness();
     const now = "2026-08-17T10:00:00.000Z";

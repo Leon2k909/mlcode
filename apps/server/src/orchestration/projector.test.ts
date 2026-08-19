@@ -93,6 +93,7 @@ describe("orchestration projector", () => {
         settledOverride: null,
         settledAt: null,
         goal: null,
+        continuation: null,
         snoozedUntil: null,
         snoozedAt: null,
         deletedAt: null,

@@ -53,6 +53,18 @@ describe("buildEmployeePreamble", () => {
     );
     expect(built?.match(/<\/employee>/g)).toHaveLength(1);
   });
+
+  it("lists configured skills as available rather than forced", () => {
+    const built = buildEmployeePreamble(employee({ skills: ["impeccable", "dataviz"] }));
+    expect(built).toContain("Skills available to you for this role");
+    expect(built).toContain("- impeccable");
+    expect(built).toContain("- dataviz");
+    expect(built).toContain("not on every turn");
+  });
+
+  it("omits the skills section when no skills are configured", () => {
+    expect(buildEmployeePreamble(employee())).not.toContain("Skills available");
+  });
 });
 
 describe("applyEmployeePreamble", () => {
@@ -104,6 +116,13 @@ describe("applyCeoGroupRoutingReminder", () => {
     expect(message).toContain("remain on GPT-5.6 Sol with Ultra reasoning");
     expect(message).toContain("choose cheaper worker settings whenever the task allows");
     expect(message).toContain("that is not a handoff");
+    expect(message).toContain("On Claude, the CEO must use Claude Fable 5 or Claude Opus 5");
+    expect(message).toContain('model="claude-haiku-4-5"');
+    expect(message).toContain('model="claude-sonnet-5"');
+    expect(message).toContain('model="claude-opus-5"');
+    expect(message).toContain(
+      "Never switch a worker mid-turn or auto-escalate from elapsed time or usage",
+    );
   });
 
   it("does not add the CEO reminder to a worker or private turn", () => {

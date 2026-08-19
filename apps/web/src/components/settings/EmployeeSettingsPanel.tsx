@@ -16,15 +16,18 @@ import {
   type ProviderOptionSelection,
   type ProviderInstanceId,
   type ServerProviderModel,
+  type ServerProviderSkill,
 } from "@t3tools/contracts";
 
 import {
+  describeSettingsUpdateFailure,
   usePrimarySettings,
   useUpdatePrimarySettings,
   type SettingsUpdateResult,
 } from "../../hooks/useSettings";
 import { cn } from "../../lib/utils";
 import { getProviderModelCapabilities } from "../../providerModels";
+import { formatProviderSkillDisplayName } from "../../providerSkillPresentation";
 import { primaryServerProvidersAtom } from "../../state/server";
 import {
   buildEmployeeRemovalPatch,
@@ -72,6 +75,7 @@ interface EmployeeDraft {
   readonly model: string;
   readonly modelOptions: ReadonlyArray<ProviderOptionSelection>;
   readonly fastMode: boolean;
+  readonly skills: ReadonlyArray<string>;
   readonly enabled: boolean;
 }
 
@@ -86,6 +90,7 @@ const emptyDraft = (providerInstanceId: string): EmployeeDraft => ({
   model: "",
   modelOptions: [],
   fastMode: false,
+  skills: [],
   enabled: true,
 });
 
@@ -100,6 +105,7 @@ const draftFromEntry = (entry: EmployeeEntry): EmployeeDraft => ({
   model: entry.employee.model ?? "",
   modelOptions: withoutFastModeOption(entry.employee.modelOptions ?? []),
   fastMode: entry.employee.fastMode === true,
+  skills: entry.employee.skills ?? [],
   enabled: entry.employee.enabled,
 });
 
@@ -124,6 +130,7 @@ function decodeDraft(draft: EmployeeDraft): { employee: Employee } | { error: st
     // previously saved value in place after the user clears it.
     modelOptions,
     fastMode: draft.fastMode,
+    skills: draft.skills,
   });
   if (Option.isSome(result)) return { employee: result.value };
   return { error: "Check the highlighted fields — this employee could not be saved." };
@@ -134,6 +141,7 @@ function EmployeeForm({
   onDraftChange,
   instanceOptions,
   modelOptions,
+  skillOptions,
   provider,
   idError,
   saveError,
@@ -146,6 +154,7 @@ function EmployeeForm({
   onDraftChange: (next: EmployeeDraft) => void;
   instanceOptions: readonly { readonly instanceId: string; readonly label: string }[];
   modelOptions: ReadonlyArray<ServerProviderModel>;
+  skillOptions: ReadonlyArray<ServerProviderSkill>;
   provider: ProviderDriverKind;
   idError: string | null;
   saveError: string | null;
@@ -382,6 +391,55 @@ function EmployeeForm({
         />
       </label>
 
+      <div className="space-y-1.5 text-sm">
+        <span className="font-medium">Skills</span>
+        {skillOptions.length > 0 ? (
+          <div className="flex flex-wrap gap-1.5">
+            {skillOptions.map((skill) => {
+              const selected = draft.skills.includes(skill.name);
+              return (
+                <Badge
+                  key={skill.name}
+                  variant={selected ? "default" : "outline"}
+                  role="button"
+                  tabIndex={0}
+                  aria-pressed={selected}
+                  className="cursor-pointer select-none"
+                  onClick={() =>
+                    set(
+                      "skills",
+                      selected
+                        ? draft.skills.filter((name) => name !== skill.name)
+                        : [...draft.skills, skill.name],
+                    )
+                  }
+                  onKeyDown={(event) => {
+                    if (event.key !== "Enter" && event.key !== " ") return;
+                    event.preventDefault();
+                    set(
+                      "skills",
+                      selected
+                        ? draft.skills.filter((name) => name !== skill.name)
+                        : [...draft.skills, skill.name],
+                    );
+                  }}
+                >
+                  {formatProviderSkillDisplayName(skill)}
+                </Badge>
+              );
+            })}
+          </div>
+        ) : (
+          <span className="block text-xs text-muted-foreground">
+            No skills discovered for {selectedProviderLabel}. Skills come from the provider's
+            configured skill directories.
+          </span>
+        )}
+        <span className="block text-xs text-muted-foreground">
+          Named as available to this employee, not forced into every turn.
+        </span>
+      </div>
+
       <label className="block space-y-1.5 text-sm">
         <span className="font-medium">Standing instructions</span>
         <Textarea
@@ -454,6 +512,13 @@ export function EmployeeSettingsPanel() {
       ),
     [serverProviders],
   );
+  const skillsByInstance = useMemo(
+    () =>
+      new Map(
+        serverProviders.map((provider) => [String(provider.instanceId), provider.skills] as const),
+      ),
+    [serverProviders],
+  );
   const configuredInstanceIds = useMemo(
     () => new Set(instanceOptions.map((option) => option.instanceId)),
     [instanceOptions],
@@ -515,16 +580,14 @@ export function EmployeeSettingsPanel() {
     try {
       const result: SettingsUpdateResult = await updateSettings(patch);
       if (!result.ok) {
-        setSaveError(
-          result.reason === "no-primary-environment"
-            ? "Connect to a primary environment before saving employees."
-            : "Employee settings could not be saved. Check the connection and try again.",
-        );
+        setSaveError(describeSettingsUpdateFailure(result));
         return;
       }
       cancel();
     } catch {
-      setSaveError("Employee settings could not be saved. Check the connection and try again.");
+      setSaveError(
+        "The server did not respond to this save. Your changes are still here—retry after it reconnects.",
+      );
     } finally {
       setSaving(false);
     }
@@ -591,6 +654,7 @@ export function EmployeeSettingsPanel() {
               onDraftChange={setDraft}
               instanceOptions={instanceOptions}
               modelOptions={modelOptionsByInstance.get(draft.providerInstanceId) ?? []}
+              skillOptions={skillsByInstance.get(draft.providerInstanceId) ?? []}
               provider={
                 providerDriversByInstance.get(draft.providerInstanceId) ??
                 ProviderDriverKind.make("codex")
@@ -687,6 +751,7 @@ export function EmployeeSettingsPanel() {
                     onDraftChange={setDraft}
                     instanceOptions={instanceOptions}
                     modelOptions={modelOptionsByInstance.get(draft.providerInstanceId) ?? []}
+                    skillOptions={skillsByInstance.get(draft.providerInstanceId) ?? []}
                     provider={
                       providerDriversByInstance.get(draft.providerInstanceId) ??
                       ProviderDriverKind.make("codex")

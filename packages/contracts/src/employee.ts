@@ -103,6 +103,13 @@ export const Employee = Schema.Struct({
   modelOptions: Schema.optional(ProviderOptionSelections),
   /** Request the provider's fast-mode option whenever this employee works. */
   fastMode: Schema.optional(Schema.Boolean),
+  /**
+   * Names of skills (matching `ServerProviderSkill.name` on the employee's
+   * provider) relevant to this persona. Named in the preamble as available
+   * rather than force-invoked, so an employee is not pushed to reach for a
+   * skill on turns where it does not fit.
+   */
+  skills: Schema.optional(Schema.Array(TrimmedNonEmptyString)),
   enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
 });
 export type Employee = typeof Employee.Type;

@@ -78,6 +78,7 @@ describe("Employee", () => {
       modelMode: "override",
       modelOptions: [{ id: "effort", value: "max" }],
       fastMode: true,
+      skills: ["impeccable"],
       enabled: false,
     });
     expect(employee.role).toBe("Frontend engineer");
@@ -87,7 +88,16 @@ describe("Employee", () => {
     expect(employee.modelMode).toBe("override");
     expect(employee.modelOptions).toEqual([{ id: "effort", value: "max" }]);
     expect(employee.fastMode).toBe(true);
+    expect(employee.skills).toEqual(["impeccable"]);
     expect(employee.enabled).toBe(false);
+  });
+
+  it("leaves skills undefined when not configured", () => {
+    const employee = decodeEmployee({
+      displayName: "Ada",
+      providerInstanceId: "claudeAgent",
+    });
+    expect(employee.skills).toBeUndefined();
   });
 
   it("distinguishes explicit auto mode from legacy model overrides", () => {

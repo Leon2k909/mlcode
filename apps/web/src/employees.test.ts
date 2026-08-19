@@ -286,6 +286,30 @@ describe("settings patches", () => {
     expect(Object.keys(patch.employees).sort()).toEqual(["ada", "grace"]);
     expect(patch.employees[EmployeeId.make("ada")]?.displayName).toBe("Ada Lovelace");
   });
+
+  it("preserves Auto routing and Fast mode in the complete employee settings payload", () => {
+    const employeeId = EmployeeId.make("ada");
+    const autoFastEmployee = decodeEmployee({
+      displayName: "Ada",
+      providerInstanceId: ProviderInstanceId.make("codex"),
+      modelMode: "auto",
+      modelOptions: [],
+      fastMode: true,
+    });
+
+    const patch = buildEmployeeRenamePatch({
+      employees: map,
+      fromId: employeeId,
+      toId: employeeId,
+      employee: autoFastEmployee,
+    });
+
+    expect(patch.employees[employeeId]).toMatchObject({
+      modelMode: "auto",
+      modelOptions: [],
+      fastMode: true,
+    });
+  });
 });
 
 describe("employeeInitials", () => {

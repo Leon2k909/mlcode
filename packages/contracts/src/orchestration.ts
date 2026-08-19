@@ -408,6 +408,15 @@ export const ThreadGoal = Schema.Struct({
 });
 export type ThreadGoal = typeof ThreadGoal.Type;
 
+/** Bounded visible history carried into a context-managed successor thread. */
+export const ThreadContinuation = Schema.Struct({
+  sourceThreadId: ThreadId,
+  sourceThreadTitle: TrimmedNonEmptyString,
+  context: TrimmedNonEmptyString,
+  createdAt: IsoDateTime,
+});
+export type ThreadContinuation = typeof ThreadContinuation.Type;
+
 export const OrchestrationThread = Schema.Struct({
   id: ThreadId,
   projectId: ProjectId,
@@ -445,6 +454,7 @@ export const OrchestrationThread = Schema.Struct({
   // Pending-only state. Optional so older servers remain compatible.
   titleRegeneration: Schema.optional(Schema.NullOr(ThreadTitleRegeneration)),
   goal: Schema.optional(Schema.NullOr(ThreadGoal)),
+  continuation: Schema.optional(Schema.NullOr(ThreadContinuation)),
   deletedAt: Schema.NullOr(IsoDateTime),
   messages: Schema.Array(OrchestrationMessage),
   proposedPlans: Schema.Array(OrchestrationProposedPlan).pipe(
@@ -504,6 +514,7 @@ export const OrchestrationThreadShell = Schema.Struct({
   pinOrderKey: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   titleRegeneration: Schema.optional(Schema.NullOr(ThreadTitleRegeneration)),
   goal: Schema.optional(Schema.NullOr(ThreadGoal)),
+  continuation: Schema.optional(Schema.NullOr(ThreadContinuation)),
   session: Schema.NullOr(OrchestrationSession),
   latestUserMessageAt: Schema.NullOr(IsoDateTime),
   hasPendingApprovals: Schema.Boolean,
@@ -712,6 +723,8 @@ const ThreadCreateCommand = Schema.Struct({
   ),
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+  goal: Schema.optional(Schema.NullOr(ThreadGoal)),
+  continuation: Schema.optional(Schema.NullOr(ThreadContinuation)),
   createdAt: IsoDateTime,
 });
 
@@ -808,6 +821,7 @@ const ThreadMetaUpdateCommand = Schema.Struct({
   expectedBranch: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   worktreePath: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   goal: Schema.optional(Schema.NullOr(ThreadGoal)),
+  continuation: Schema.optional(Schema.NullOr(ThreadContinuation)),
 }).check(
   Schema.makeFilter(
     (input) =>
@@ -1193,6 +1207,8 @@ export const ThreadCreatedPayload = Schema.Struct({
   ),
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+  goal: Schema.optional(Schema.NullOr(ThreadGoal)),
+  continuation: Schema.optional(Schema.NullOr(ThreadContinuation)),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });
@@ -1276,6 +1292,7 @@ export const ThreadMetaUpdatedPayload = Schema.Struct({
   branch: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   worktreePath: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   goal: Schema.optional(Schema.NullOr(ThreadGoal)),
+  continuation: Schema.optional(Schema.NullOr(ThreadContinuation)),
   updatedAt: IsoDateTime,
 });
 

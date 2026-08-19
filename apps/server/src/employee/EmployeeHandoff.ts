@@ -41,6 +41,18 @@ export interface CodexHandoffAssignment {
   readonly reasoning: CodexHandoffReasoning;
 }
 
+/** Claude worker models that the routing CEO may select for one handoff. */
+export const CLAUDE_HANDOFF_MODELS = [
+  "claude-haiku-4-5",
+  "claude-sonnet-5",
+  "claude-opus-5",
+] as const;
+export type ClaudeHandoffModel = (typeof CLAUDE_HANDOFF_MODELS)[number];
+
+export interface ClaudeHandoffAssignment {
+  readonly model: ClaudeHandoffModel;
+}
+
 const VALID_CODEX_HANDOFF_ASSIGNMENTS: ReadonlySet<string> = new Set([
   "gpt-5.6-luna:low",
   "gpt-5.6-terra:medium",
@@ -79,6 +91,19 @@ const parseCodexHandoffAssignment = (
   };
 };
 
+const parseClaudeHandoffAssignment = (
+  attributes: ReadonlyMap<string, string>,
+): ClaudeHandoffAssignment | undefined => {
+  const model = attributes.get("model")?.toLowerCase();
+  // Claude handoffs select a model tier only. Claude capabilities differ by
+  // model (Haiku has no effort selector), so accepting Codex's `reasoning`
+  // attribute here would make a plausible-looking but invalid assignment.
+  if (attributes.has("reasoning") || !CLAUDE_HANDOFF_MODELS.includes(model as ClaudeHandoffModel)) {
+    return undefined;
+  }
+  return { model: model as ClaudeHandoffModel };
+};
+
 export interface EmployeeHandoff {
   /** The teammate taking over the thread. */
   readonly toEmployeeId: EmployeeId;
@@ -86,6 +111,8 @@ export interface EmployeeHandoff {
   readonly message: string;
   /** Optional task-sensitive Codex assignment chosen by the CEO. */
   readonly codexAssignment: CodexHandoffAssignment | undefined;
+  /** Optional task-sensitive Claude assignment chosen by the CEO. */
+  readonly claudeAssignment: ClaudeHandoffAssignment | undefined;
   /** Assistant text with the handoff block removed, for the timeline. */
   readonly remainingText: string;
 }
@@ -198,6 +225,7 @@ export const parseEmployeeHandoff = (input: {
       toEmployeeId: requestedId as EmployeeId,
       message,
       codexAssignment: parseCodexHandoffAssignment(attributes),
+      claudeAssignment: parseClaudeHandoffAssignment(attributes),
       remainingText: stripHandoffBlock(input.text),
     },
   };

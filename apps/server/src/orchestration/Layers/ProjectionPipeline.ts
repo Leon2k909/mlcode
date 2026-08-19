@@ -629,7 +629,8 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             archivedAt: null,
             settledOverride: null,
             settledAt: null,
-            goal: null,
+            goal: event.payload.goal ?? null,
+            continuation: event.payload.continuation ?? null,
             snoozedUntil: null,
             snoozedAt: null,
             pinnedAt: null,
@@ -813,6 +814,9 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
               ? { worktreePath: event.payload.worktreePath }
               : {}),
             ...(event.payload.goal !== undefined ? { goal: event.payload.goal } : {}),
+            ...(event.payload.continuation !== undefined
+              ? { continuation: event.payload.continuation }
+              : {}),
             updatedAt: event.payload.updatedAt,
           });
           return;

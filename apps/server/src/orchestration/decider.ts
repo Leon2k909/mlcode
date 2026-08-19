@@ -377,6 +377,8 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           interactionMode: command.interactionMode,
           branch: command.branch,
           worktreePath: command.worktreePath,
+          ...(command.goal !== undefined ? { goal: command.goal } : {}),
+          ...(command.continuation !== undefined ? { continuation: command.continuation } : {}),
           createdAt: command.createdAt,
           updatedAt: command.createdAt,
         },
@@ -836,6 +838,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           ...(branch !== undefined ? { branch } : {}),
           ...(command.worktreePath !== undefined ? { worktreePath: command.worktreePath } : {}),
           ...(command.goal !== undefined ? { goal: command.goal } : {}),
+          ...(command.continuation !== undefined ? { continuation: command.continuation } : {}),
           updatedAt: occurredAt,
         },
       };

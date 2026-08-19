@@ -25,7 +25,7 @@ import type { Employee, ModelSelection } from "@t3tools/contracts";
  * it can drift back into doing the work itself.
  */
 export const CEO_GROUP_ROUTING_REMINDER =
-  'CEO delegation gate (mandatory): before analysis, explanation, or any tool call, choose one worker and emit exactly one handoff. For delegated work, your entire response must be one tag with no prose before or after. Every CEO handoff must assign the worker\'s Codex model and reasoning for this task using one of these exact pairs: routine/simple -> model="gpt-5.6-luna" reasoning="low"; normal -> model="gpt-5.6-terra" reasoning="medium" or reasoning="high"; complex/high-risk -> model="gpt-5.6-sol" reasoning="high"; exceptional -> model="gpt-5.6-sol" reasoning="ultra". Substantial UI work, visual redesigns, and complex multi-surface frontend work always require at least Sol with High reasoning; unusually broad, high-risk, or architecture-changing UI work requires Sol with Ultra reasoning. Example: <handoff to="worker_beta" model="gpt-5.6-luna" reasoning="low">research brief</handoff>. You, the CEO, remain on GPT-5.6 Sol with Ultra reasoning; choose cheaper worker settings whenever the task allows. This is a routing-only CEO turn: do not inspect files, run commands, edit code, test, or publish a release yourself. If you are unsure, hand research to Beta; for an obvious scoped code change, hand implementation to Alpha; for an existing change, hand verification to Gamma. Never send a progress update such as "I\'ll trace this"; that is not a handoff. For non-trivial code work, use Beta research -> Alpha implementation -> Gamma verification -> your final review; skip only lanes that add no value, and never treat Alpha\'s completion summary as final without Gamma\'s evidence. If the request is genuinely simple and needs no tools, answer it directly.';
+  'CEO delegation gate (mandatory): before analysis, explanation, or any tool call, choose one worker and emit exactly one handoff. For delegated work, your entire response must be one tag with no prose before or after. On Codex, every CEO handoff must assign the worker\'s model and reasoning using one of these exact pairs: routine/simple -> model="gpt-5.6-luna" reasoning="low"; normal -> model="gpt-5.6-terra" reasoning="medium" or reasoning="high"; complex/high-risk -> model="gpt-5.6-sol" reasoning="high"; exceptional -> model="gpt-5.6-sol" reasoning="ultra". Substantial UI work, visual redesigns, and complex multi-surface frontend work always require at least Sol with High reasoning; unusually broad, high-risk, or architecture-changing UI work requires Sol with Ultra reasoning. On Claude, the CEO must use Claude Fable 5 or Claude Opus 5. Assign an Auto worker only one canonical Claude model in its handoff: routine bounded work -> model="claude-haiku-4-5"; normal research or implementation -> model="claude-sonnet-5"; complex or high-risk work -> model="claude-opus-5". Example: <handoff to="worker_beta" model="gpt-5.6-luna" reasoning="low">research brief</handoff>. Claude example: <handoff to="worker_alpha" model="claude-sonnet-5">implementation brief</handoff>. Adapt deliberately: when a worker reports a blocker, repeated failed attempt, or higher-than-expected risk, have it hand back to you and issue a new assignment at the appropriate tier. Never switch a worker mid-turn or auto-escalate from elapsed time or usage. You, the CEO, remain on GPT-5.6 Sol with Ultra reasoning when using Codex; choose cheaper worker settings whenever the task allows. This is a routing-only CEO turn: do not inspect files, run commands, edit code, test, or publish a release yourself. If you are unsure, hand research to Beta; for an obvious scoped code change, hand implementation to Alpha; for an existing change, hand verification to Gamma. Never send a progress update such as "I\'ll trace this"; that is not a handoff. For non-trivial code work, use Beta research -> Alpha implementation -> Gamma verification -> your final review; skip only lanes that add no value, and never treat Alpha\'s completion summary as final without Gamma\'s evidence. If the request is genuinely simple and needs no tools, answer it directly.';
 
 const BETA_GROUP_WORKFLOW_REMINDER =
   'Research lane reminder: trace and report evidence only. For non-trivial work, hand the findings and implementation brief to Alpha with <handoff to="worker_alpha">findings and the implementation brief</handoff>; do not implement or publish unless explicitly assigned.';
@@ -112,6 +112,24 @@ const teamworkSection = (teammates: ReadonlyArray<EmployeeTeammate>): string | u
   ].join("\n");
 };
 
+/**
+ * Skills configured for this employee's role, named as available rather than
+ * forced into every turn.
+ *
+ * The employee decides per turn whether a skill fits, the same way a human
+ * hire with a listed specialty does not reach for it unprompted on unrelated
+ * work. Omitted entirely when the employee has no skills configured, so a
+ * generalist employee is not taught a menu it was never given.
+ */
+const skillsSection = (skills: ReadonlyArray<string> | undefined): string | undefined => {
+  if (skills === undefined || skills.length === 0) return undefined;
+  const roster = skills.map((skill) => `- ${neutralizeFraming(skill)}`).join("\n");
+  return [
+    "Skills available to you for this role. Invoke one by name when it fits the task at hand — not on every turn:",
+    roster,
+  ].join("\n");
+};
+
 export const buildEmployeePreamble = (
   employee: Employee,
   teammates: ReadonlyArray<EmployeeTeammate> = [],
@@ -119,8 +137,9 @@ export const buildEmployeePreamble = (
   const identity = identityLine(employee);
   if (identity.trim().length === 0) return undefined;
   const instructions = neutralizeFraming(employee.instructions).trim();
+  const skills = skillsSection(employee.skills);
   const teamwork = teamworkSection(teammates);
-  const body = [identity, instructions, teamwork]
+  const body = [identity, instructions, skills, teamwork]
     .filter((part): part is string => part !== undefined && part.length > 0)
     .join("\n\n");
   return `<${EMPLOYEE_TAG}>\n${body}\n</${EMPLOYEE_TAG}>`;

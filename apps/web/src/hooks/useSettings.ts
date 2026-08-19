@@ -50,6 +50,15 @@ export type SettingsUpdateResult =
       readonly reason: "no-primary-environment" | "request-failed";
     };
 
+/** Keeps failed settings saves actionable without exposing server internals. */
+export function describeSettingsUpdateFailure(
+  result: Exclude<SettingsUpdateResult, { readonly ok: true }>,
+): string {
+  return result.reason === "no-primary-environment"
+    ? "Connect to a primary environment before saving employees."
+    : "The server did not respond to this save. Your changes are still here—retry after it reconnects.";
+}
+
 const clientSettingsListeners = new Set<() => void>();
 const clientSettingsHydrationListeners = new Set<() => void>();
 let clientSettingsSnapshot = DEFAULT_CLIENT_SETTINGS;
@@ -319,11 +328,15 @@ function useUpdateSettingsTarget(environmentId: EnvironmentId | null) {
 
       if (Object.keys(serverPatch).length > 0) {
         if (environmentId) {
-          const result = await persistServerSettings({
-            environmentId,
-            input: { patch: serverPatch },
-          });
-          if (result._tag === "Failure") {
+          try {
+            const result = await persistServerSettings({
+              environmentId,
+              input: { patch: serverPatch },
+            });
+            if (result._tag === "Failure") {
+              failure = { ok: false, reason: "request-failed" };
+            }
+          } catch {
             failure = { ok: false, reason: "request-failed" };
           }
         } else {

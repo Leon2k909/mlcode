@@ -57,16 +57,30 @@ describe("parseEmployeeHandoff", () => {
     );
     if (result.kind !== "handoff") throw new Error("expected handoff");
     expect(result.handoff.codexAssignment).toEqual({ model, reasoning });
+    expect(result.handoff.claudeAssignment).toBeUndefined();
   });
+
+  it.each(["claude-haiku-4-5", "claude-sonnet-5", "claude-opus-5"] as const)(
+    "parses the CEO Claude assignment %s",
+    (model) => {
+      const result = parse(`<handoff to="reviewer" model="${model}">Do it.</handoff>`);
+      if (result.kind !== "handoff") throw new Error("expected handoff");
+      expect(result.handoff.claudeAssignment).toEqual({ model });
+      expect(result.handoff.codexAssignment).toBeUndefined();
+    },
+  );
 
   it.each([
     '<handoff to="reviewer" model="gpt-5.6-sol">Do it.</handoff>',
     '<handoff to="reviewer" model="gpt-5.6-luna" reasoning="ultra">Do it.</handoff>',
     '<handoff to="reviewer" model="made-up" reasoning="low">Do it.</handoff>',
+    '<handoff to="reviewer" model="claude-fable-5">Do it.</handoff>',
+    '<handoff to="reviewer" model="claude-opus-5" reasoning="ultra">Do it.</handoff>',
   ])("keeps a handoff but discards an invalid assignment", (text) => {
     const result = parse(text);
     if (result.kind !== "handoff") throw new Error("expected handoff");
     expect(result.handoff.codexAssignment).toBeUndefined();
+    expect(result.handoff.claudeAssignment).toBeUndefined();
   });
 
   it("strips the block from the text shown in the timeline", () => {

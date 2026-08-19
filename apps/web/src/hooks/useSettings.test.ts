@@ -6,7 +6,11 @@ import {
 import { DEFAULT_CLIENT_SETTINGS } from "@t3tools/contracts/settings";
 import { describe, expect, it } from "vite-plus/test";
 
-import { mergeEnvironmentSettings, resolveEnvironmentIdentificationMode } from "./useSettings";
+import {
+  describeSettingsUpdateFailure,
+  mergeEnvironmentSettings,
+  resolveEnvironmentIdentificationMode,
+} from "./useSettings";
 
 describe("resolveEnvironmentIdentificationMode", () => {
   it("keeps identification hidden until client settings hydrate", () => {
@@ -75,5 +79,19 @@ describe("mergeEnvironmentSettings", () => {
 
     expect(settings.providerInstances).toBe(serverSettings.providerInstances);
     expect(settings.favorites).toBe(clientSettings.favorites);
+  });
+});
+
+describe("describeSettingsUpdateFailure", () => {
+  it("keeps a failed settings save actionable without implying the draft was lost", () => {
+    expect(describeSettingsUpdateFailure({ ok: false, reason: "request-failed" })).toBe(
+      "The server did not respond to this save. Your changes are still here—retry after it reconnects.",
+    );
+  });
+
+  it("explains when there is no environment to receive a settings save", () => {
+    expect(describeSettingsUpdateFailure({ ok: false, reason: "no-primary-environment" })).toBe(
+      "Connect to a primary environment before saving employees.",
+    );
   });
 });
