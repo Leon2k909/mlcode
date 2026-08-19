@@ -42,6 +42,15 @@ function createBrowserLocalApi(): LocalApi {
         return showContextMenuFallback(items, position);
       },
     },
+    ...(window.desktopBridge
+      ? {
+          petOverlay: {
+            setInteractive: async (interactive: boolean) => {
+              await window.desktopBridge?.setPetOverlayInteractive(interactive);
+            },
+          },
+        }
+      : {}),
     persistence: {
       getClientSettings: async () => {
         if (window.desktopBridge) {

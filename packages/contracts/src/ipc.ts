@@ -1071,6 +1071,14 @@ export interface DesktopBridge {
     items: readonly ContextMenuItem<T>[],
     position?: { x: number; y: number },
   ) => Promise<T | null>;
+  /**
+   * Toggle whether the desktop pet overlay window accepts mouse input. The
+   * overlay is a transparent, always-on-top native window pinned to the
+   * bottom-right corner of the screen; it must stay click-through whenever no
+   * pet is visible inside it, or its full bounding box silently blocks clicks
+   * to whatever is beneath it on the desktop.
+   */
+  setPetOverlayInteractive: (interactive: boolean) => Promise<void>;
   openExternal: (url: string) => Promise<boolean>;
   onMenuAction: (listener: (action: string) => void) => () => void;
   getWindowFullscreenState: () => boolean;
@@ -1189,6 +1197,10 @@ export interface LocalApi {
       items: readonly ContextMenuItem<T>[],
       position?: { x: number; y: number },
     ) => Promise<T | null>;
+  };
+  /** Present only when hosted by the Electron desktop build's pet overlay window. */
+  petOverlay?: {
+    setInteractive: (interactive: boolean) => Promise<void>;
   };
   persistence: {
     getClientSettings: () => Promise<ClientSettings | null>;

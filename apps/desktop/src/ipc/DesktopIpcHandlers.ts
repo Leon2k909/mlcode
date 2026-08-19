@@ -38,6 +38,7 @@ import {
   openExternal,
   pickFolder,
   pickThemeFiles,
+  setPetOverlayInteractive,
   setTheme,
   showContextMenu,
 } from "./methods/window.ts";
@@ -82,6 +83,7 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handle(pickThemeFiles);
   yield* ipc.handle(setTheme);
   yield* ipc.handle(showContextMenu);
+  yield* ipc.handle(setPetOverlayInteractive);
   yield* ipc.handle(openExternal);
   yield* ipc.handle(getUpdateState);
   yield* ipc.handle(setUpdateChannel);

@@ -27,6 +27,7 @@ import * as ElectronMenu from "../../electron/ElectronMenu.ts";
 import * as ElectronShell from "../../electron/ElectronShell.ts";
 import * as ElectronTheme from "../../electron/ElectronTheme.ts";
 import * as ElectronWindow from "../../electron/ElectronWindow.ts";
+import * as DesktopWindow from "../../window/DesktopWindow.ts";
 import * as IpcChannels from "../channels.ts";
 import * as DesktopIpc from "../DesktopIpc.ts";
 import {
@@ -248,6 +249,16 @@ export const showContextMenu = DesktopIpc.makeIpcMethod({
       position: Option.fromNullishOr(input.position),
     });
     return Option.getOrNull(selectedItemId);
+  }),
+});
+
+export const setPetOverlayInteractive = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.PET_OVERLAY_SET_INTERACTIVE_CHANNEL,
+  payload: Schema.Boolean,
+  result: Schema.Void,
+  handler: Effect.fn("desktop.ipc.window.setPetOverlayInteractive")(function* (interactive) {
+    const desktopWindow = yield* DesktopWindow.DesktopWindow;
+    yield* desktopWindow.setPetOverlayInteractive(interactive);
   }),
 });
 

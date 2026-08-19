@@ -98,6 +98,11 @@ export class DesktopWindow extends Context.Service<
     // the main window.
     readonly zoomMain: (direction: MainWindowZoomDirection) => Effect.Effect<void>;
     readonly syncAppearance: Effect.Effect<void>;
+    // The pet overlay is a full-bounds transparent window pinned to a screen
+    // corner; left non-interactive (`interactive: false`) whenever no pet is
+    // shown, so its invisible bounding box never blocks clicks to whatever is
+    // beneath it on the desktop.
+    readonly setPetOverlayInteractive: (interactive: boolean) => Effect.Effect<void>;
   }
 >()("@t3tools/desktop/window/DesktopWindow") {}
 
@@ -352,6 +357,11 @@ export const make = Effect.gen(function* () {
     if (Option.isSome(mainWindow) && mainWindow.value === overlay) return overlay;
     yield* Ref.set(petOverlayWindowRef, Option.some(overlay));
     overlay.setAlwaysOnTop?.(true, "floating");
+    // Click-through by default. The renderer flips this on only once it knows
+    // a pet is actually selected (see setPetOverlayInteractive), so the
+    // window never blocks clicks while empty — on startup, or once the user
+    // disables their pet.
+    overlay.setIgnoreMouseEvents?.(true, { forward: true });
     overlay.once("ready-to-show", () => {
       if (!overlay.isDestroyed()) overlay.showInactive?.();
     });
@@ -943,6 +953,13 @@ export const make = Effect.gen(function* () {
         return syncWindowAppearance(window, shouldUseDarkColors, environment.platform);
       });
     }).pipe(Effect.withSpan("desktop.window.syncAppearance")),
+    setPetOverlayInteractive: Effect.fn("desktop.window.setPetOverlayInteractive")(
+      function* (interactive) {
+        const petOverlay = yield* Ref.get(petOverlayWindowRef);
+        if (Option.isNone(petOverlay) || petOverlay.value.isDestroyed()) return;
+        petOverlay.value.setIgnoreMouseEvents?.(!interactive, { forward: true });
+      },
+    ),
   });
 });
 

@@ -110,6 +110,14 @@ export function PetMascot() {
     return () => window.removeEventListener("resize", onResize);
   }, [petSize]);
 
+  // The desktop overlay is a real OS-level window pinned to the screen
+  // corner; it must stay click-through whenever no pet is actually shown, or
+  // its invisible bounds silently block clicks to whatever is beneath it.
+  useEffect(() => {
+    if (!isDesktopOverlay) return;
+    void ensureLocalApi().petOverlay?.setInteractive(selectedPet !== null);
+  }, [selectedPet]);
+
   if (environmentId === null || selectedPet === null) return null;
   if (isElectron && !isDesktopOverlay) return null;
 

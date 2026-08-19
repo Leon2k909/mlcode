@@ -104,6 +104,8 @@ contextBridge.exposeInMainWorld("desktopBridge", {
       items,
       ...(position === undefined ? {} : { position }),
     }),
+  setPetOverlayInteractive: (interactive) =>
+    ipcRenderer.invoke(IpcChannels.PET_OVERLAY_SET_INTERACTIVE_CHANNEL, interactive),
   openExternal: (url: string) => ipcRenderer.invoke(IpcChannels.OPEN_EXTERNAL_CHANNEL, url),
   onMenuAction: (listener) => {
     const wrappedListener = (_event: Electron.IpcRendererEvent, action: unknown) => {

@@ -80,6 +80,7 @@ describe("DesktopLifecycle", () => {
         dispatchMenuAction: () => Effect.void,
         zoomMain: () => Effect.void,
         syncAppearance: Effect.void,
+        setPetOverlayInteractive: () => Effect.void,
       });
 
       const environmentLayer = Layer.succeed(DesktopEnvironment.DesktopEnvironment, {
