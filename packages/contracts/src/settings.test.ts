@@ -189,6 +189,25 @@ describe("ServerSettings worktree defaults", () => {
   });
 });
 
+describe("ServerSettings context management", () => {
+  it("defaults legacy settings to manual management", () => {
+    expect(decodeServerSettings({}).contextManagementMode).toBe("manual");
+  });
+
+  it.each(["manual", "auto-prune", "auto-new-thread"] as const)(
+    "accepts the %s mode",
+    (contextManagementMode) => {
+      expect(decodeServerSettingsPatch({ contextManagementMode }).contextManagementMode).toBe(
+        contextManagementMode,
+      );
+    },
+  );
+
+  it("rejects unknown modes", () => {
+    expect(() => decodeServerSettingsPatch({ contextManagementMode: "auto" })).toThrow();
+  });
+});
+
 describe("ServerSettings.sourceControlWritingStyle", () => {
   it("defaults all style settings for legacy configs", () => {
     const settings = decodeServerSettings({});

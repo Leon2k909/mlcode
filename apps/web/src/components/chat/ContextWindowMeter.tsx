@@ -1,4 +1,9 @@
-import type { MessageId, UsageLimitSnapshot, UsageProviderKind } from "@t3tools/contracts";
+import type {
+  ContextManagementMode,
+  MessageId,
+  UsageLimitSnapshot,
+  UsageProviderKind,
+} from "@t3tools/contracts";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { makeWindow } from "@t3tools/shared/usageFormat";
 import { useLiveRefresh } from "~/hooks/useLiveRefresh";
@@ -58,6 +63,8 @@ export function ContextWindowMeter(props: {
   messages?: ReadonlyArray<ContextPrunableMessage<MessageId>>;
   prunePromptKey?: string | null;
   onPruneOlderMessages?: (messageIds: ReadonlyArray<MessageId>) => void;
+  contextManagementMode?: ContextManagementMode;
+  onContextManagementModeChange?: (mode: ContextManagementMode) => Promise<boolean>;
 }) {
   const { usage, providerDisplayName, modelDisplayName, messages = [] } = props;
   const usageProvider: UsageProviderKind | null = providerDisplayName
@@ -68,6 +75,8 @@ export function ContextWindowMeter(props: {
       ? "claude"
       : null;
   const [open, setOpen] = useState(false);
+  const [savingMode, setSavingMode] = useState<ContextManagementMode | null>(null);
+  const [modeSaveFailed, setModeSaveFailed] = useState(false);
   const [prunePromptDismissed, setPrunePromptDismissed] = useState(false);
   const promptedPruneKey = useRef<string | null>(null);
   const pruneMessageIds = useMemo(() => selectOldestMessageIdsForPruning(messages), [messages]);
@@ -79,6 +88,7 @@ export function ContextWindowMeter(props: {
       messageCount: messages.length,
     }) &&
     pruneMessageIds.length > 0 &&
+    (props.contextManagementMode ?? "manual") === "manual" &&
     !prunePromptDismissed;
 
   useEffect(() => {
@@ -145,6 +155,20 @@ export function ContextWindowMeter(props: {
                 setPrunePromptDismissed(true);
                 setOpen(false);
                 props.onPruneOlderMessages?.(pruneMessageIds);
+              }
+        }
+        contextManagementMode={props.contextManagementMode ?? "manual"}
+        savingMode={savingMode}
+        modeSaveFailed={modeSaveFailed}
+        onContextManagementModeChange={
+          props.onContextManagementModeChange === undefined
+            ? undefined
+            : async (mode) => {
+                setSavingMode(mode);
+                setModeSaveFailed(false);
+                const saved = await props.onContextManagementModeChange?.(mode);
+                setSavingMode(null);
+                setModeSaveFailed(saved !== true);
               }
         }
       />
@@ -231,6 +255,51 @@ function ContextUsageLimits({ provider }: { provider: UsageProviderKind }) {
   );
 }
 
+export function ContextManagementControls(props: {
+  contextManagementMode: ContextManagementMode;
+  savingMode: ContextManagementMode | null;
+  modeSaveFailed: boolean;
+  onContextManagementModeChange: (mode: ContextManagementMode) => void;
+}) {
+  return (
+    <div className="mt-1 border-t border-border/60 pt-2">
+      <div className="flex items-center justify-between gap-3">
+        <span className="font-medium text-muted-foreground text-[11px]">Long threads</span>
+        <span className="text-secondary-label text-[10px]">Runs after work finishes</span>
+      </div>
+      <div className="mt-1.5 grid grid-cols-3 gap-1">
+        {(
+          [
+            ["manual", "Ask me"],
+            ["auto-prune", "Auto-delete"],
+            ["auto-new-thread", "New chat"],
+          ] as const
+        ).map(([mode, label]) => (
+          <Button
+            key={mode}
+            size="xs"
+            variant={props.contextManagementMode === mode ? "secondary" : "ghost"}
+            disabled={props.savingMode !== null}
+            onClick={() => props.onContextManagementModeChange(mode)}
+            aria-pressed={props.contextManagementMode === mode}
+          >
+            {props.savingMode === mode ? "Saving..." : label}
+          </Button>
+        ))}
+      </div>
+      <p className="mt-1.5 text-secondary-label text-[10px] leading-3.5">
+        Automatic modes act at 75% using fresh provider usage. New chats are created without sending
+        or switching away from this thread.
+      </p>
+      {props.modeSaveFailed ? (
+        <p className="mt-1 text-destructive text-[10px] leading-3.5">
+          Could not save this setting. Check the connection and try again.
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 function ContextWindowMeterContent(props: {
   usage: ContextWindowSnapshot;
   modelDisplayName: string | null | undefined;
@@ -243,6 +312,10 @@ function ContextWindowMeterContent(props: {
   showPrunePrompt: boolean;
   onDismissPrunePrompt: () => void;
   onPruneOlderMessages: (() => void) | undefined;
+  contextManagementMode: ContextManagementMode;
+  savingMode: ContextManagementMode | null;
+  modeSaveFailed: boolean;
+  onContextManagementModeChange: ((mode: ContextManagementMode) => void) | undefined;
 }) {
   const { usage, modelDisplayName, usageProvider, usedPercentage, normalizedPercentage } = props;
   const radius = 9.75;
@@ -380,6 +453,14 @@ function ContextWindowMeterContent(props: {
                 </Button>
               </div>
             </div>
+          ) : null}
+          {props.onContextManagementModeChange ? (
+            <ContextManagementControls
+              contextManagementMode={props.contextManagementMode}
+              savingMode={props.savingMode}
+              modeSaveFailed={props.modeSaveFailed}
+              onContextManagementModeChange={props.onContextManagementModeChange}
+            />
           ) : null}
           {props.loadLimits && usageProvider ? (
             <ContextUsageLimits provider={usageProvider} />

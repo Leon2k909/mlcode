@@ -1,5 +1,6 @@
 import type {
   ApprovalRequestId,
+  ContextManagementMode,
   EmployeeId,
   EnvironmentId,
   MessageId,
@@ -411,6 +412,8 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
   contextMessages: ReadonlyArray<ContextPrunableMessage<MessageId>>;
   prunePromptKey: string | null;
   onPruneOlderMessages: (messageIds: ReadonlyArray<MessageId>) => void;
+  contextManagementMode: ContextManagementMode;
+  onContextManagementModeChange: (mode: ContextManagementMode) => Promise<boolean>;
   activeThreadProviderDisplayName: string | null;
   activeThreadModelDisplayName: string | null;
   activeThreadFastMode: boolean | null;
@@ -447,6 +450,8 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
         providerDisplayName={props.activeThreadProviderDisplayName}
         modelDisplayName={props.activeThreadModelDisplayName}
         fastMode={props.activeThreadFastMode}
+        contextManagementMode={props.contextManagementMode}
+        onContextManagementModeChange={props.onContextManagementModeChange}
       />
       {props.isPreparingWorktree ? (
         <span className="text-secondary-label text-xs">Preparing worktree...</span>
@@ -822,6 +827,7 @@ export interface ChatComposerProps {
   ) => void;
   onInterrupt: () => void;
   onPruneOlderMessages: (messageIds: ReadonlyArray<MessageId>) => void;
+  onContextManagementModeChange: (mode: ContextManagementMode) => Promise<boolean>;
   onImplementPlanInNewThread: () => void;
   onRespondToApproval: (
     requestId: ApprovalRequestId,
@@ -931,6 +937,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     onSend,
     onInterrupt,
     onPruneOlderMessages,
+    onContextManagementModeChange,
     onImplementPlanInNewThread,
     onRespondToApproval,
     onSelectActivePendingUserInputOption,
@@ -3662,6 +3669,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   contextMessages={activeThread?.messages ?? []}
                   prunePromptKey={activeThread?.id ?? null}
                   onPruneOlderMessages={onPruneOlderMessages}
+                  contextManagementMode={settings.contextManagementMode}
+                  onContextManagementModeChange={onContextManagementModeChange}
                   activeThreadProviderDisplayName={activeThreadProviderDisplayName}
                   activeThreadModelDisplayName={activeThreadModelDisplayName}
                   activeThreadFastMode={activeThreadFastMode}

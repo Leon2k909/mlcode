@@ -1,9 +1,10 @@
 import { NativeHeaderToolbar, NativeStackScreenOptions } from "../../native/StackHeader";
 import { useNavigation } from "@react-navigation/native";
 import { SymbolView } from "../../components/AppSymbol";
-import type { EnvironmentId } from "@t3tools/contracts";
+import { useAtomValue } from "@effect/atom-react";
+import type { ContextManagementMode, EnvironmentId } from "@t3tools/contracts";
 import { useCallback, useEffect, useState } from "react";
-import { Platform, ScrollView, View } from "react-native";
+import { Platform, Pressable, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppText as Text } from "../../components/AppText";
@@ -21,6 +22,8 @@ import {
   SHOWCASE_CONNECTED_CLOUD_ENVIRONMENTS,
 } from "../showcase/showcaseEnvironmentRows";
 import { markNativeShowcaseReady } from "../showcase/nativeShowcaseScene";
+import { serverEnvironment } from "../../state/server";
+import { useAtomCommand } from "../../state/use-atom-command";
 
 const SHOWCASE_ENABLED = process.env.EXPO_PUBLIC_SHOWCASE === "1";
 
@@ -146,6 +149,9 @@ export function SettingsEnvironmentsRouteScreen() {
                   onRemove={onRemoveEnvironmentPress}
                   onUpdate={handleUpdateEnvironment}
                 />
+                {expandedId === environment.environmentId ? (
+                  <ContextManagementEnvironmentControl environmentId={environment.environmentId} />
+                ) : null}
               </View>
             ))}
           </View>
@@ -180,6 +186,79 @@ export function SettingsEnvironmentsRouteScreen() {
             : {})}
         />
       </ScrollView>
+    </View>
+  );
+}
+
+const CONTEXT_MANAGEMENT_OPTIONS = [
+  { mode: "manual", label: "Ask me" },
+  { mode: "auto-prune", label: "Auto-delete" },
+  { mode: "auto-new-thread", label: "New chat" },
+] as const satisfies ReadonlyArray<{
+  readonly mode: ContextManagementMode;
+  readonly label: string;
+}>;
+
+function ContextManagementEnvironmentControl(props: { readonly environmentId: EnvironmentId }) {
+  const settings = useAtomValue(serverEnvironment.settingsValueAtom(props.environmentId));
+  const updateSettings = useAtomCommand(serverEnvironment.updateSettings, {
+    label: "context management settings update",
+    reportFailure: false,
+  });
+  const [saving, setSaving] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const mode = settings?.contextManagementMode ?? "manual";
+
+  const updateMode = useCallback(
+    async (nextMode: ContextManagementMode) => {
+      setSaving(true);
+      setFailed(false);
+      const result = await updateSettings({
+        environmentId: props.environmentId,
+        input: { patch: { contextManagementMode: nextMode } },
+      });
+      setSaving(false);
+      setFailed(result._tag === "Failure");
+    },
+    [props.environmentId, updateSettings],
+  );
+
+  return (
+    <View className="gap-2 border-t border-border px-4 pb-4 pt-3">
+      <View className="gap-0.5">
+        <Text className="font-t3-medium text-base text-foreground">Long threads</Text>
+        <Text className="text-sm leading-normal text-foreground-muted">
+          Automatic modes wait for current work to finish and act at 75% context usage.
+        </Text>
+      </View>
+      <View className="flex-row gap-2">
+        {CONTEXT_MANAGEMENT_OPTIONS.map((option) => {
+          const selected = mode === option.mode;
+          return (
+            <Pressable
+              key={option.mode}
+              accessibilityRole="button"
+              accessibilityState={{ disabled: saving, selected }}
+              disabled={saving}
+              onPress={() => void updateMode(option.mode)}
+              className={cn(
+                "flex-1 items-center rounded-xl border px-2 py-2.5",
+                selected ? "border-accent bg-subtle" : "border-border bg-card",
+                saving && "opacity-50",
+              )}
+            >
+              <Text
+                className={cn("text-sm", selected ? "text-foreground" : "text-foreground-muted")}
+              >
+                {option.label}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+      {failed ? (
+        <Text className="text-sm text-destructive">Could not save. Reconnect and try again.</Text>
+      ) : null}
     </View>
   );
 }

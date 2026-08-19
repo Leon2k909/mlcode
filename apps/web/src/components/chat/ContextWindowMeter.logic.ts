@@ -3,6 +3,10 @@ import {
   getModelSelectionBooleanOptionValue,
   getModelSelectionStringOptionValue,
 } from "@t3tools/shared/model";
+import {
+  CONTEXT_PRUNE_MIN_USED_PERCENTAGE,
+  selectOldestMessageIdsForContextPruning,
+} from "@t3tools/shared/contextManagement";
 import { getTriggerDisplayModelName, type ModelEsque } from "./providerIconUtils";
 
 export type ContextPrunableMessage<MessageId extends string = string> = {
@@ -11,8 +15,6 @@ export type ContextPrunableMessage<MessageId extends string = string> = {
 };
 
 const CONTEXT_PRUNE_MIN_USER_TURNS = 5;
-const CONTEXT_PRUNE_RETAIN_USER_TURNS = 4;
-const CONTEXT_PRUNE_MIN_USED_PERCENTAGE = 50;
 
 export function shouldOfferContextPrune(input: {
   usedPercentage: number | null;
@@ -52,19 +54,7 @@ export function shouldAutoOpenContextPrunePrompt(input: {
 export function selectOldestMessageIdsForPruning<MessageId extends string>(
   messages: ReadonlyArray<ContextPrunableMessage<MessageId>>,
 ): ReadonlyArray<MessageId> {
-  const userMessageIndexes = messages.flatMap((message, index) =>
-    message.role === "user" ? [index] : [],
-  );
-  const pruneUserTurnCount = userMessageIndexes.length - CONTEXT_PRUNE_RETAIN_USER_TURNS;
-  if (pruneUserTurnCount <= 0) return [];
-
-  const cutoffIndex = userMessageIndexes[pruneUserTurnCount];
-  if (cutoffIndex === undefined) return [];
-
-  return messages
-    .slice(0, cutoffIndex)
-    .filter((message) => message.role !== "system")
-    .map((message) => message.id);
+  return selectOldestMessageIdsForContextPruning(messages);
 }
 
 export function resolveContextWindowModelDisplayName(

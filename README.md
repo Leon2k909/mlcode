@@ -78,6 +78,7 @@ Full docs live in [docs/](./docs).
 - [Install and first run](./docs/user/install.md)
 - [Employees and group chats](./docs/user/employees.md)
 - [Thread goals](./docs/user/goals.md)
+- [Long-thread management](./docs/user/long-threads.md)
 - [Permission modes](./docs/user/permission-modes.md)
 - [Keyboard shortcuts](./docs/user/keybindings.md)
 - [Customize a project icon](./docs/user/project-settings.md)

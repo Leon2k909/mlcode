@@ -539,6 +539,11 @@ export const BackgroundActivitySettings = Schema.Struct({
 }).pipe(Schema.withDecodingDefault(Effect.succeed({})));
 export type BackgroundActivitySettings = typeof BackgroundActivitySettings.Type;
 
+/** How long conversations are handled after a fresh provider report reaches the automatic threshold. */
+export const ContextManagementMode = Schema.Literals(["manual", "auto-prune", "auto-new-thread"]);
+export type ContextManagementMode = typeof ContextManagementMode.Type;
+export const DEFAULT_CONTEXT_MANAGEMENT_MODE: ContextManagementMode = "manual";
+
 export const ServerSettings = Schema.Struct({
   // Legacy token-by-token assistant output. Deliberately a fresh key (was
   // `enableAssistantStreaming`): decoding drops the old key, so everyone,
@@ -568,6 +573,9 @@ export const ServerSettings = Schema.Struct({
   ),
   newWorktreesStartFromOrigin: Schema.Boolean.pipe(
     Schema.withDecodingDefault(Effect.succeed(true)),
+  ),
+  contextManagementMode: ContextManagementMode.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_CONTEXT_MANAGEMENT_MODE)),
   ),
   addProjectBaseDirectory: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
   textGenerationModelSelection: ModelSelection.pipe(
@@ -735,6 +743,7 @@ export const ServerSettingsPatch = Schema.Struct({
   backgroundActivityProfile: Schema.optionalKey(BackgroundActivityProfile),
   defaultThreadEnvMode: Schema.optionalKey(ThreadEnvMode),
   newWorktreesStartFromOrigin: Schema.optionalKey(Schema.Boolean),
+  contextManagementMode: Schema.optionalKey(ContextManagementMode),
   addProjectBaseDirectory: Schema.optionalKey(TrimmedString),
   textGenerationModelSelection: Schema.optionalKey(ModelSelectionPatch),
   sourceControlWritingStyle: Schema.optionalKey(

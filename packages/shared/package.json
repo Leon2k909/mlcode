@@ -222,6 +222,10 @@
     "./threadGoal": {
       "types": "./src/threadGoal.ts",
       "import": "./src/threadGoal.ts"
+    },
+    "./contextManagement": {
+      "types": "./src/contextManagement.ts",
+      "import": "./src/contextManagement.ts"
     }
   },
   "scripts": {

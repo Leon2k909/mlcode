@@ -1,5 +1,6 @@
 import {
   type ApprovalRequestId,
+  type ContextManagementMode,
   DEFAULT_MODEL,
   defaultInstanceIdForDriver,
   type EmployeeId,
@@ -195,6 +196,7 @@ import {
   useClientSettings,
   useClientSettingsHydrated,
   useEnvironmentSettings,
+  useUpdateEnvironmentSettings,
 } from "../hooks/useSettings";
 import { useNowMinute } from "../hooks/useNowMinute";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
@@ -1327,6 +1329,7 @@ function ChatViewContent(props: ChatViewProps) {
   }, [routeKind, routeThreadRef, routeThreadState]);
   const markThreadVisited = useUiStateStore((store) => store.markThreadVisited);
   const settings = useEnvironmentSettings(environmentId);
+  const updateEnvironmentSettings = useUpdateEnvironmentSettings(environmentId);
   // New-thread defaults live in the primary environment's settings.json (the
   // settings UI never writes to remote environments), so read them from the
   // primary server rather than the thread's environment.
@@ -5026,6 +5029,22 @@ function ChatViewContent(props: ChatViewProps) {
     ],
   );
 
+  const onContextManagementModeChange = useCallback(
+    async (mode: ContextManagementMode) => {
+      const result = await updateEnvironmentSettings({ contextManagementMode: mode });
+      if (!result.ok) {
+        toastManager.add({
+          type: "error",
+          title: "Long-thread setting was not saved",
+          description: "Reconnect this environment and try again.",
+        });
+        return false;
+      }
+      return true;
+    },
+    [updateEnvironmentSettings],
+  );
+
   const onEmployeeFeedback = useCallback(
     (_messageId: MessageId) => {
       const inserted = composerRef.current?.insertTextAtEnd(
@@ -7059,6 +7078,7 @@ function ChatViewContent(props: ChatViewProps) {
                             onSend={onSend}
                             onInterrupt={onInterrupt}
                             onPruneOlderMessages={onPruneOlderMessages}
+                            onContextManagementModeChange={onContextManagementModeChange}
                             onImplementPlanInNewThread={onImplementPlanInNewThread}
                             onRespondToApproval={onRespondToApproval}
                             onSelectActivePendingUserInputOption={
