@@ -39,6 +39,10 @@ import {
   threadWokeAt,
 } from "@t3tools/client-runtime/state/thread-settled";
 import {
+  resolveThreadNoProgress,
+  THREAD_NO_PROGRESS_WARNING_MS,
+} from "@t3tools/client-runtime/state/thread-liveness";
+import {
   parseScopedThreadKey,
   scopedThreadKey,
   scopeProjectRef,
@@ -175,6 +179,7 @@ import {
   CheckCircle2Icon,
   ChevronDownIcon,
   GitBranchIcon,
+  TriangleAlertIcon,
   WifiOffIcon,
 } from "lucide-react";
 import { cn, randomHex } from "~/lib/utils";
@@ -1278,6 +1283,9 @@ function ChatViewContent(props: ChatViewProps) {
   });
   const startThreadTurn = useAtomCommand(threadEnvironment.startTurn, { reportFailure: false });
   const interruptThreadTurn = useAtomCommand(threadEnvironment.interruptTurn, {
+    reportFailure: false,
+  });
+  const stopThreadSession = useAtomCommand(threadEnvironment.stopSession, {
     reportFailure: false,
   });
   const respondToThreadApproval = useAtomCommand(threadEnvironment.respondToApproval, {
@@ -4172,6 +4180,52 @@ function ChatViewContent(props: ChatViewProps) {
   const supportsSettlement = serverConfig?.environment.capabilities.threadSettlement === true;
   const supportsSnooze = serverConfig?.environment.capabilities.threadSnooze === true;
   const nowMinute = useNowMinute();
+  const noProgressState = useMemo(
+    () =>
+      activeThreadShell === null
+        ? null
+        : resolveThreadNoProgress(activeThreadShell, {
+            nowMs: Date.parse(`${nowMinute}:00.000Z`),
+          }),
+    [activeThreadShell, nowMinute],
+  );
+  const activeTurnLivenessKey =
+    activeThread == null
+      ? null
+      : `${activeThread.id}:${activeThread.session?.activeTurnId ?? activeThread.latestTurn?.turnId ?? "starting"}`;
+  const [stuckWarningSuppression, setStuckWarningSuppression] = useState<{
+    readonly turnKey: string;
+    readonly lastProgressAt: string | null;
+    readonly untilMs: number;
+  } | null>(null);
+  const [stuckInterrupt, setStuckInterrupt] = useState<{
+    readonly turnKey: string;
+    readonly forceAvailable: boolean;
+  } | null>(null);
+  const [isForceStoppingStuckSession, setIsForceStoppingStuckSession] = useState(false);
+  useEffect(() => {
+    setStuckInterrupt(null);
+    setIsForceStoppingStuckSession(false);
+  }, [activeTurnLivenessKey]);
+  useEffect(() => {
+    if (stuckInterrupt === null || stuckInterrupt.forceAvailable) return;
+    const id = window.setTimeout(() => {
+      setStuckInterrupt((current) =>
+        current?.turnKey === stuckInterrupt.turnKey
+          ? { ...current, forceAvailable: true }
+          : current,
+      );
+    }, 15_500);
+    return () => window.clearTimeout(id);
+  }, [stuckInterrupt]);
+  useEffect(() => {
+    const sessionActive =
+      activeThread?.session?.status === "running" || activeThread?.session?.status === "starting";
+    if (!sessionActive) {
+      setStuckInterrupt(null);
+      setIsForceStoppingStuckSession(false);
+    }
+  }, [activeThread?.session?.status]);
   const snoozeNow = new Date().toISOString();
   const activeThreadSnoozed =
     activeThreadShell !== null &&
@@ -4451,6 +4505,106 @@ function ChatViewContent(props: ChatViewProps) {
       }
     }
   }, [activeThread, environmentId, interruptThreadTurn, setThreadError]);
+  const handleStopPossiblyStuckWorker = useCallback(async () => {
+    if (!activeThread || activeTurnLivenessKey === null) return;
+    setStuckInterrupt({ turnKey: activeTurnLivenessKey, forceAvailable: false });
+    const result = await interruptThreadTurn({
+      environmentId,
+      input: buildThreadTurnInterruptInput(activeThread),
+    });
+    if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+      const error = squashAtomCommandFailure(result);
+      setThreadError(
+        activeThread.id,
+        error instanceof Error ? error.message : "Failed to stop the worker.",
+      );
+    }
+  }, [activeThread, activeTurnLivenessKey, environmentId, interruptThreadTurn, setThreadError]);
+  const handleForceStopPossiblyStuckSession = useCallback(async () => {
+    if (!activeThread || isForceStoppingStuckSession) return;
+    setIsForceStoppingStuckSession(true);
+    const result = await stopThreadSession({
+      environmentId,
+      input: { threadId: activeThread.id },
+    });
+    if (result._tag === "Failure") {
+      setIsForceStoppingStuckSession(false);
+      if (!isAtomCommandInterrupted(result)) {
+        const error = squashAtomCommandFailure(result);
+        setThreadError(
+          activeThread.id,
+          error instanceof Error ? error.message : "Failed to force-stop the provider session.",
+        );
+      }
+    }
+  }, [activeThread, environmentId, isForceStoppingStuckSession, setThreadError, stopThreadSession]);
+  const stuckWorkerBannerItem = useMemo<ComposerBannerStackItem | null>(() => {
+    if (!activeThread || activeTurnLivenessKey === null || noProgressState === null) return null;
+    const interruptPending = stuckInterrupt?.turnKey === activeTurnLivenessKey;
+    const warningSuppressed =
+      stuckWarningSuppression?.turnKey === activeTurnLivenessKey &&
+      stuckWarningSuppression.lastProgressAt === noProgressState.lastProgressAt &&
+      stuckWarningSuppression.untilMs > Date.parse(`${nowMinute}:00.000Z`);
+    if ((!noProgressState.possiblyStuck || warningSuppressed) && !interruptPending) return null;
+    const idleMinutes = Math.max(1, Math.floor(noProgressState.idleMs / 60_000));
+    const forceAvailable = interruptPending && stuckInterrupt.forceAvailable;
+    return {
+      id: `possibly-stuck:${activeTurnLivenessKey}`,
+      variant: "warning",
+      icon: <TriangleAlertIcon />,
+      title: interruptPending
+        ? forceAvailable
+          ? "Worker did not confirm it stopped"
+          : "Waiting for the worker to stop"
+        : `Possibly stuck · ${idleMinutes}m without activity`,
+      description: interruptPending
+        ? forceAvailable
+          ? "Force stop closes the provider session. Start replacement work only after shutdown is confirmed."
+          : "The provider has 15 seconds to acknowledge Stop."
+        : "Long commands can be quiet. No retry or handoff will run automatically, avoiding duplicate writes or releases.",
+      actions: interruptPending ? (
+        forceAvailable ? (
+          <Button
+            size="xs"
+            variant="outline"
+            disabled={isForceStoppingStuckSession}
+            onClick={() => void handleForceStopPossiblyStuckSession()}
+          >
+            {isForceStoppingStuckSession ? "Force stopping..." : "Force stop session"}
+          </Button>
+        ) : null
+      ) : (
+        <>
+          <Button
+            size="xs"
+            variant="ghost"
+            onClick={() =>
+              setStuckWarningSuppression({
+                turnKey: activeTurnLivenessKey,
+                lastProgressAt: noProgressState.lastProgressAt,
+                untilMs: Date.parse(`${nowMinute}:00.000Z`) + THREAD_NO_PROGRESS_WARNING_MS,
+              })
+            }
+          >
+            Keep waiting
+          </Button>
+          <Button size="xs" variant="outline" onClick={() => void handleStopPossiblyStuckWorker()}>
+            Stop worker
+          </Button>
+        </>
+      ),
+    };
+  }, [
+    activeThread,
+    activeTurnLivenessKey,
+    handleForceStopPossiblyStuckSession,
+    handleStopPossiblyStuckWorker,
+    isForceStoppingStuckSession,
+    noProgressState,
+    nowMinute,
+    stuckInterrupt,
+    stuckWarningSuppression,
+  ]);
   const backgroundLivenessBannerItem = useMemo<ComposerBannerStackItem | null>(() => {
     if (activeBackgroundLiveness === null || !activeThread) {
       return null;
@@ -4568,11 +4722,13 @@ function ChatViewContent(props: ChatViewProps) {
     const calmSystemItems = systemComposerBannerItems.filter((item) => !isUrgentSystemItem(item));
     const backgroundLivenessItems =
       backgroundLivenessBannerItem === null ? [] : [backgroundLivenessBannerItem];
+    const stuckWorkerItems = stuckWorkerBannerItem === null ? [] : [stuckWorkerBannerItem];
     const wokeThreadItems = wokeThreadBannerItem === null ? [] : [wokeThreadBannerItem];
     const parkedThreadItems = parkedThreadBannerItem === null ? [] : [parkedThreadBannerItem];
     if (!localCheckoutBranchMismatch || !showBranchMismatchBanner || !activeBranchMismatchKey) {
       return [
         ...urgentSystemItems,
+        ...stuckWorkerItems,
         ...backgroundLivenessItems,
         ...calmSystemItems,
         ...wokeThreadItems,
@@ -4581,6 +4737,7 @@ function ChatViewContent(props: ChatViewProps) {
     }
     return [
       ...urgentSystemItems,
+      ...stuckWorkerItems,
       ...backgroundLivenessItems,
       ...calmSystemItems,
       ...wokeThreadItems,
@@ -4628,6 +4785,7 @@ function ChatViewContent(props: ChatViewProps) {
   }, [
     activeBranchMismatchKey,
     backgroundLivenessBannerItem,
+    stuckWorkerBannerItem,
     handleRestoreThreadBranch,
     isRestoringThreadBranch,
     localCheckoutBranchMismatch,

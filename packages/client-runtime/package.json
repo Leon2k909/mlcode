@@ -147,6 +147,10 @@
       "types": "./src/state/threadSearch.ts",
       "default": "./src/state/threadSearch.ts"
     },
+    "./state/thread-liveness": {
+      "types": "./src/state/threadLiveness.ts",
+      "default": "./src/state/threadLiveness.ts"
+    },
     "./state/vcs": {
       "types": "./src/state/vcs.ts",
       "default": "./src/state/vcs.ts"

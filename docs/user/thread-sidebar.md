@@ -1,5 +1,15 @@
 # Organizing threads
 
+## Possibly stuck workers
+
+ML Code changes **Working** to **Possibly stuck** after an active worker has reported no messages,
+tool activity, or session progress for ten minutes. This is only a warning: long commands can be
+quiet, so ML Code never retries the worker or hands the task to another employee automatically.
+
+Open the thread to keep waiting or stop the worker. If the provider does not acknowledge Stop,
+**Force stop session** appears after a short wait. Do not start replacement work until the session
+has confirmed shutdown; this prevents two workers from repeating edits, commits, or releases.
+
 Pin a thread from its context menu to keep it in the pinned section above your active work.
 Pinned threads are shown independently of their project, including when you connect to more than
 one environment.

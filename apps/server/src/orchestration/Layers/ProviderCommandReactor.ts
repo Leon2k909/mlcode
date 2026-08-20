@@ -63,6 +63,13 @@ const isProviderAdapterRequestError = Schema.is(ProviderAdapterRequestError);
 const isProviderDriverKind = Schema.is(ProviderDriverKind);
 const ROUTING_CEO_EMPLOYEE_ID = EmployeeId.make("ceo");
 
+export function withProviderControlDeadline<A, E, R>(
+  effect: Effect.Effect<A, E, R>,
+  duration: Duration.Input,
+) {
+  return effect.pipe(Effect.timeoutOption(duration));
+}
+
 type ProviderIntentEvent = Extract<
   OrchestrationEvent,
   {
@@ -1600,7 +1607,38 @@ const make = Effect.gen(function* () {
     }
 
     // Orchestration turn ids are not provider turn ids, so interrupt by session.
-    yield* providerService.interruptTurn({ threadId: event.payload.threadId });
+    // A provider process can remain alive while its control RPC stops replying;
+    // bound the wait so this serial command worker can still service recovery.
+    yield* withProviderControlDeadline(
+      providerService.interruptTurn({ threadId: event.payload.threadId }),
+      "15 seconds",
+    ).pipe(
+      Effect.flatMap(
+        Option.match({
+          onNone: () =>
+            appendProviderFailureActivity({
+              threadId: event.payload.threadId,
+              kind: "provider.turn.interrupt.failed",
+              summary: "Provider turn interrupt timed out",
+              detail:
+                "The provider did not acknowledge Stop within 15 seconds. The worker may still be running; use Force stop session before starting replacement work.",
+              turnId: event.payload.turnId ?? null,
+              createdAt: event.payload.createdAt,
+            }),
+          onSome: () => Effect.void,
+        }),
+      ),
+      Effect.catchCause((cause) =>
+        appendProviderFailureActivity({
+          threadId: event.payload.threadId,
+          kind: "provider.turn.interrupt.failed",
+          summary: "Provider turn interrupt failed",
+          detail: Cause.pretty(cause),
+          turnId: event.payload.turnId ?? null,
+          createdAt: event.payload.createdAt,
+        }),
+      ),
+    );
   });
 
   const processApprovalResponseRequested = Effect.fn("processApprovalResponseRequested")(function* (
@@ -1623,27 +1661,47 @@ const make = Effect.gen(function* () {
       });
     }
 
-    yield* providerService
-      .respondToRequest({
-        threadId: event.payload.threadId,
-        requestId: event.payload.requestId,
-        decision: event.payload.decision,
-      })
-      .pipe(
-        Effect.catchCause((cause) =>
-          appendProviderFailureActivity({
-            threadId: event.payload.threadId,
-            kind: "provider.approval.respond.failed",
-            summary: "Provider approval response failed",
-            detail: isUnknownPendingApprovalRequestError(cause)
-              ? stalePendingRequestDetail("approval", event.payload.requestId)
-              : Cause.pretty(cause),
-            turnId: null,
-            createdAt: event.payload.createdAt,
-            requestId: event.payload.requestId,
-          }),
+    yield* withProviderControlDeadline(
+      providerService
+        .respondToRequest({
+          threadId: event.payload.threadId,
+          requestId: event.payload.requestId,
+          decision: event.payload.decision,
+        })
+        .pipe(
+          Effect.catchCause((cause) =>
+            appendProviderFailureActivity({
+              threadId: event.payload.threadId,
+              kind: "provider.approval.respond.failed",
+              summary: "Provider approval response failed",
+              detail: isUnknownPendingApprovalRequestError(cause)
+                ? stalePendingRequestDetail("approval", event.payload.requestId)
+                : Cause.pretty(cause),
+              turnId: null,
+              createdAt: event.payload.createdAt,
+              requestId: event.payload.requestId,
+            }),
+          ),
         ),
-      );
+      "15 seconds",
+    ).pipe(
+      Effect.flatMap(
+        Option.match({
+          onNone: () =>
+            appendProviderFailureActivity({
+              threadId: event.payload.threadId,
+              kind: "provider.approval.respond.failed",
+              summary: "Provider approval response timed out",
+              detail:
+                "The provider did not accept the approval response within 15 seconds. Its control queue is still available for Stop or Force stop.",
+              turnId: null,
+              createdAt: event.payload.createdAt,
+              requestId: event.payload.requestId,
+            }),
+          onSome: () => Effect.void,
+        }),
+      ),
+    );
   });
 
   const processUserInputResponseRequested = Effect.fn("processUserInputResponseRequested")(
@@ -1667,27 +1725,47 @@ const make = Effect.gen(function* () {
         });
       }
 
-      yield* providerService
-        .respondToUserInput({
-          threadId: event.payload.threadId,
-          requestId: event.payload.requestId,
-          answers: event.payload.answers,
-        })
-        .pipe(
-          Effect.catchCause((cause) =>
-            appendProviderFailureActivity({
-              threadId: event.payload.threadId,
-              kind: "provider.user-input.respond.failed",
-              summary: "Provider user input response failed",
-              detail: isUnknownPendingUserInputRequestError(cause)
-                ? stalePendingRequestDetail("user-input", event.payload.requestId)
-                : Cause.pretty(cause),
-              turnId: null,
-              createdAt: event.payload.createdAt,
-              requestId: event.payload.requestId,
-            }),
+      yield* withProviderControlDeadline(
+        providerService
+          .respondToUserInput({
+            threadId: event.payload.threadId,
+            requestId: event.payload.requestId,
+            answers: event.payload.answers,
+          })
+          .pipe(
+            Effect.catchCause((cause) =>
+              appendProviderFailureActivity({
+                threadId: event.payload.threadId,
+                kind: "provider.user-input.respond.failed",
+                summary: "Provider user input response failed",
+                detail: isUnknownPendingUserInputRequestError(cause)
+                  ? stalePendingRequestDetail("user-input", event.payload.requestId)
+                  : Cause.pretty(cause),
+                turnId: null,
+                createdAt: event.payload.createdAt,
+                requestId: event.payload.requestId,
+              }),
+            ),
           ),
-        );
+        "15 seconds",
+      ).pipe(
+        Effect.flatMap(
+          Option.match({
+            onNone: () =>
+              appendProviderFailureActivity({
+                threadId: event.payload.threadId,
+                kind: "provider.user-input.respond.failed",
+                summary: "Provider user input response timed out",
+                detail:
+                  "The provider did not accept the response within 15 seconds. Its control queue is still available for Stop or Force stop.",
+                turnId: null,
+                createdAt: event.payload.createdAt,
+                requestId: event.payload.requestId,
+              }),
+            onSome: () => Effect.void,
+          }),
+        ),
+      );
     },
   );
 
@@ -1701,7 +1779,40 @@ const make = Effect.gen(function* () {
 
     const now = event.payload.createdAt;
     if (thread.session && thread.session.status !== "stopped") {
-      yield* providerService.stopSession({ threadId: thread.id });
+      const activeTurnId = thread.session.activeTurnId;
+      const stopped = yield* withProviderControlDeadline(
+        providerService.stopSession({ threadId: thread.id }),
+        "20 seconds",
+      ).pipe(
+        Effect.flatMap(
+          Option.match({
+            onNone: () =>
+              appendProviderFailureActivity({
+                threadId: thread.id,
+                kind: "provider.session.stop.failed",
+                summary: "Provider session stop timed out",
+                detail:
+                  "The provider session did not confirm shutdown within 20 seconds. It has not been marked stopped, preventing replacement work from running beside a possibly live process.",
+                turnId: activeTurnId,
+                createdAt: now,
+              }).pipe(Effect.as(false)),
+            onSome: () => Effect.succeed(true),
+          }),
+        ),
+        Effect.catchCause((cause) =>
+          appendProviderFailureActivity({
+            threadId: thread.id,
+            kind: "provider.session.stop.failed",
+            summary: "Provider session stop failed",
+            detail: Cause.pretty(cause),
+            turnId: activeTurnId,
+            createdAt: now,
+          }).pipe(Effect.as(false)),
+        ),
+      );
+      if (!stopped) {
+        return;
+      }
     }
 
     yield* setThreadSession({

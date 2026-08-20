@@ -1,5 +1,9 @@
 import { type EnvironmentConnectionPhase } from "@t3tools/client-runtime/connection";
 import type { EnvironmentThreadStatus } from "@t3tools/client-runtime/state/threads";
+import {
+  resolveThreadNoProgress,
+  THREAD_NO_PROGRESS_WARNING_MS,
+} from "@t3tools/client-runtime/state/thread-liveness";
 import { useKeyboardChatComposerInset, useKeyboardScrollToEnd } from "@legendapp/list/keyboard";
 import type { LegendListRef } from "@legendapp/list/react-native";
 import { HeaderHeightContext } from "@react-navigation/elements";
@@ -32,6 +36,8 @@ import {
   AppState,
   Keyboard,
   Platform,
+  Pressable,
+  Text,
   useColorScheme,
   useWindowDimensions,
   View,
@@ -115,6 +121,7 @@ export interface ThreadDetailScreenProps {
   readonly onNativePasteImages: (uris: ReadonlyArray<string>) => Promise<void>;
   readonly onRemoveDraftImage: (imageId: string) => void;
   readonly onStopThread: () => void;
+  readonly onForceStopSession: () => void;
   readonly onSendMessage: () => Promise<MessageId | null>;
   readonly onReconnectEnvironment: () => void;
   readonly onUpdateThreadModelSelection: (modelSelection: ModelSelection) => void;
@@ -252,6 +259,39 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
   const navigationHeaderHeight = useContext(HeaderHeightContext) || insets.top + 44;
   const agentLabel = `${props.selectedThread.modelSelection.instanceId} agent`;
   const selectedThreadKey = scopedThreadKey(props.environmentId, props.selectedThread.id);
+  const [livenessNowMs, setLivenessNowMs] = useState(Date.now);
+  const [stuckWarningSuppressedUntilMs, setStuckWarningSuppressedUntilMs] = useState(0);
+  const [stuckStopRequested, setStuckStopRequested] = useState(false);
+  const [forceStopAvailable, setForceStopAvailable] = useState(false);
+  const noProgressState = resolveThreadNoProgress(props.selectedThread, {
+    nowMs: livenessNowMs,
+  });
+  useEffect(() => {
+    const id = setInterval(() => setLivenessNowMs(Date.now()), 30_000);
+    return () => clearInterval(id);
+  }, []);
+  useEffect(() => {
+    setStuckWarningSuppressedUntilMs(0);
+    setStuckStopRequested(false);
+    setForceStopAvailable(false);
+  }, [props.selectedThread.id, props.selectedThread.session?.activeTurnId]);
+  useEffect(() => {
+    const sessionActive =
+      props.selectedThread.session?.status === "running" ||
+      props.selectedThread.session?.status === "starting";
+    if (!sessionActive) {
+      setStuckStopRequested(false);
+      setForceStopAvailable(false);
+    }
+  }, [props.selectedThread.session?.status]);
+  useEffect(() => {
+    if (!stuckStopRequested || forceStopAvailable) return;
+    const id = setTimeout(() => setForceStopAvailable(true), 15_500);
+    return () => clearTimeout(id);
+  }, [forceStopAvailable, stuckStopRequested]);
+  const showStuckProtection =
+    stuckStopRequested ||
+    (noProgressState.possiblyStuck && livenessNowMs >= stuckWarningSuppressedUntilMs);
   const composerEditorRef = useRef<ComposerEditorHandle>(null);
   const composerOverlayRef = useRef<View>(null);
   const listRef = useRef<LegendListRef>(null);
@@ -710,6 +750,69 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
                 </Animated.View>
               ) : null}
             </View>
+
+            {showStuckProtection ? (
+              <View
+                accessibilityRole="alert"
+                className="mx-4 mb-3 gap-2 rounded-2xl border border-amber-500/35 bg-amber-500/10 px-4 py-3"
+              >
+                <Text className="text-sm font-semibold text-foreground">
+                  {stuckStopRequested
+                    ? forceStopAvailable
+                      ? "Worker did not confirm it stopped"
+                      : "Waiting for the worker to stop"
+                    : `Possibly stuck · ${Math.max(1, Math.floor(noProgressState.idleMs / 60_000))}m idle`}
+                </Text>
+                <Text className="text-xs leading-4 text-muted-foreground">
+                  {stuckStopRequested
+                    ? forceStopAvailable
+                      ? "Force stop closes the provider session. Start replacement work only after shutdown is confirmed."
+                      : "The provider has 15 seconds to acknowledge Stop."
+                    : "Long commands can be quiet. ML Code will not retry automatically or risk repeating writes and releases."}
+                </Text>
+                <View className="flex-row justify-end gap-2">
+                  {stuckStopRequested ? (
+                    forceStopAvailable ? (
+                      <Pressable
+                        accessibilityRole="button"
+                        className="rounded-full border border-amber-500/40 px-3 py-1.5"
+                        onPress={props.onForceStopSession}
+                      >
+                        <Text className="text-xs font-semibold text-foreground">
+                          Force stop session
+                        </Text>
+                      </Pressable>
+                    ) : null
+                  ) : (
+                    <>
+                      <Pressable
+                        accessibilityRole="button"
+                        className="rounded-full px-3 py-1.5"
+                        onPress={() =>
+                          setStuckWarningSuppressedUntilMs(
+                            Date.now() + THREAD_NO_PROGRESS_WARNING_MS,
+                          )
+                        }
+                      >
+                        <Text className="text-xs font-semibold text-muted-foreground">
+                          Keep waiting
+                        </Text>
+                      </Pressable>
+                      <Pressable
+                        accessibilityRole="button"
+                        className="rounded-full border border-amber-500/40 px-3 py-1.5"
+                        onPress={() => {
+                          setStuckStopRequested(true);
+                          props.onStopThread();
+                        }}
+                      >
+                        <Text className="text-xs font-semibold text-foreground">Stop worker</Text>
+                      </Pressable>
+                    </>
+                  )}
+                </View>
+              </View>
+            ) : null}
 
             {/* Hidden (not unmounted) while a user-input request owns the
                 composer slot, so composer drafts and editor state survive. */}

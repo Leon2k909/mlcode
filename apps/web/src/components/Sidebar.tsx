@@ -16,6 +16,7 @@ import {
   effectiveSnoozed,
   threadWokeAt,
 } from "@t3tools/client-runtime/state/thread-settled";
+import { resolveThreadNoProgress } from "@t3tools/client-runtime/state/thread-liveness";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
 import {
   scopeProjectRef,
@@ -231,20 +232,40 @@ function JumpHintBadge(props: { label: string }) {
   );
 }
 
-// Self-ticking so only this span re-renders each second, not the whole row.
-function WorkingDuration(props: { startedAt: string | null }) {
-  const startedMs = props.startedAt !== null ? Date.parse(props.startedAt) : Number.NaN;
+// Self-ticking so only this status re-renders each second, not the whole row.
+function WorkingThreadStatus(props: { thread: SidebarThreadSummary }) {
+  const startedAt = resolveWorkingStartedAt(props.thread);
+  const startedMs = startedAt !== null ? Date.parse(startedAt) : Number.NaN;
   const [, setTick] = useState(0);
   useEffect(() => {
     if (Number.isNaN(startedMs)) return;
     const id = window.setInterval(() => setTick((tick) => tick + 1), 1_000);
     return () => window.clearInterval(id);
   }, [startedMs]);
-  if (Number.isNaN(startedMs)) return null;
+  const noProgress = resolveThreadNoProgress(props.thread, { nowMs: Date.now() });
+  if (noProgress.possiblyStuck) {
+    return (
+      <>
+        <CircleAlertIcon aria-hidden className="size-4 shrink-0 text-warning" />
+        <span role="status" className="text-warning">
+          Possibly stuck
+        </span>
+        <span aria-hidden className="font-mono tabular-nums text-warning">
+          {formatWorkingDurationLabel(noProgress.idleMs)} idle
+        </span>
+      </>
+    );
+  }
   return (
-    <span className="font-mono tabular-nums">
-      {formatWorkingDurationLabel(Date.now() - startedMs)}
-    </span>
+    <>
+      <CircleDashedIcon aria-hidden className="size-4 shrink-0" />
+      <span role="status">Working</span>
+      {!Number.isNaN(startedMs) ? (
+        <span aria-hidden className="font-mono tabular-nums">
+          {formatWorkingDurationLabel(Date.now() - startedMs)}
+        </span>
+      ) : null}
+    </>
   );
 }
 
@@ -1464,7 +1485,9 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                           topStatus.className,
                         )}
                       >
-                        {topStatus.icon === "working" ? (
+                        {status === "working" ? (
+                          <WorkingThreadStatus thread={thread} />
+                        ) : topStatus.icon === "working" ? (
                           <CircleDashedIcon aria-hidden className="size-4 shrink-0" />
                         ) : topStatus.icon === "done" ? (
                           <CircleCheckIcon aria-hidden className="size-4 shrink-0" />
@@ -1472,12 +1495,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                         {/* The label alone is the live region: a role="status"
                             wrapper around the ticking duration would make
                             screen readers announce every second. */}
-                        <span role="status">{topStatus.label}</span>
-                        {status === "working" ? (
-                          <span aria-hidden>
-                            <WorkingDuration startedAt={resolveWorkingStartedAt(thread)} />
-                          </span>
-                        ) : null}
+                        {status === "working" ? null : <span role="status">{topStatus.label}</span>}
                       </span>
                     )
                   ) : (
