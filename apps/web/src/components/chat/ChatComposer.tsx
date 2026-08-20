@@ -410,7 +410,6 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
   compact: boolean;
   activeContextWindow: ReturnType<typeof deriveLatestContextWindowSnapshot>;
   contextMessages: ReadonlyArray<ContextPrunableMessage<MessageId>>;
-  prunePromptKey: string | null;
   onPruneOlderMessages: (messageIds: ReadonlyArray<MessageId>) => void;
   contextManagementMode: ContextManagementMode;
   onContextManagementModeChange: (mode: ContextManagementMode) => Promise<boolean>;
@@ -445,7 +444,6 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
       <ContextWindowMeter
         usage={props.activeContextWindow}
         messages={props.contextMessages}
-        prunePromptKey={props.prunePromptKey}
         onPruneOlderMessages={props.onPruneOlderMessages}
         providerDisplayName={props.activeThreadProviderDisplayName}
         modelDisplayName={props.activeThreadModelDisplayName}
@@ -3667,7 +3665,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   compact={isComposerPrimaryActionsCompact}
                   activeContextWindow={activeContextWindow}
                   contextMessages={activeThread?.messages ?? []}
-                  prunePromptKey={activeThread?.id ?? null}
                   onPruneOlderMessages={onPruneOlderMessages}
                   contextManagementMode={settings.contextManagementMode}
                   onContextManagementModeChange={onContextManagementModeChange}

@@ -29,24 +29,6 @@ export function shouldOfferContextPrune(input: {
 }
 
 /**
- * A prune prompt is intentionally offered only once per thread. The meter can
- * temporarily lose its fresh usage sample while a provider/model boundary is
- * being resolved, so its visibility must not reset this decision.
- */
-export function shouldAutoOpenContextPrunePrompt(input: {
-  readonly promptKey: string | null | undefined;
-  readonly showPrunePrompt: boolean;
-  readonly promptedPruneKey: string | null;
-}): boolean {
-  return (
-    input.showPrunePrompt &&
-    input.promptKey !== null &&
-    input.promptKey !== undefined &&
-    input.promptedPruneKey !== input.promptKey
-  );
-}
-
-/**
  * Returns the oldest complete portion of a thread while retaining the latest
  * four user turns. System messages are never selected. The caller still owns
  * the confirmation and server-side validation before anything is removed.

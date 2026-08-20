@@ -5,7 +5,6 @@ import {
   resolveContextWindowFastMode,
   resolveContextWindowModelDisplayName,
   selectOldestMessageIdsForPruning,
-  shouldAutoOpenContextPrunePrompt,
   shouldOfferContextPrune,
 } from "./ContextWindowMeter.logic";
 
@@ -15,30 +14,6 @@ describe("context pruning guidance", () => {
     expect(shouldOfferContextPrune({ usedPercentage: 50, messageCount: 9 })).toBe(false);
     expect(shouldOfferContextPrune({ usedPercentage: 50, messageCount: 10 })).toBe(true);
     expect(shouldOfferContextPrune({ usedPercentage: null, messageCount: 20 })).toBe(false);
-  });
-
-  it("opens an eligible prune prompt once per thread across usage gaps", () => {
-    expect(
-      shouldAutoOpenContextPrunePrompt({
-        promptKey: "thread-a",
-        showPrunePrompt: true,
-        promptedPruneKey: null,
-      }),
-    ).toBe(true);
-    expect(
-      shouldAutoOpenContextPrunePrompt({
-        promptKey: "thread-a",
-        showPrunePrompt: true,
-        promptedPruneKey: "thread-a",
-      }),
-    ).toBe(false);
-    expect(
-      shouldAutoOpenContextPrunePrompt({
-        promptKey: "thread-b",
-        showPrunePrompt: true,
-        promptedPruneKey: "thread-a",
-      }),
-    ).toBe(true);
   });
 
   it("selects old non-system messages while retaining the latest four user turns", () => {

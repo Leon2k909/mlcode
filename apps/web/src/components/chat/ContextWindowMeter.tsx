@@ -15,7 +15,6 @@ import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import {
   formatContextWindowCompactionMessage,
   selectOldestMessageIdsForPruning,
-  shouldAutoOpenContextPrunePrompt,
   shouldOfferContextPrune,
   type ContextPrunableMessage,
 } from "./ContextWindowMeter.logic";
@@ -61,7 +60,6 @@ export function ContextWindowMeter(props: {
   modelDisplayName?: string | null;
   fastMode?: boolean | null;
   messages?: ReadonlyArray<ContextPrunableMessage<MessageId>>;
-  prunePromptKey?: string | null;
   onPruneOlderMessages?: (messageIds: ReadonlyArray<MessageId>) => void;
   contextManagementMode?: ContextManagementMode;
   onContextManagementModeChange?: (mode: ContextManagementMode) => Promise<boolean>;
@@ -78,7 +76,6 @@ export function ContextWindowMeter(props: {
   const [savingMode, setSavingMode] = useState<ContextManagementMode | null>(null);
   const [modeSaveFailed, setModeSaveFailed] = useState(false);
   const [prunePromptDismissed, setPrunePromptDismissed] = useState(false);
-  const promptedPruneKey = useRef<string | null>(null);
   const pruneMessageIds = useMemo(() => selectOldestMessageIdsForPruning(messages), [messages]);
   const showPrunePrompt =
     usage !== null &&
@@ -96,23 +93,6 @@ export function ContextWindowMeter(props: {
       setOpen(false);
     }
   }, [usage]);
-
-  useEffect(() => {
-    if (
-      !shouldAutoOpenContextPrunePrompt({
-        promptKey: props.prunePromptKey,
-        showPrunePrompt,
-        promptedPruneKey: promptedPruneKey.current,
-      })
-    ) {
-      return;
-    }
-    const promptKey = props.prunePromptKey;
-    if (promptKey === null || promptKey === undefined) return;
-    promptedPruneKey.current = promptKey;
-    setPrunePromptDismissed(false);
-    setOpen(true);
-  }, [props.prunePromptKey, showPrunePrompt]);
 
   if (usage === null) {
     return (
@@ -331,9 +311,6 @@ function ContextWindowMeterContent(props: {
   return (
     <>
       <PopoverTrigger
-        openOnHover
-        delay={150}
-        closeDelay={0}
         render={
           <button
             type="button"
