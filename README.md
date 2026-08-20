@@ -91,4 +91,6 @@ Building from source? Start at [docs/internals/overview.md](./docs/internals/ove
 
 ## Upstream
 
+Made with love by Leon and Michelle.
+
 ML Code keeps the original T3 Code Git history and license. The upstream repository is [pingdotgg/t3code](https://github.com/pingdotgg/t3code).

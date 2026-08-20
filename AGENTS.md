@@ -122,7 +122,7 @@ An empty database is a bad test. Seed your worktree's `.t3` with a copy of real 
 
 This fork is used through its installed Windows desktop app. A source-only push does not deliver changes to the user.
 
-- After completing and pushing user-requested changes to `Leon2k909/mlcode`, publish the next Nightly release unless the user explicitly says not to release. Stable releases are disabled for now.
+- The user has given standing authorization for this fork: after every completed user-requested repository change, commit only the task-owned files, push the verified commit to `origin/main`, and publish the next Nightly release unless the user explicitly opts out of committing, pushing, or releasing. Treat commit, push, and release as required completion steps, never bundle unrelated worktree changes, and do not stop after local verification. Stable releases are disabled for now.
 - Increment the Nightly identifier using `X.Y.Z-nightly.YYYYMMDD.N`, tag the exact intended `main` commit as `vX.Y.Z-nightly.YYYYMMDD.N`, and push the tag so `.github/workflows/release.yml` builds and publishes the Windows installer and updater metadata.
 - Monitor the release workflow through completion. Do not call the task finished merely because the source commit or tag was pushed.
 - Verify the GitHub prerelease contains the installer, blockmap, and `nightly.yml`; these assets are what make **Check for updates** work in the installed app.
