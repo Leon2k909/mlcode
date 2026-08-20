@@ -7,6 +7,7 @@ import type { SnoozePreset } from "@t3tools/client-runtime/state/thread-settled"
  * remains data-driven.
  */
 export type ThreadActionMenuId =
+  | "open-to-side"
   | "new-thread-on-branch"
   | "pin"
   | "unpin"
@@ -25,6 +26,10 @@ export type ThreadActionMenuId =
 
 export interface ThreadActionMenuState {
   readonly branch: string | null;
+  readonly workspace?: {
+    readonly canOpenToSide: boolean;
+    readonly isOpen: boolean;
+  };
   readonly isPinned: boolean;
   readonly isSettled: boolean;
   readonly isSnoozed: boolean;
@@ -48,6 +53,15 @@ export function buildThreadActionMenuItems(
   state: ThreadActionMenuState,
 ): ReadonlyArray<ContextMenuItem<ThreadActionMenuId>> {
   return [
+    ...(state.workspace && !state.workspace.isOpen
+      ? [
+          {
+            id: "open-to-side" as const,
+            label: "Open to side",
+            disabled: !state.workspace.canOpenToSide,
+          },
+        ]
+      : []),
     ...(state.branch
       ? [
           {

@@ -13,6 +13,7 @@ import {
 } from "@t3tools/client-runtime/state/thread-settled";
 import type { ScopedThreadRef, ThreadId } from "@t3tools/contracts";
 import { useCallback } from "react";
+import { useNavigate } from "@tanstack/react-router";
 
 import { resolveSnoozePresets, snoozeWakeDescription } from "../components/Sidebar.snooze";
 import {
@@ -35,6 +36,12 @@ import { useCopyToClipboard } from "./useCopyToClipboard";
 import { useNewThreadHandler } from "./useHandleNewThread";
 import { useClientSettings } from "./useSettings";
 import { useThreadActions } from "./useThreadActions";
+import {
+  canOpenThreadToSide,
+  isThreadOpenInWorkspace,
+  useChatWorkspaceStore,
+} from "../chatWorkspaceStore";
+import { buildThreadRouteParams } from "../threadRoutes";
 
 function failureToast(title: string, error: unknown) {
   toastManager.add(
@@ -65,6 +72,7 @@ export function useThreadActionMenu(input: {
   readonly onStartRename: () => void;
 }) {
   const { threadRef, projectCwd, changeRequestState, onStartRename } = input;
+  const navigate = useNavigate();
   const {
     settleThread,
     unsettleThread,
@@ -124,6 +132,10 @@ export function useThreadActionMenu(input: {
         const snoozePresets = resolveSnoozePresets(now, timestampFormat);
         const items = buildThreadActionMenuItems({
           branch: thread.branch ?? null,
+          workspace: {
+            canOpenToSide: canOpenThreadToSide(threadRef),
+            isOpen: isThreadOpenInWorkspace(threadRef),
+          },
           isPinned: thread.pinnedAt != null,
           isSettled:
             supports.settlement &&
@@ -184,6 +196,21 @@ export function useThreadActionMenu(input: {
           }
         };
         switch (action) {
+          case "open-to-side": {
+            if (!useChatWorkspaceStore.getState().openThreadToSide(threadRef)) {
+              toastManager.add({
+                type: "warning",
+                title: "Maximum of 3 chat panes",
+                description: "Close a chat pane before opening another.",
+              });
+              return;
+            }
+            await navigate({
+              to: "/$environmentId/$threadId",
+              params: buildThreadRouteParams(threadRef),
+            });
+            return;
+          }
           case "new-thread-on-branch": {
             // Explicit branch carry-over: reuse the thread's worktree when it
             // has one, otherwise its branch on the local checkout.
@@ -295,6 +322,7 @@ export function useThreadActionMenu(input: {
       deleteThread,
       handleNewThread,
       markThreadUnread,
+      navigate,
       onStartRename,
       pinThread,
       projectCwd,

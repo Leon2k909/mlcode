@@ -100,6 +100,11 @@ import { useThreadSelectionStore } from "../threadSelectionStore";
 import { useThreadActions } from "../hooks/useThreadActions";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
 import { openCommandPalette } from "../commandPaletteBus";
+import {
+  canOpenThreadToSide,
+  isThreadOpenInWorkspace,
+  useChatWorkspaceStore,
+} from "../chatWorkspaceStore";
 import { startNewThreadFromContext } from "../lib/chatThreadActions";
 import { useClientSettings, useEnvironmentSettings } from "../hooks/useSettings";
 import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
@@ -2307,6 +2312,7 @@ export default function Sidebar() {
       if (isMobile) {
         setOpenMobile(false);
       }
+      useChatWorkspaceStore.getState().replaceActiveThread(threadRef);
       void router.navigate({
         to: "/$environmentId/$threadId",
         params: buildThreadRouteParams(threadRef),
@@ -3062,6 +3068,10 @@ export default function Sidebar() {
           api.contextMenu.show(
             buildThreadActionMenuItems({
               branch: thread.branch ?? null,
+              workspace: {
+                canOpenToSide: canOpenThreadToSide(threadRef),
+                isOpen: isThreadOpenInWorkspace(threadRef),
+              },
               isPinned,
               isSettled,
               isSnoozed,
@@ -3087,6 +3097,21 @@ export default function Sidebar() {
           return;
         }
         switch (clicked.value) {
+          case "open-to-side": {
+            if (!useChatWorkspaceStore.getState().openThreadToSide(threadRef)) {
+              toastManager.add({
+                type: "warning",
+                title: "Maximum of 3 chat panes",
+                description: "Close a chat pane before opening another.",
+              });
+              return;
+            }
+            void router.navigate({
+              to: "/$environmentId/$threadId",
+              params: buildThreadRouteParams(threadRef),
+            });
+            return;
+          }
           case "new-thread-on-branch": {
             // Explicit branch carry-over: reuse the thread's worktree when it
             // has one, otherwise its branch on the local checkout.
@@ -3217,6 +3242,7 @@ export default function Sidebar() {
       handleMultiSelectContextMenu,
       markThreadUnread,
       projectCwdByKey,
+      router,
       serverConfigs,
       startThreadRename,
       updateThreadMetadata,

@@ -37,6 +37,24 @@ describe("buildThreadActionMenuItems", () => {
     expect(ids(baseState)).not.toContain("copy-branch");
   });
 
+  it("offers open to side only for a thread not already in the workspace", () => {
+    expect(
+      buildThreadActionMenuItems({
+        ...baseState,
+        workspace: { canOpenToSide: true, isOpen: false },
+      })[0],
+    ).toMatchObject({ id: "open-to-side", label: "Open to side", disabled: false });
+    expect(ids({ ...baseState, workspace: { canOpenToSide: true, isOpen: true } })).not.toContain(
+      "open-to-side",
+    );
+    expect(
+      buildThreadActionMenuItems({
+        ...baseState,
+        workspace: { canOpenToSide: false, isOpen: false },
+      })[0],
+    ).toMatchObject({ id: "open-to-side", disabled: true });
+  });
+
   it("flips lifecycle labels with thread state", () => {
     expect(ids({ ...baseState, isPinned: true, isSettled: true, isSnoozed: true })).toEqual(
       expect.arrayContaining(["unpin", "unsettle", "unsnooze"]),

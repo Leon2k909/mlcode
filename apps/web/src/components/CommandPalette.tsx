@@ -1,6 +1,10 @@
 "use client";
 
-import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
+import {
+  scopeProjectRef,
+  scopeThreadRef,
+  scopedThreadKey,
+} from "@t3tools/client-runtime/environment";
 import { canCreateProjectInEnvironment } from "@t3tools/client-runtime/operations/projects";
 import { connectionStatusText } from "@t3tools/client-runtime/connection";
 import { threadSearchMatchKey } from "@t3tools/client-runtime/state/thread-search";
@@ -90,6 +94,7 @@ import { getLatestThreadForProject, sortThreads } from "../lib/threadSort";
 import { cn, isMacPlatform, isWindowsPlatform, newProjectId } from "../lib/utils";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
 import { buildThreadRouteParams, resolveThreadRouteTarget } from "../threadRoutes";
+import { useChatWorkspaceStore } from "../chatWorkspaceStore";
 import {
   applyWslEnvironmentConfiguration,
   parseWslUncPath,
@@ -393,6 +398,7 @@ export function CommandPalette({ children }: { children: ReactNode }) {
   );
   const openAddProject = useCallback(() => dispatch({ _tag: "OpenAddProject" }), []);
   const openNewThreadIn = useCallback(() => dispatch({ _tag: "OpenNewThreadIn" }), []);
+  const openThreadToSide = useCallback(() => dispatch({ _tag: "OpenThreadToSide" }), []);
   const clearOpenIntent = useCallback(() => dispatch({ _tag: "ClearOpenIntent" }), []);
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const { theme, themeHalves, resolvedTheme } = useTheme();
@@ -465,13 +471,15 @@ export function CommandPalette({ children }: { children: ReactNode }) {
       onOpenCommandPalette((detail) => {
         if (detail.open === "new-thread-in") {
           openNewThreadIn();
+        } else if (detail.open === "thread-to-side") {
+          openThreadToSide();
         } else if (detail.open === "add-project") {
           openAddProject();
         } else {
           setOpen(true);
         }
       }),
-    [openAddProject, openNewThreadIn, setOpen],
+    [openAddProject, openNewThreadIn, openThreadToSide, setOpen],
   );
 
   return (
@@ -1011,10 +1019,13 @@ function OpenCommandPaletteDialog(props: {
     [contextualProjectRef, handleNewThread, pickerProjects, projectGroupByTargetKey],
   );
 
-  const allThreadItems = useMemo(
-    () =>
+  const buildPaletteThreadItems = useCallback(
+    (
+      sourceThreads: typeof threads,
+      runThread: (thread: Pick<(typeof threads)[number], "environmentId" | "id">) => Promise<void>,
+    ) =>
       buildThreadActionItems({
-        threads,
+        threads: sourceThreads,
         ...(activeThreadId ? { activeThreadId } : {}),
         projectTitleById,
         sortOrder: clientSettings.sidebarThreadSortOrder,
@@ -1059,25 +1070,58 @@ function OpenCommandPaletteDialog(props: {
               }
             : undefined;
         },
-        runThread: async (thread) => {
-          await navigate({
-            to: "/$environmentId/$threadId",
-            params: buildThreadRouteParams(scopeThreadRef(thread.environmentId, thread.id)),
-          });
-        },
+        runThread,
       }),
     [
       activeThreadId,
       clientSettings.sidebarThreadSortOrder,
-      navigate,
       projectCwdById,
       projectFaviconPathById,
       projectTitleById,
       providerEntryByEnvironmentAndInstanceId,
       threadContentMatchByKey,
       threadSearchQuery,
-      threads,
     ],
+  );
+  const allThreadItems = useMemo(
+    () =>
+      buildPaletteThreadItems(threads, async (thread) => {
+        await navigate({
+          to: "/$environmentId/$threadId",
+          params: buildThreadRouteParams(scopeThreadRef(thread.environmentId, thread.id)),
+        });
+      }),
+    [buildPaletteThreadItems, navigate, threads],
+  );
+  const workspacePanes = useChatWorkspaceStore((state) => state.panes);
+  const workspacePaneIds = useMemo(
+    () => new Set(workspacePanes.map((pane) => pane.id)),
+    [workspacePanes],
+  );
+  const threadToSideItems = useMemo(
+    () =>
+      buildPaletteThreadItems(
+        threads.filter(
+          (thread) =>
+            !workspacePaneIds.has(scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id))),
+        ),
+        async (thread) => {
+          const threadRef = scopeThreadRef(thread.environmentId, thread.id);
+          if (!useChatWorkspaceStore.getState().openThreadToSide(threadRef)) {
+            toastManager.add({
+              type: "warning",
+              title: "Maximum of 3 chat panes",
+              description: "Close a chat pane before opening another.",
+            });
+            return;
+          }
+          await navigate({
+            to: "/$environmentId/$threadId",
+            params: buildThreadRouteParams(threadRef),
+          });
+        },
+      ),
+    [buildPaletteThreadItems, navigate, threads, workspacePaneIds],
   );
   const recentThreadItems = allThreadItems.slice(0, RECENT_THREAD_LIMIT);
 
@@ -1413,6 +1457,34 @@ function OpenCommandPaletteDialog(props: {
     projectThreadItems,
     pushPaletteView,
   ]);
+
+  useLayoutEffect(() => {
+    if (openIntent?.kind !== "thread-to-side") return;
+    clearOpenIntent();
+    browseNavigation.invalidate();
+    setAddProjectCloneFlow(null);
+    setViewStack([]);
+    setQuery("");
+    if (threadToSideItems.length === 0) {
+      toastManager.add({
+        type: "info",
+        title: "No other chats available",
+        description: "Start another chat, then open it to the side.",
+      });
+      setOpen(false);
+      return;
+    }
+    pushPaletteView({
+      addonIcon: <MessageSquareIcon className={ADDON_ICON_CLASS} />,
+      groups: [
+        {
+          value: "threads-to-side",
+          label: "Open to side",
+          items: enumerateCommandPaletteItems(threadToSideItems),
+        },
+      ],
+    });
+  }, [browseNavigation, clearOpenIntent, openIntent, pushPaletteView, setOpen, threadToSideItems]);
 
   const actionItems: Array<CommandPaletteActionItem | CommandPaletteSubmenuItem> = [];
 
