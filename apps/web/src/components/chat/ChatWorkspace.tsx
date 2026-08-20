@@ -1,13 +1,5 @@
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import type { ScopedThreadRef } from "@t3tools/contracts";
-import {
-  DndContext,
-  PointerSensor,
-  closestCenter,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-} from "@dnd-kit/core";
 import { SortableContext, horizontalListSortingStrategy, useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { useNavigate } from "@tanstack/react-router";
@@ -47,6 +39,12 @@ import { cn } from "~/lib/utils";
 import ChatView from "../ChatView";
 import { Button } from "../ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { buildWorkspaceGridTemplate, resizeAdjacentPanePair } from "./ChatWorkspace.logic";
+import {
+  useWorkspacePaneDropIndicator,
+  workspacePaneDragData,
+  workspacePaneDragId,
+} from "./ChatWorkspaceDnd";
 
 interface ChatWorkspaceProps {
   readonly activeThreadRef: ScopedThreadRef;
@@ -204,7 +202,12 @@ function SortableChatPane(props: {
   readonly onOpenThreadToSide: () => void;
   readonly onClose: (paneId: string) => void;
 }) {
-  const sortable = useSortable({ id: props.pane.id, disabled: !props.canReorder });
+  const sortable = useSortable({
+    id: workspacePaneDragId(props.pane.id),
+    disabled: { draggable: !props.canReorder, droppable: false },
+    data: workspacePaneDragData(props.pane.id),
+  });
+  const dropIndicator = useWorkspacePaneDropIndicator(props.pane.id);
   const style = {
     transform: CSS.Transform.toString(sortable.transform),
     transition: sortable.transition,
@@ -225,6 +228,7 @@ function SortableChatPane(props: {
       ref={sortable.setNodeRef}
       style={style}
       aria-label="Chat pane"
+      data-workspace-pane-id={props.pane.id}
       data-workspace-pane-active={props.active ? "true" : undefined}
       className={cn(
         "relative flex min-h-0 min-w-0 overflow-hidden bg-background",
@@ -234,6 +238,16 @@ function SortableChatPane(props: {
       onPointerDownCapture={(event) => activateUnlessControl(event.target)}
       onFocusCapture={(event) => activateUnlessControl(event.target)}
     >
+      {dropIndicator ? (
+        <span
+          aria-hidden
+          className={cn(
+            "pointer-events-none absolute inset-y-0 z-40 w-0.5",
+            dropIndicator.side === "before" ? "left-0" : "right-0",
+            dropIndicator.allowed ? "bg-primary" : "bg-destructive",
+          )}
+        />
+      ) : null}
       <ChatThreadPane
         pane={props.pane}
         active={props.active}
@@ -295,99 +309,149 @@ function WorkspacePaneTab(props: {
 function PaneResizeHandle(props: {
   readonly before: ChatWorkspacePane;
   readonly after: ChatWorkspacePane;
-  readonly containerWidth: number;
-  readonly onPreview: (sizes: Readonly<Record<string, number>>) => void;
+  readonly panes: ReadonlyArray<ChatWorkspacePane>;
+  readonly gridRef: RefObject<HTMLDivElement | null>;
+  readonly availableWidth: number;
   readonly onCommit: (sizes: Readonly<Record<string, number>>) => void;
 }) {
   const dragRef = useRef<{
-    pointerId: number;
-    startX: number;
-    beforeSize: number;
-    afterSize: number;
-    pending: Readonly<Record<string, number>>;
+    readonly pointerId: number;
+    readonly startX: number;
+    readonly startSizes: ReadonlyArray<number>;
+    readonly containerWidth: number;
+    readonly originalTemplate: string;
+    readonly target: HTMLElement;
+    pendingSizes: ReadonlyArray<number>;
     rafId: number | null;
-    target: HTMLElement;
   } | null>(null);
-  const safeContainerWidth = Math.max(props.containerWidth, MIN_CHAT_WORKSPACE_PANE_WIDTH * 2);
   const total = props.before.size + props.after.size;
-  const minimum = Math.min(total / 2, MIN_CHAT_WORKSPACE_PANE_WIDTH / safeContainerWidth);
-
-  const resize = useCallback(
-    (deltaPixels: number): Readonly<Record<string, number>> => {
-      const nextBefore = Math.max(
-        minimum,
-        Math.min(total - minimum, props.before.size + deltaPixels / safeContainerWidth),
-      );
-      return {
-        [props.before.id]: nextBefore,
-        [props.after.id]: total - nextBefore,
-      };
-    },
-    [minimum, props.after.id, props.before.id, props.before.size, safeContainerWidth, total],
+  const beforeIndex = props.panes.findIndex((pane) => pane.id === props.before.id);
+  const afterIndex = props.panes.findIndex((pane) => pane.id === props.after.id);
+  const safeGridWidth = Math.max(props.availableWidth, MIN_CHAT_WORKSPACE_PANE_WIDTH * 2);
+  const minimum = Math.min(total / 2, MIN_CHAT_WORKSPACE_PANE_WIDTH / safeGridWidth);
+  const sizesToRecord = useCallback(
+    (sizes: ReadonlyArray<number>): Readonly<Record<string, number>> =>
+      Object.fromEntries(props.panes.map((pane, index) => [pane.id, sizes[index] ?? pane.size])),
+    [props.panes],
   );
-  const release = useCallback((pointerId: number) => {
-    const drag = dragRef.current;
-    if (!drag) return;
-    if (drag.rafId !== null) cancelAnimationFrame(drag.rafId);
-    if (drag.target.hasPointerCapture(pointerId)) drag.target.releasePointerCapture(pointerId);
-    document.body.style.removeProperty("cursor");
-    document.body.style.removeProperty("user-select");
-    dragRef.current = null;
-  }, []);
+  const resize = useCallback(
+    (input: {
+      readonly startSizes: ReadonlyArray<number>;
+      readonly startX: number;
+      readonly currentX: number;
+      readonly containerWidth: number;
+    }) =>
+      resizeAdjacentPanePair({
+        paneSizes: input.startSizes,
+        beforeIndex,
+        afterIndex,
+        startX: input.startX,
+        currentX: input.currentX,
+        containerWidth: input.containerWidth,
+        minimumPaneWidth: MIN_CHAT_WORKSPACE_PANE_WIDTH,
+      }),
+    [afterIndex, beforeIndex],
+  );
+  const release = useCallback(
+    (pointerId: number, restore: boolean) => {
+      const drag = dragRef.current;
+      if (!drag) return;
+      if (drag.rafId !== null) cancelAnimationFrame(drag.rafId);
+      if (restore && props.gridRef.current) {
+        props.gridRef.current.style.gridTemplateColumns = drag.originalTemplate;
+      }
+      if (drag.target.hasPointerCapture(pointerId)) drag.target.releasePointerCapture(pointerId);
+      document.body.style.removeProperty("cursor");
+      document.body.style.removeProperty("user-select");
+      dragRef.current = null;
+    },
+    [props.gridRef],
+  );
+  useEffect(
+    () => () => {
+      const drag = dragRef.current;
+      if (!drag) return;
+      if (drag.rafId !== null) cancelAnimationFrame(drag.rafId);
+      document.body.style.removeProperty("cursor");
+      document.body.style.removeProperty("user-select");
+    },
+    [],
+  );
   const onPointerDown = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
       if (event.button !== 0) return;
+      const grid = props.gridRef.current;
+      if (!grid || beforeIndex < 0 || afterIndex < 0) return;
       event.preventDefault();
       event.currentTarget.setPointerCapture(event.pointerId);
       document.body.style.cursor = "col-resize";
       document.body.style.userSelect = "none";
+      const startSizes = props.panes.map((pane) => pane.size);
       dragRef.current = {
         pointerId: event.pointerId,
         startX: event.clientX,
-        beforeSize: props.before.size,
-        afterSize: props.after.size,
-        pending: {},
+        startSizes,
+        containerWidth: Math.max(grid.getBoundingClientRect().width, 1),
+        originalTemplate: buildWorkspaceGridTemplate(startSizes),
+        pendingSizes: startSizes,
         rafId: null,
         target: event.currentTarget,
       };
     },
-    [props.after.size, props.before.size],
+    [afterIndex, beforeIndex, props.gridRef, props.panes],
   );
   const onPointerMove = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
       const drag = dragRef.current;
       if (!drag || drag.pointerId !== event.pointerId) return;
-      drag.pending = resize(event.clientX - drag.startX);
+      drag.pendingSizes = resize({
+        startSizes: drag.startSizes,
+        startX: drag.startX,
+        currentX: event.clientX,
+        containerWidth: drag.containerWidth,
+      });
       if (drag.rafId !== null) return;
       drag.rafId = requestAnimationFrame(() => {
         const current = dragRef.current;
-        if (!current) return;
+        const grid = props.gridRef.current;
+        if (!current || !grid) return;
         current.rafId = null;
-        props.onPreview(current.pending);
+        grid.style.gridTemplateColumns = buildWorkspaceGridTemplate(current.pendingSizes);
       });
     },
-    [props, resize],
+    [props.gridRef, resize],
   );
   const onPointerUp = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
       const drag = dragRef.current;
       if (!drag || drag.pointerId !== event.pointerId) return;
-      const sizes = resize(event.clientX - drag.startX);
-      release(event.pointerId);
-      props.onPreview(sizes);
-      props.onCommit(sizes);
+      const sizes = resize({
+        startSizes: drag.startSizes,
+        startX: drag.startX,
+        currentX: event.clientX,
+        containerWidth: drag.containerWidth,
+      });
+      const grid = props.gridRef.current;
+      if (grid) grid.style.gridTemplateColumns = buildWorkspaceGridTemplate(sizes);
+      release(event.pointerId, false);
+      props.onCommit(sizesToRecord(sizes));
     },
-    [props, release, resize],
+    [props, release, resize, sizesToRecord],
   );
   const onKeyDown = useCallback(
     (event: ReactKeyboardEvent<HTMLDivElement>) => {
       if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
       event.preventDefault();
-      const sizes = resize(event.key === "ArrowLeft" ? -24 : 24);
-      props.onPreview(sizes);
-      props.onCommit(sizes);
+      const startSizes = props.panes.map((pane) => pane.size);
+      const sizes = resize({
+        startSizes,
+        startX: 0,
+        currentX: event.key === "ArrowLeft" ? -24 : 24,
+        containerWidth: safeGridWidth,
+      });
+      props.onCommit(sizesToRecord(sizes));
     },
-    [props, resize],
+    [props, resize, safeGridWidth, sizesToRecord],
   );
 
   return (
@@ -399,11 +463,11 @@ function PaneResizeHandle(props: {
       aria-valuemin={Math.round((minimum / total) * 100)}
       aria-valuemax={Math.round(((total - minimum) / total) * 100)}
       aria-valuenow={Math.round((props.before.size / total) * 100)}
-      className="group relative z-20 -mx-1 w-2 cursor-col-resize select-none focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+      className="group relative z-20 -mx-1 w-2 touch-none cursor-col-resize select-none focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
-      onPointerCancel={(event) => release(event.pointerId)}
+      onPointerCancel={(event) => release(event.pointerId, true)}
       onKeyDown={onKeyDown}
     >
       <span className="pointer-events-none absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-border group-hover:bg-primary/60 group-focus-visible:bg-primary/60" />
@@ -419,7 +483,7 @@ export function ChatWorkspace({ activeThreadRef }: ChatWorkspaceProps) {
   const allThreadRefs = useThreadRefs();
   const allBootstrapped = useAllEnvironmentShellsBootstrapped();
   const { ref: containerRef, width } = useMeasuredWidth();
-  const [previewSizes, setPreviewSizes] = useState<Readonly<Record<string, number>>>({});
+  const gridRef = useRef<HTMLDivElement | null>(null);
 
   useLayoutEffect(() => {
     useChatWorkspaceStore.getState().replaceActiveThread(activeThreadRef);
@@ -432,17 +496,7 @@ export function ChatWorkspace({ activeThreadRef }: ChatWorkspaceProps) {
       .reconcilePanes(new Set([...allThreadRefs.map(scopedThreadKey), activeRoutePaneId]));
   }, [activeRoutePaneId, allBootstrapped, allThreadRefs]);
 
-  useEffect(() => {
-    setPreviewSizes({});
-  }, [panes]);
-
-  const renderedPanes = useMemo(
-    () =>
-      normalizePaneSizes(
-        panes.map((pane) => ({ ...pane, size: previewSizes[pane.id] ?? pane.size })),
-      ),
-    [panes, previewSizes],
-  );
+  const renderedPanes = useMemo(() => normalizePaneSizes(panes), [panes]);
   const visiblePaneIds = useMemo(
     () => visibleWorkspacePaneIds({ panes: renderedPanes, activePaneId, availableWidth: width }),
     [activePaneId, renderedPanes, width],
@@ -452,7 +506,6 @@ export function ChatWorkspace({ activeThreadRef }: ChatWorkspaceProps) {
     [renderedPanes, visiblePaneIds],
   );
   const hasCollapsedPanes = visiblePanes.length < renderedPanes.length;
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
 
   const activateThread = useCallback(
     (threadRef: ScopedThreadRef) => {
@@ -482,14 +535,9 @@ export function ChatWorkspace({ activeThreadRef }: ChatWorkspaceProps) {
     },
     [navigate],
   );
-  const onDragEnd = useCallback((event: DragEndEvent) => {
-    if (!event.over) return;
-    useChatWorkspaceStore.getState().reorderPane(String(event.active.id), String(event.over.id));
-  }, []);
   const openThreadToSide = useCallback(() => openCommandPalette({ open: "thread-to-side" }), []);
   const commitSizes = useCallback((sizes: Readonly<Record<string, number>>) => {
     useChatWorkspaceStore.getState().setPaneSizes(sizes);
-    setPreviewSizes({});
   }, []);
 
   if (renderedPanes.length === 0) return null;
@@ -512,52 +560,48 @@ export function ChatWorkspace({ activeThreadRef }: ChatWorkspaceProps) {
           ))}
         </nav>
       ) : null}
-      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
-        <SortableContext
-          items={visiblePanes.map((pane) => pane.id)}
-          strategy={horizontalListSortingStrategy}
+      <SortableContext
+        items={visiblePanes.map((pane) => workspacePaneDragId(pane.id))}
+        strategy={horizontalListSortingStrategy}
+      >
+        <div
+          ref={gridRef}
+          className="grid min-h-0 min-w-0 flex-1 overflow-hidden"
+          style={{
+            gridTemplateColumns: buildWorkspaceGridTemplate(visiblePanes.map((p) => p.size)),
+          }}
         >
-          <div
-            className="grid min-h-0 min-w-0 flex-1 overflow-hidden"
-            style={{
-              gridTemplateColumns: visiblePanes
-                .map((pane) => `minmax(0, ${pane.size}fr)`)
-                .join(" 0px "),
-            }}
-          >
-            {visiblePanes.flatMap((pane, index) => {
-              const nextPane = visiblePanes[index + 1];
-              return [
-                <SortableChatPane
-                  key={pane.id}
-                  pane={pane}
-                  active={pane.id === activePaneId}
-                  multiPane={renderedPanes.length > 1}
-                  reserveTitleBarControlInset={index === visiblePanes.length - 1}
-                  canReorder={!hasCollapsedPanes && visiblePanes.length > 1}
-                  onActivate={activateThread}
-                  onOpenThreadToSide={openThreadToSide}
-                  onClose={closePane}
-                />,
-                ...(nextPane
-                  ? [
-                      <PaneResizeHandle
-                        key={`${pane.id}:${nextPane.id}:separator`}
-                        before={pane}
-                        after={nextPane}
-                        containerWidth={width}
-                        onPreview={(sizes) =>
-                          setPreviewSizes((current) => ({ ...current, ...sizes }))
-                        }
-                        onCommit={commitSizes}
-                      />,
-                    ]
-                  : []),
-              ];
-            })}
-          </div>
-        </SortableContext>
-      </DndContext>
+          {visiblePanes.flatMap((pane, index) => {
+            const nextPane = visiblePanes[index + 1];
+            return [
+              <SortableChatPane
+                key={pane.id}
+                pane={pane}
+                active={pane.id === activePaneId}
+                multiPane={renderedPanes.length > 1}
+                reserveTitleBarControlInset={index === visiblePanes.length - 1}
+                canReorder={!hasCollapsedPanes && visiblePanes.length > 1}
+                onActivate={activateThread}
+                onOpenThreadToSide={openThreadToSide}
+                onClose={closePane}
+              />,
+              ...(nextPane
+                ? [
+                    <PaneResizeHandle
+                      key={`${pane.id}:${nextPane.id}:separator`}
+                      before={pane}
+                      after={nextPane}
+                      panes={visiblePanes}
+                      gridRef={gridRef}
+                      availableWidth={width}
+                      onCommit={commitSizes}
+                    />,
+                  ]
+                : []),
+            ];
+          })}
+        </div>
+      </SortableContext>
     </div>
   );
 }

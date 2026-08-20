@@ -17,9 +17,16 @@ export interface ChatWorkspaceSnapshot {
   readonly activePaneId: string | null;
 }
 
+export type ChatWorkspaceInsertSide = "before" | "after";
+
 interface ChatWorkspaceStore extends ChatWorkspaceSnapshot {
   replaceActiveThread: (threadRef: ScopedThreadRef) => void;
   openThreadToSide: (threadRef: ScopedThreadRef) => boolean;
+  openThreadAdjacent: (
+    threadRef: ScopedThreadRef,
+    targetPaneId: string,
+    side: ChatWorkspaceInsertSide,
+  ) => boolean;
   activatePane: (paneId: string) => void;
   closePane: (paneId: string) => ScopedThreadRef | null;
   reorderPane: (activePaneId: string, overPaneId: string) => void;
@@ -150,6 +157,24 @@ export const useChatWorkspaceStore = create<ChatWorkspaceStore>()(
           panes: equalSizePanes([...state.panes, paneFromRef(threadRef)]),
           activePaneId: id,
         });
+        return true;
+      },
+      openThreadAdjacent: (threadRef, targetPaneId, side) => {
+        const state = get();
+        const id = scopedThreadKey(threadRef);
+        if (state.panes.some((pane) => pane.id === id)) {
+          set({ activePaneId: id });
+          return true;
+        }
+        if (state.panes.length >= MAX_CHAT_WORKSPACE_PANES) return false;
+        const targetIndex = state.panes.findIndex((pane) => pane.id === targetPaneId);
+        const insertIndex =
+          targetIndex < 0
+            ? state.panes.length
+            : Math.min(state.panes.length, targetIndex + (side === "after" ? 1 : 0));
+        const panes = [...state.panes];
+        panes.splice(insertIndex, 0, paneFromRef(threadRef));
+        set({ panes: equalSizePanes(panes), activePaneId: id });
         return true;
       },
       activatePane: (paneId) =>

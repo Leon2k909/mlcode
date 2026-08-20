@@ -66,6 +66,56 @@ describe("chatWorkspaceStore", () => {
     expect(useChatWorkspaceStore.getState().activePaneId).toBe("env-1:a");
   });
 
+  it("inserts a dragged thread on either side of a target pane", () => {
+    useChatWorkspaceStore.setState({
+      panes: normalizePaneSizes([pane("a"), pane("c")]),
+      activePaneId: "env-1:a",
+    });
+
+    expect(useChatWorkspaceStore.getState().openThreadAdjacent(ref("b"), "env-1:c", "before")).toBe(
+      true,
+    );
+    expect(useChatWorkspaceStore.getState().panes.map((entry) => entry.id)).toEqual([
+      "env-1:a",
+      "env-1:b",
+      "env-1:c",
+    ]);
+    expect(useChatWorkspaceStore.getState().activePaneId).toBe("env-1:b");
+
+    useChatWorkspaceStore.setState({
+      panes: normalizePaneSizes([pane("a"), pane("c")]),
+      activePaneId: "env-1:a",
+    });
+    expect(useChatWorkspaceStore.getState().openThreadAdjacent(ref("b"), "env-1:a", "after")).toBe(
+      true,
+    );
+    expect(useChatWorkspaceStore.getState().panes.map((entry) => entry.id)).toEqual([
+      "env-1:a",
+      "env-1:b",
+      "env-1:c",
+    ]);
+  });
+
+  it("deduplicates adjacent opens and rejects unique threads at the pane cap", () => {
+    useChatWorkspaceStore.setState({
+      panes: normalizePaneSizes([pane("a"), pane("b"), pane("c")]),
+      activePaneId: "env-1:a",
+    });
+
+    expect(useChatWorkspaceStore.getState().openThreadAdjacent(ref("c"), "env-1:a", "before")).toBe(
+      true,
+    );
+    expect(useChatWorkspaceStore.getState().activePaneId).toBe("env-1:c");
+    expect(useChatWorkspaceStore.getState().openThreadAdjacent(ref("d"), "env-1:b", "after")).toBe(
+      false,
+    );
+    expect(useChatWorkspaceStore.getState().panes.map((entry) => entry.id)).toEqual([
+      "env-1:a",
+      "env-1:b",
+      "env-1:c",
+    ]);
+  });
+
   it("closes an active pane into its right neighbor, then its left neighbor", () => {
     useChatWorkspaceStore.setState({
       panes: normalizePaneSizes([pane("a"), pane("b"), pane("c")]),
