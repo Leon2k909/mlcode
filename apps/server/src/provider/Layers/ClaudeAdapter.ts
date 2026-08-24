@@ -213,6 +213,22 @@ interface ClaudeTaskAgentState {
   effort: string | undefined;
 }
 
+/** Bound unmatched early snapshots so a missing task_started cannot retain
+ * unbounded provider data for the lifetime of a session. */
+const PENDING_TASK_MODEL_CAP = 64;
+
+function rememberPendingTaskModel(
+  pending: Map<string, string>,
+  parentToolUseId: string,
+  model: string,
+): void {
+  pending.set(parentToolUseId, model);
+  if (pending.size > PENDING_TASK_MODEL_CAP) {
+    const oldest = pending.keys().next();
+    if (!oldest.done) pending.delete(oldest.value);
+  }
+}
+
 interface ClaudeSessionContext {
   session: ProviderSession;
   readonly promptQueue: Queue.Queue<PromptQueueItem>;
@@ -235,6 +251,9 @@ interface ClaudeSessionContext {
   readonly inFlightTools: Map<number, ToolInFlight>;
   readonly claudeTasks: Map<string, ClaudeTaskState>;
   readonly taskAgents: Map<string, ClaudeTaskAgentState>;
+  /** Authoritative subagent models whose assistant snapshot arrived before
+   * task_started, keyed by parent_tool_use_id. */
+  readonly pendingTaskModels: Map<string, string>;
   /**
    * Last emitted workflow-member fingerprint per member slot. A coordinator
    * task_progress repeats the FULL member array every tick; without a
@@ -2918,8 +2937,16 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       const owningTaskId = agentIdForParentToolUse(context.taskAgents, assistantParentToolUseId);
       const snapshotModel = trimmedString(message.message.model);
       const owningAgent = owningTaskId ? context.taskAgents.get(owningTaskId) : undefined;
-      if (owningAgent && snapshotModel) {
-        owningAgent.model = snapshotModel;
+      if (snapshotModel) {
+        if (owningAgent) {
+          owningAgent.model = snapshotModel;
+        } else {
+          rememberPendingTaskModel(
+            context.pendingTaskModels,
+            assistantParentToolUseId,
+            snapshotModel,
+          );
+        }
       }
       context.lastAssistantUuid = message.uuid;
       yield* updateResumeCursor(context);
@@ -3235,12 +3262,17 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         const owningAgentId = launchingTool?.agentId;
         // Model/effort: the Agent tool's input carries explicit overrides;
         // absent ones inherit the session's selection (SDK behavior).
-        // Subagent assistant snapshots later refine model with the
-        // authoritative API id. AgentInput.effort may be a named level or an
-        // integer.
+        // Subagent assistant snapshots refine model with the authoritative API
+        // id. A snapshot that beat task_started is buffered and outranks the
+        // launch seed. AgentInput.effort may be a named level or an integer.
         const launchInput = launchingTool?.input;
+        const toolUseId = message.tool_use_id;
+        const bufferedModel = toolUseId ? context.pendingTaskModels.get(toolUseId) : undefined;
+        if (toolUseId) context.pendingTaskModels.delete(toolUseId);
         const model =
-          trimmedString(launchInput?.model) ?? trimmedString(context.session.model ?? undefined);
+          bufferedModel ??
+          trimmedString(launchInput?.model) ??
+          trimmedString(context.session.model ?? undefined);
         const rawLaunchEffort = launchInput?.effort;
         const effort =
           trimmedString(rawLaunchEffort) ??
@@ -3842,6 +3874,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       const inFlightTools = new Map<number, ToolInFlight>();
       const claudeTasks = new Map<string, ClaudeTaskState>();
       const taskAgents = new Map<string, ClaudeTaskAgentState>();
+      const pendingTaskModels = new Map<string, string>();
       const workflowMemberFingerprints = new Map<string, string>();
       const liveTaskIds = new Set<string>();
 
@@ -4312,6 +4345,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         inFlightTools,
         claudeTasks,
         taskAgents,
+        pendingTaskModels,
         workflowMemberFingerprints,
         liveTaskIds,
         turnState: undefined,

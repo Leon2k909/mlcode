@@ -20,7 +20,6 @@ import {
   type ThreadId,
   type ThreadTurnDispatchMode,
   type TurnId,
-  type UploadChatAttachment,
   type KeybindingCommand,
   OrchestrationThreadActivity,
   ProviderInteractionMode,
@@ -264,11 +263,7 @@ import {
   useThreadShell,
 } from "../state/entities";
 import { environmentShell } from "../state/shell";
-import {
-  ChatComposer,
-  type ChatComposerHandle,
-  type QueuedComposerMessage,
-} from "./chat/ChatComposer";
+import { ChatComposer, type ChatComposerHandle } from "./chat/ChatComposer";
 import { DraftHeroHeadline } from "./chat/DraftHeroHeadline";
 import { ExpandedImageDialog } from "./chat/ExpandedImageDialog";
 import { PullRequestThreadDialog } from "./PullRequestThreadDialog";
@@ -342,6 +337,12 @@ import {
 import type { ThreadSyncPhase } from "../threadSync";
 import { useLocalStorage } from "~/hooks/useLocalStorage";
 import { useComposerHandleContext } from "../composerHandleContext";
+import {
+  useThreadOutboxStore,
+  type QueuedThreadOutboxAttachment,
+  type QueuedThreadOutboxMessage,
+  type QueuedThreadOutboxPayload,
+} from "../threadOutbox";
 import { sanitizeThreadErrorMessage } from "~/rpc/transportError";
 import { RightPanelSheet } from "./RightPanelSheet";
 import { previewEnvironment } from "../state/preview";
@@ -562,33 +563,6 @@ interface TerminalLaunchContext {
   cwd: string;
   worktreePath: string | null;
 }
-
-type QueuedChatMessage = QueuedComposerMessage & {
-  readonly threadId: ThreadId;
-  readonly payload: QueuedTurnPayload;
-};
-
-type QueuedOptimisticAttachment = {
-  readonly type: "image";
-  readonly id: string;
-  readonly name: string;
-  readonly mimeType: string;
-  readonly sizeBytes: number;
-  readonly previewUrl: string;
-};
-
-type QueuedTurnPayload = {
-  readonly messageId: MessageId;
-  readonly threadId: ThreadId;
-  readonly text: string;
-  readonly createdAt: string;
-  readonly titleSeed: string;
-  readonly attachmentsPromise: Promise<ReadonlyArray<UploadChatAttachment>>;
-  readonly optimisticAttachments: ReadonlyArray<QueuedOptimisticAttachment>;
-  readonly modelSelection: ModelSelection;
-  readonly runtimeMode: RuntimeMode;
-  readonly interactionMode: ProviderInteractionMode;
-};
 
 type PersistentTerminalLaunchContext = Pick<TerminalLaunchContext, "cwd" | "worktreePath">;
 
@@ -1404,7 +1378,8 @@ function ChatViewContent(props: ChatViewProps) {
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [expandedImage, setExpandedImage] = useState<ExpandedImagePreview | null>(null);
   const [optimisticUserMessages, setOptimisticUserMessages] = useState<ChatMessage[]>([]);
-  const [queuedMessages, setQueuedMessages] = useState<QueuedChatMessage[]>([]);
+  const queuedMessages = useThreadOutboxStore((state) => state.messages);
+  const setQueuedMessages = useThreadOutboxStore((state) => state.setMessages);
   const optimisticUserMessagesRef = useRef(optimisticUserMessages);
   optimisticUserMessagesRef.current = optimisticUserMessages;
   const [localDraftErrorsByDraftId, setLocalDraftErrorsByDraftId] = useState<
@@ -5530,14 +5505,15 @@ function ChatViewContent(props: ChatViewProps) {
         dataUrl: await readFileAsDataUrl(image.file),
       })),
     );
-    const optimisticAttachments = composerImagesSnapshot.map((image) => ({
-      type: "image" as const,
-      id: image.id,
-      name: image.name,
-      mimeType: image.mimeType,
-      sizeBytes: image.sizeBytes,
-      previewUrl: image.previewUrl,
-    }));
+    const optimisticAttachments: ReadonlyArray<QueuedThreadOutboxAttachment> =
+      composerImagesSnapshot.map((image) => ({
+        type: "image" as const,
+        id: image.id,
+        name: image.name,
+        mimeType: image.mimeType,
+        sizeBytes: image.sizeBytes,
+        previewUrl: image.previewUrl,
+      }));
     let firstComposerImageName: string | null = null;
     if (composerImagesSnapshot.length > 0) {
       const firstComposerImage = composerImagesSnapshot[0];
@@ -5559,26 +5535,28 @@ function ChatViewContent(props: ChatViewProps) {
     }
     const title = truncate(titleSeed);
     if (queueLocally) {
+      const payload: QueuedThreadOutboxPayload = {
+        messageId: messageIdForSend,
+        threadId: threadIdForSend,
+        text: outgoingMessageText,
+        createdAt: messageCreatedAt,
+        titleSeed: title,
+        attachmentsPromise: turnAttachmentsPromise,
+        optimisticAttachments,
+        modelSelection: ctxSelectedModelSelection,
+        runtimeMode,
+        interactionMode,
+      };
       setQueuedMessages((existing) => [
         ...existing,
         {
           id: messageIdForSend,
+          environmentId,
           threadId: threadIdForSend,
           text: outgoingMessageText,
           createdAt: messageCreatedAt,
           status: "queued",
-          payload: {
-            messageId: messageIdForSend,
-            threadId: threadIdForSend,
-            text: outgoingMessageText,
-            createdAt: messageCreatedAt,
-            titleSeed: title,
-            attachmentsPromise: turnAttachmentsPromise,
-            optimisticAttachments,
-            modelSelection: ctxSelectedModelSelection,
-            runtimeMode,
-            interactionMode,
-          },
+          payload,
         },
       ]);
       promptRef.current = "";
@@ -5797,9 +5775,15 @@ function ChatViewContent(props: ChatViewProps) {
   };
 
   const dispatchQueuedMessage = useCallback(
-    async (queued: QueuedChatMessage, mode?: ThreadTurnDispatchMode): Promise<boolean> => {
+    async (queued: QueuedThreadOutboxMessage, mode?: ThreadTurnDispatchMode): Promise<boolean> => {
       const thread = activeThread;
-      if (!thread || thread.id !== queued.threadId) return false;
+      if (
+        !thread ||
+        thread.id !== queued.threadId ||
+        thread.environmentId !== queued.environmentId
+      ) {
+        return false;
+      }
 
       const { payload } = queued;
       sendInFlightRef.current = true;
@@ -5926,29 +5910,46 @@ function ChatViewContent(props: ChatViewProps) {
 
   const queuedDispatchInFlightRef = useRef(false);
   const runQueuedDispatch = useCallback(
-    (queued: QueuedChatMessage, mode?: ThreadTurnDispatchMode) => {
+    (queued: QueuedThreadOutboxMessage, mode?: ThreadTurnDispatchMode) => {
       if (queuedDispatchInFlightRef.current || sendInFlightRef.current) return;
 
       queuedDispatchInFlightRef.current = true;
       setQueuedMessages((existing) =>
         existing.map((message) =>
-          message.id === queued.id ? { ...message, status: "sending" as const } : message,
+          message.id === queued.id &&
+          message.threadId === queued.threadId &&
+          message.environmentId === queued.environmentId
+            ? { ...message, status: "sending" as const }
+            : message,
         ),
       );
       void dispatchQueuedMessage(queued, mode)
         .then((succeeded) => {
           setQueuedMessages((existing) =>
             succeeded
-              ? existing.filter((message) => message.id !== queued.id)
+              ? existing.filter(
+                  (message) =>
+                    message.id !== queued.id ||
+                    message.threadId !== queued.threadId ||
+                    message.environmentId !== queued.environmentId,
+                )
               : existing.map((message) =>
-                  message.id === queued.id ? { ...message, status: "failed" as const } : message,
+                  message.id === queued.id &&
+                  message.threadId === queued.threadId &&
+                  message.environmentId === queued.environmentId
+                    ? { ...message, status: "failed" as const }
+                    : message,
                 ),
           );
         })
         .catch((error: unknown) => {
           setQueuedMessages((existing) =>
             existing.map((message) =>
-              message.id === queued.id ? { ...message, status: "failed" as const } : message,
+              message.id === queued.id &&
+              message.threadId === queued.threadId &&
+              message.environmentId === queued.environmentId
+                ? { ...message, status: "failed" as const }
+                : message,
             ),
           );
           setThreadError(
@@ -5963,23 +5964,14 @@ function ChatViewContent(props: ChatViewProps) {
     [dispatchQueuedMessage, setThreadError],
   );
 
-  useEffect(() => {
-    if (phase !== "ready" || activeThread === undefined || queuedDispatchInFlightRef.current) {
-      return;
-    }
-    const next = queuedMessages.find(
-      (message) => message.threadId === activeThread.id && message.status === "queued",
-    );
-    if (!next) return;
-
-    runQueuedDispatch(next);
-  }, [activeThread, phase, queuedMessages, runQueuedDispatch]);
-
   const onSteerQueuedMessage = useCallback(
     (messageId: MessageId) => {
       if (phase !== "running" || !activeThread) return;
       const queued = queuedMessages.find(
-        (message) => message.id === messageId && message.threadId === activeThread.id,
+        (message) =>
+          message.id === messageId &&
+          message.threadId === activeThread.id &&
+          message.environmentId === activeThread.environmentId,
       );
       if (!queued || queued.status === "sending") return;
       runQueuedDispatch(queued, "steer");
@@ -5987,68 +5979,104 @@ function ChatViewContent(props: ChatViewProps) {
     [activeThread, phase, queuedMessages, runQueuedDispatch],
   );
 
-  const onCancelQueuedMessage = useCallback((messageId: MessageId) => {
-    setQueuedMessages((existing) => {
-      const message = existing.find((entry) => entry.id === messageId);
-      if (!message || message.status === "sending") return existing;
-      for (const attachment of message.payload.optimisticAttachments) {
-        revokeBlobPreviewUrl(attachment.previewUrl);
-      }
-      return existing.filter((entry) => entry.id !== messageId);
-    });
-  }, []);
+  const onCancelQueuedMessage = useCallback(
+    (messageId: MessageId) => {
+      setQueuedMessages((existing) => {
+        const message = existing.find(
+          (entry) =>
+            entry.id === messageId &&
+            entry.threadId === activeThread?.id &&
+            entry.environmentId === activeThread?.environmentId,
+        );
+        if (!message || message.status === "sending") return existing;
+        for (const attachment of message.payload.optimisticAttachments) {
+          revokeBlobPreviewUrl(attachment.previewUrl);
+        }
+        return existing.filter(
+          (entry) =>
+            entry.id !== messageId ||
+            entry.threadId !== activeThread?.id ||
+            entry.environmentId !== activeThread?.environmentId,
+        );
+      });
+    },
+    [activeThread],
+  );
 
-  const onEditQueuedMessage = useCallback((messageId: MessageId, text: string) => {
-    const nextText = text.trim();
-    setQueuedMessages((existing) =>
-      existing.map((message) =>
-        message.id === messageId && message.status !== "sending"
-          ? {
-              ...message,
-              text: nextText,
-              payload: {
-                ...message.payload,
+  const onEditQueuedMessage = useCallback(
+    (messageId: MessageId, text: string) => {
+      const nextText = text.trim();
+      setQueuedMessages((existing) =>
+        existing.map((message) =>
+          message.id === messageId &&
+          message.threadId === activeThread?.id &&
+          message.environmentId === activeThread?.environmentId &&
+          message.status !== "sending"
+            ? {
+                ...message,
                 text: nextText,
-              },
-            }
-          : message,
-      ),
-    );
-  }, []);
+                payload: {
+                  ...message.payload,
+                  text: nextText,
+                },
+              }
+            : message,
+        ),
+      );
+    },
+    [activeThread],
+  );
 
-  const onMoveQueuedMessage = useCallback((messageId: MessageId, direction: "up" | "down") => {
-    setQueuedMessages((existing) => {
-      const index = existing.findIndex((entry) => entry.id === messageId);
-      if (index < 0 || existing[index]?.status === "sending") return existing;
-      const threadId = existing[index]?.threadId;
-      if (!threadId) return existing;
-      const sameThreadIndexes = existing.reduce<number[]>((indexes, entry, entryIndex) => {
-        if (entry.threadId === threadId) indexes.push(entryIndex);
-        return indexes;
-      }, []);
-      const threadPosition = sameThreadIndexes.indexOf(index);
-      const targetPosition = threadPosition + (direction === "up" ? -1 : 1);
-      const targetIndex = sameThreadIndexes[targetPosition];
-      if (targetIndex === undefined || existing[targetIndex]?.status === "sending") {
-        return existing;
-      }
-      const next = [...existing];
-      const current = next[index];
-      next[index] = next[targetIndex]!;
-      next[targetIndex] = current!;
-      return next;
-    });
-  }, []);
+  const onMoveQueuedMessage = useCallback(
+    (messageId: MessageId, direction: "up" | "down") => {
+      setQueuedMessages((existing) => {
+        const index = existing.findIndex(
+          (entry) =>
+            entry.id === messageId &&
+            entry.threadId === activeThread?.id &&
+            entry.environmentId === activeThread?.environmentId,
+        );
+        if (index < 0 || existing[index]?.status === "sending") return existing;
+        const threadId = existing[index]?.threadId;
+        const queuedEnvironmentId = existing[index]?.environmentId;
+        if (!threadId) return existing;
+        const sameThreadIndexes = existing.reduce<number[]>((indexes, entry, entryIndex) => {
+          if (entry.threadId === threadId && entry.environmentId === queuedEnvironmentId) {
+            indexes.push(entryIndex);
+          }
+          return indexes;
+        }, []);
+        const threadPosition = sameThreadIndexes.indexOf(index);
+        const targetPosition = threadPosition + (direction === "up" ? -1 : 1);
+        const targetIndex = sameThreadIndexes[targetPosition];
+        if (targetIndex === undefined || existing[targetIndex]?.status === "sending") {
+          return existing;
+        }
+        const next = [...existing];
+        const current = next[index];
+        next[index] = next[targetIndex]!;
+        next[targetIndex] = current!;
+        return next;
+      });
+    },
+    [activeThread],
+  );
 
-  const onRetryQueuedMessage = useCallback((messageId: MessageId) => {
-    setQueuedMessages((existing) =>
-      existing.map((message) =>
-        message.id === messageId && message.status === "failed"
-          ? { ...message, status: "queued" as const }
-          : message,
-      ),
-    );
-  }, []);
+  const onRetryQueuedMessage = useCallback(
+    (messageId: MessageId) => {
+      setQueuedMessages((existing) =>
+        existing.map((message) =>
+          message.id === messageId &&
+          message.threadId === activeThread?.id &&
+          message.environmentId === activeThread?.environmentId &&
+          message.status === "failed"
+            ? { ...message, status: "queued" as const }
+            : message,
+        ),
+      );
+    },
+    [activeThread],
+  );
 
   const onInterrupt = async () => {
     if (!activeThread) return;
@@ -7252,7 +7280,9 @@ function ChatViewContent(props: ChatViewProps) {
                             composerTerminalContextsRef={composerTerminalContextsRef}
                             composerElementContextsRef={composerElementContextsRef}
                             queuedMessages={queuedMessages.filter(
-                              (message) => message.threadId === activeThread?.id,
+                              (message) =>
+                                message.threadId === activeThread?.id &&
+                                message.environmentId === activeThread?.environmentId,
                             )}
                             canSteerQueuedMessages={
                               phase === "running" && activeThread !== undefined

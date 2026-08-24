@@ -50,6 +50,7 @@ describe("ComposerBannerStack", () => {
 
     expect(markup).not.toContain("data-composer-banner-stack-expanded-items");
     expect(markup).toContain("alert-glass");
+    expect(markup).not.toContain("before:mask-none");
     expect(markup).toContain('data-variant="warning"');
     expect(markup).toContain("transform:none");
     expect(markup).not.toContain("will-change:transform");

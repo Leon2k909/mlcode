@@ -21,6 +21,7 @@ import { PetMascot } from "./pets/PetMascot";
 import { SettingsSidebarNav } from "./settings/SettingsSidebarNav";
 import { SidebarChromeHeader } from "./sidebar/SidebarChrome";
 import { ChatWorkspaceDndProvider } from "./chat/ChatWorkspaceDnd";
+import { ThreadOutboxDrainWorker } from "./ThreadOutboxDrainWorker";
 import {
   resolveSidebarStageFocusRingOffsetClass,
   useSidebarStageBackdropVariant,
@@ -213,6 +214,7 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
     <SidebarProvider className="h-dvh! min-h-0!" defaultOpen style={sidebarProviderStyle}>
       <ChatWorkspaceDndProvider>
         <ProjectProjectionRetention />
+        <ThreadOutboxDrainWorker />
         <Sidebar
           side="left"
           collapsible="offcanvas"
