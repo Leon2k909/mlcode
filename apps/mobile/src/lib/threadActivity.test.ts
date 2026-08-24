@@ -14,6 +14,7 @@ import {
 import {
   buildPendingUserInputAnswers,
   buildThreadFeed,
+  deriveStoppedEmployeeHandoffs,
   deriveThreadFeedPresentation,
   isPendingUserInputOptionSelected,
   setPendingUserInputCustomAnswer,
@@ -151,6 +152,30 @@ function makeThread(
 }
 
 describe("buildThreadFeed", () => {
+  it("preserves a stopped employee handoff outcome for the assistant turn", () => {
+    const turnId = TurnId.make("turn-stopped-handoff");
+    const thread = makeThread({
+      id: ThreadId.make("thread-stopped-handoff"),
+      projectId: ProjectId.make("project-1"),
+      title: "Stopped handoff",
+      activities: [
+        makeActivity({
+          id: EventId.make("activity-stopped-handoff"),
+          kind: "employee.handoff.stopped",
+          summary: "Employee handoff limit reached",
+          createdAt: "2026-04-01T00:00:01.000Z",
+          turnId,
+          tone: "error",
+          payload: { detail: "The group paused after eight consecutive employee turns." },
+        }),
+      ],
+    });
+
+    expect(deriveStoppedEmployeeHandoffs(buildThreadFeed(thread)).get(turnId)).toBe(
+      "The group paused after eight consecutive employee turns.",
+    );
+  });
+
   it("keeps historic work entries attributed to their turns", () => {
     const thread = makeThread({
       id: ThreadId.make("thread-1"),

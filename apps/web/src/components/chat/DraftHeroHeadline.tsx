@@ -1,4 +1,5 @@
 import type { ScopedProjectRef } from "@t3tools/contracts";
+import { displayMlCodeProjectName } from "@t3tools/shared/productBranding";
 import { scopedProjectKey, scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { FolderPlusIcon } from "lucide-react";
 import { useCallback, useMemo } from "react";
@@ -27,10 +28,6 @@ import {
 interface DraftHeroHeadlineProps {
   readonly activeProjectRef: ScopedProjectRef | null;
   readonly activeProjectTitle: string | null;
-}
-
-function mlCodeProjectDisplayName(name: string | null): string | null {
-  return name !== null && /^(?:t3\s*code|ml\s*code)$/i.test(name.trim()) ? "ML Code" : name;
 }
 
 export function DraftHeroHeadline({
@@ -96,9 +93,9 @@ export function DraftHeroHeadline({
           ),
         ) ?? null);
   const activeProjectKey = activeProjectGroup?.projectKey ?? "";
-  const activeProjectDisplayName = mlCodeProjectDisplayName(
-    activeProjectGroup?.displayName ?? activeProjectTitle,
-  );
+  const activeProjectName = activeProjectGroup?.displayName ?? activeProjectTitle;
+  const activeProjectDisplayName =
+    activeProjectName === null ? null : displayMlCodeProjectName(activeProjectName);
   const hasResolvedProject = activeProjectTitle !== null;
   const canChooseProject = projectPickerEntries.length > 0;
   const shouldShowProjectMenu = canChooseProject;
@@ -152,7 +149,7 @@ export function DraftHeroHeadline({
       onClick={openAddProject}
       className="pointer-events-auto inline cursor-pointer border-muted-foreground/35 border-b border-dotted text-muted-foreground/60 transition-colors hover:border-muted-foreground/60 hover:text-muted-foreground/80 focus-visible:rounded-sm focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
     >
-      {mlCodeProjectDisplayName(activeProjectTitle) ?? "Add a project"}
+      {activeProjectTitle === null ? "Add a project" : displayMlCodeProjectName(activeProjectTitle)}
     </button>
   );
 

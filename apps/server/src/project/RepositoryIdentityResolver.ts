@@ -48,6 +48,17 @@ function parseRemoteFetchUrls(stdout: string): Map<string, string> {
 function pickPrimaryRemote(
   remotes: ReadonlyMap<string, string>,
 ): { readonly remoteName: string; readonly remoteUrl: string } | null {
+  const originRemoteUrl = remotes.get("origin");
+  const upstreamRemoteUrl = remotes.get("upstream");
+  if (
+    originRemoteUrl &&
+    upstreamRemoteUrl &&
+    normalizeGitRemoteUrl(originRemoteUrl) === "github.com/leon2k909/mlcode" &&
+    normalizeGitRemoteUrl(upstreamRemoteUrl) === "github.com/pingdotgg/t3code"
+  ) {
+    return { remoteName: "origin", remoteUrl: originRemoteUrl };
+  }
+
   for (const preferredRemoteName of ["upstream", "origin"] as const) {
     const remoteUrl = remotes.get(preferredRemoteName);
     if (remoteUrl) {

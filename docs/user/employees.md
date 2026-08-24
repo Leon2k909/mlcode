@@ -60,7 +60,8 @@ already working, the picker says **Next turn**: the running turn keeps its origi
 your new group applies when you send the next message.
 
 To avoid two agents talking forever, a group pauses after eight consecutive employee-to-employee
-turns. Send another message to continue.
+turns. A worker may still return to the CEO once so the CEO can give you the final answer, but the
+CEO cannot delegate again until you send another message.
 
 The picker only appears once you have at least one employee, so nothing changes if you do not use
 the feature.

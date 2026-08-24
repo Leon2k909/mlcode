@@ -3,11 +3,11 @@ import { describe, expect, it } from "vite-plus/test";
 import { ContextManagementControls, ContextWindowMeter } from "./ContextWindowMeter";
 
 describe("ContextWindowMeter", () => {
-  it("keeps a stable, non-interactive placeholder while waiting for fresh usage", () => {
+  it("keeps the usage trigger clickable while waiting for fresh usage", () => {
     const markup = renderToStaticMarkup(<ContextWindowMeter usage={null} />);
 
-    expect(markup).toContain('aria-label="Waiting for fresh context usage"');
-    expect(markup).not.toContain("Context Window");
+    expect(markup).toContain('aria-label="Context window usage unavailable"');
+    expect(markup).toContain("<button");
   });
 
   it("renders the environment long-thread choices without changing manual defaults", () => {

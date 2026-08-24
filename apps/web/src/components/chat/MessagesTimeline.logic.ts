@@ -193,6 +193,7 @@ export type MessagesTimelineRow =
       showAssistantMeta: boolean;
       showAssistantCopyButton: boolean;
       assistantCopyStreaming: boolean;
+      employeeHandoffStoppedDetail?: string | undefined;
       assistantTurnDiffSummary?: TurnDiffSummary | undefined;
       revertTurnCount?: number | undefined;
       canDeleteUserMessage?: boolean | undefined;
@@ -477,6 +478,20 @@ export function deriveMessagesTimelineRows(input: {
     input.timelineEntries.flatMap((entry) => (entry.kind === "message" ? [entry.message] : [])),
   );
   const terminalAssistantMessageIds = deriveTerminalAssistantMessageIds(input.timelineEntries);
+  const stoppedEmployeeHandoffByTurnId = new Map<TurnId, string>();
+  for (const entry of input.timelineEntries) {
+    if (
+      entry.kind === "work" &&
+      entry.entry.turnId !== null &&
+      entry.entry.turnId !== undefined &&
+      entry.entry.sourceActivityKind === "employee.handoff.stopped"
+    ) {
+      stoppedEmployeeHandoffByTurnId.set(
+        entry.entry.turnId,
+        entry.entry.detail ?? entry.entry.label,
+      );
+    }
+  }
   const unsettledTurnId = deriveUnsettledTurnId(
     input.latestTurn ?? null,
     input.runningTurnId ?? null,
@@ -637,6 +652,10 @@ export function deriveMessagesTimelineRows(input: {
       showAssistantMeta,
       showAssistantCopyButton: showAssistantMeta,
       assistantCopyStreaming: timelineEntry.message.streaming || assistantTurnStillInProgress,
+      employeeHandoffStoppedDetail:
+        timelineEntry.message.turnId === null
+          ? undefined
+          : stoppedEmployeeHandoffByTurnId.get(timelineEntry.message.turnId),
       assistantTurnDiffSummary:
         timelineEntry.message.role === "assistant"
           ? input.turnDiffSummaryByAssistantMessageId.get(timelineEntry.message.id)

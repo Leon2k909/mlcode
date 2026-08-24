@@ -12,6 +12,7 @@ import {
   ProviderInstanceId,
   type RepositoryIdentity,
   type ServerSettings,
+  type OrchestrationMessage,
 } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
 import {
@@ -57,6 +58,7 @@ import { OrchestrationProjectionSnapshotQueryLive } from "./ProjectionSnapshotQu
 import * as ThreadBackgroundLiveness from "../ThreadBackgroundLiveness.ts";
 import * as ThreadPlanProgress from "../ThreadPlanProgress.ts";
 import {
+  buildProviderSwitchContext,
   providerErrorLabel,
   providerErrorLabelFromInstanceHint,
   ProviderCommandReactorLive,
@@ -75,6 +77,44 @@ const asProjectId = (value: string): ProjectId => ProjectId.make(value);
 const asApprovalRequestId = (value: string): ApprovalRequestId => ApprovalRequestId.make(value);
 const asMessageId = (value: string): MessageId => MessageId.make(value);
 const asTurnId = (value: string): TurnId => TurnId.make(value);
+
+it("retains bounded image attachments when rebuilding provider context", () => {
+  const attachment = (id: string) => ({
+    type: "image" as const,
+    id,
+    name: `${id}.png`,
+    mimeType: "image/png",
+    sizeBytes: 5,
+  });
+  const result = buildProviderSwitchContext(
+    [
+      {
+        id: asMessageId("old-message"),
+        role: "user",
+        text: "Old visual issue",
+        attachments: [attachment("old")],
+        turnId: null,
+        streaming: false,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+      {
+        id: asMessageId("handoff-message"),
+        role: "user",
+        text: "Continue investigating",
+        attachments: [attachment("handoff")],
+        turnId: null,
+        streaming: false,
+        createdAt: "2026-01-01T00:00:01.000Z",
+        updatedAt: "2026-01-01T00:00:01.000Z",
+      },
+    ] satisfies ReadonlyArray<OrchestrationMessage>,
+    asMessageId("handoff-message"),
+  );
+
+  expect(result?.message).toContain("Old visual issue");
+  expect(result?.attachments.map((entry) => entry.id)).toEqual(["old"]);
+});
 
 const deriveServerPathsSync = (baseDir: string, devUrl: URL | undefined) =>
   Effect.runSync(deriveServerPaths(baseDir, devUrl).pipe(Effect.provide(NodeServices.layer)));

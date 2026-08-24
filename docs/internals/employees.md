@@ -100,8 +100,9 @@ cursor; ordinary provider changes in an established thread remain forbidden. Bot
 share the thread and workspace history persisted by ML Code.
 
 Only one recipient can take ownership at a time, and a chain stops after eight handoffs without a
-human message. Invalid, disabled, self, out-of-group, and empty handoffs become visible activities
-instead of disappearing silently.
+human message. An exhausted worker chain may still return to the CEO once for the terminal answer;
+the CEO cannot delegate again until the user speaks. Invalid, disabled, self, out-of-group, empty,
+and capped handoffs become visible paused activities instead of disappearing silently.
 
 [contracts-orchestration]: ../../packages/contracts/src/orchestration.ts
 [contracts-instance]: ../../packages/contracts/src/providerInstance.ts

@@ -1435,6 +1435,7 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
       : resolveTimelineEmployee(ctx.employees, handoff.toEmployeeId);
   const sourceEmployee =
     employeeId === undefined ? undefined : resolveTimelineEmployee(ctx.employees, employeeId);
+  const handoffStoppedDetail = row.employeeHandoffStoppedDetail;
 
   return (
     <>
@@ -1467,7 +1468,18 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
         ) : messageDisplay.showEmptyState ? (
           <p className="text-sm text-muted-foreground">No response received.</p>
         ) : null}
-        {handoff.toEmployeeId !== undefined ? (
+        {handoff.toEmployeeId !== undefined && handoffStoppedDetail !== undefined ? (
+          <div
+            className="mt-2 inline-flex flex-wrap items-center gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/10 px-2.5 py-1.5 text-xs"
+            data-t3-worker-kind="employee-handoff-stopped"
+          >
+            <CircleAlertIcon className="size-3 text-amber-700 dark:text-amber-300" />
+            <span className="font-medium text-amber-700 dark:text-amber-300">
+              Employee workflow paused
+            </span>
+            <span className="text-foreground/80">{handoffStoppedDetail}</span>
+          </div>
+        ) : handoff.toEmployeeId !== undefined ? (
           <div
             className="mt-2 inline-flex flex-wrap items-center gap-1.5 rounded-lg border border-sky-500/30 bg-sky-500/10 px-2.5 py-1.5 text-xs"
             data-employee-handoff-to={handoff.toEmployeeId}

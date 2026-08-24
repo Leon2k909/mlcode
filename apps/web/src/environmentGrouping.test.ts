@@ -367,4 +367,28 @@ describe("environment grouping", () => {
 
     expect(group?.displayName).toBe("ML Code");
   });
+
+  it("uses ML Code branding for persisted upstream repository labels", () => {
+    const project = makeProject({
+      title: "mlcode",
+      repositoryIdentity: {
+        canonicalKey: "github.com/pingdotgg/t3code",
+        displayName: "pingdotgg/t3code",
+        locator: {
+          source: "git-remote",
+          remoteName: "upstream",
+          remoteUrl: "https://github.com/pingdotgg/t3code.git",
+        },
+      },
+    });
+
+    const [group] = buildSidebarProjectSnapshots({
+      projects: [project, { ...project, id: ProjectId.make("project-worktree"), title: "t3code" }],
+      settings: defaultGroupingSettings,
+      primaryEnvironmentId,
+      resolveEnvironmentLabel: () => null,
+    });
+
+    expect(group?.displayName).toBe("ML Code");
+  });
 });

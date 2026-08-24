@@ -96,16 +96,28 @@ export function ContextWindowMeter(props: {
 
   if (usage === null) {
     return (
-      <span
-        className="inline-flex size-7 items-center justify-center text-muted-foreground"
-        aria-label="Waiting for fresh context usage"
-        role="status"
-      >
-        <span
-          className="size-5 rounded-full border-2 border-muted-foreground/25"
-          aria-hidden="true"
+      <Popover>
+        <PopoverTrigger
+          render={
+            <button
+              type="button"
+              className={cn(
+                "inline-flex size-7 cursor-pointer items-center justify-center rounded-full border border-transparent text-muted-foreground outline-none transition-colors",
+                "hover:bg-accent data-[pressed]:bg-accent",
+                "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background",
+              )}
+              aria-label="Context window usage unavailable"
+            >
+              <span className="size-5 rounded-full border-2 border-muted-foreground/25" />
+            </button>
+          }
         />
-      </span>
+        <PopoverPopup tooltipStyle side="top" align="end" className="w-64 max-w-none">
+          <div className="p-[var(--floating-content-inset)] text-secondary-label text-xs">
+            Context usage is not available yet. Try again when the thread finishes loading.
+          </div>
+        </PopoverPopup>
+      </Popover>
     );
   }
 

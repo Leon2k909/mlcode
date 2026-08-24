@@ -751,6 +751,53 @@ describe("MessagesTimeline", () => {
     expect(markup).not.toContain("&lt;handoff");
   });
 
+  it("shows a stopped employee handoff as paused instead of transferred", () => {
+    const turnId = TurnId.make("turn-stopped-handoff");
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        employees={TEST_EMPLOYEES}
+        timelineEntries={[
+          {
+            id: "stopped-handoff-work",
+            kind: "work",
+            createdAt: MESSAGE_CREATED_AT,
+            entry: {
+              id: "stopped-handoff-activity",
+              createdAt: MESSAGE_CREATED_AT,
+              turnId,
+              label: "Employee handoff limit reached",
+              detail: "The group paused after eight consecutive employee turns.",
+              tone: "error",
+              sourceActivityKind: "employee.handoff.stopped",
+            },
+          },
+          {
+            id: "stopped-handoff-response",
+            kind: "message",
+            createdAt: MESSAGE_CREATED_AT,
+            message: {
+              id: MessageId.make("stopped-handoff-response"),
+              role: "assistant",
+              employeeId: EmployeeId.make("ceo"),
+              text: '<handoff to="reviewer">Review this.</handoff>',
+              turnId,
+              createdAt: MESSAGE_CREATED_AT,
+              updatedAt: MESSAGE_CREATED_AT,
+              streaming: false,
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(markup).toContain('data-t3-worker-kind="employee-handoff-stopped"');
+    expect(markup).toContain("Employee workflow paused");
+    expect(markup).toContain("The group paused after eight consecutive employee turns.");
+    expect(markup).not.toContain('data-t3-worker-kind="employee-handoff"');
+    expect(markup).not.toContain("Employee handoff</span>");
+  });
+
   it("shows response feedback for ordinary assistant replies", () => {
     const turnId = TurnId.make("turn-provider-response");
     const markup = renderToStaticMarkup(

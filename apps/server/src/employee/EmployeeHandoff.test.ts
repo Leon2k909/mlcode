@@ -184,6 +184,13 @@ describe("canContinueHandoffChain", () => {
     expect(canContinueHandoffChain(MAX_CONSECUTIVE_HANDOFFS)).toBe(false);
     expect(canContinueHandoffChain(MAX_CONSECUTIVE_HANDOFFS + 1)).toBe(false);
   });
+
+  it("allows an exhausted worker chain to return to the CEO for the final answer", () => {
+    expect(canContinueHandoffChain(MAX_CONSECUTIVE_HANDOFFS, EmployeeId.make("ceo"))).toBe(true);
+    expect(canContinueHandoffChain(MAX_CONSECUTIVE_HANDOFFS, EmployeeId.make("reviewer"))).toBe(
+      false,
+    );
+  });
 });
 
 describe("resolveAutomaticEmployeeHandoffTarget", () => {

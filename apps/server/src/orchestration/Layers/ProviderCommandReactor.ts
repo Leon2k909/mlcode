@@ -306,12 +306,13 @@ function formatProviderSwitchMessage(message: OrchestrationMessage): string | un
  * conversation across that boundary so choosing Claude (or another provider)
  * does not make the employee forget the work that just happened.
  */
-function buildProviderSwitchContext(
+export function buildProviderSwitchContext(
   messages: ReadonlyArray<OrchestrationMessage>,
   currentMessageId: MessageId,
-): string | undefined {
+): { readonly message: string; readonly attachments: ReadonlyArray<ChatAttachment> } | undefined {
   let context = "";
   let truncated = false;
+  const retainedAttachments: Array<ChatAttachment> = [];
 
   for (const message of messages.toReversed()) {
     if (message.id === currentMessageId) continue;
@@ -323,17 +324,22 @@ function buildProviderSwitchContext(
     if (section.length > available) {
       if (available > 0) {
         context = `${section.slice(-available)}${separator}${context}`;
+        retainedAttachments.unshift(...(message.attachments ?? []));
       }
       truncated = true;
       break;
     }
     context = `${section}${separator}${context}`;
+    retainedAttachments.unshift(...(message.attachments ?? []));
   }
 
   if (context.length === 0) return undefined;
-  return `${PROVIDER_SWITCH_CONTEXT_HEADER}${
-    truncated ? THREAD_TITLE_CONTEXT_TRUNCATION_MARKER : ""
-  }${context}`;
+  return {
+    message: `${PROVIDER_SWITCH_CONTEXT_HEADER}${
+      truncated ? THREAD_TITLE_CONTEXT_TRUNCATION_MARKER : ""
+    }${context}`,
+    attachments: retainedAttachments.slice(-MAX_REGENERATION_ATTACHMENTS),
+  };
 }
 
 export function providerErrorLabel(value: string | undefined): string {
@@ -1136,9 +1142,15 @@ const make = Effect.gen(function* () {
     const normalizedInput = toNonEmptyProviderInput(
       providerSwitchContext === undefined
         ? messageTextWithContinuation
-        : `${providerSwitchContext}\n\n[Continue with the new turn]\n\n${messageTextWithContinuation}`,
+        : `${providerSwitchContext.message}\n\n[Continue with the new turn]\n\n${messageTextWithContinuation}`,
     );
-    const normalizedAttachments = input.attachments ?? [];
+    const normalizedAttachments = [
+      ...(providerSwitchContext?.attachments ?? []),
+      ...(input.attachments ?? []),
+    ].filter(
+      (attachment, index, attachments) =>
+        attachments.findIndex((candidate) => candidate.id === attachment.id) === index,
+    );
     const activeSession = yield* providerService
       .listSessions()
       .pipe(

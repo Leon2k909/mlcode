@@ -257,6 +257,12 @@ export const describeHandoffRejection = (rejection: EmployeeHandoffRejection): s
  */
 export const MAX_CONSECUTIVE_HANDOFFS = 8;
 
-/** Whether another handoff may run, given how many have already chained. */
-export const canContinueHandoffChain = (consecutiveHandoffs: number): boolean =>
-  consecutiveHandoffs < MAX_CONSECUTIVE_HANDOFFS;
+/**
+ * Whether another handoff may run. An exhausted worker chain may return to
+ * the CEO once so the user receives the promised final answer; the CEO cannot
+ * delegate again until the user sends another message.
+ */
+export const canContinueHandoffChain = (
+  consecutiveHandoffs: number,
+  toEmployeeId?: EmployeeId,
+): boolean => consecutiveHandoffs < MAX_CONSECUTIVE_HANDOFFS || toEmployeeId === "ceo";

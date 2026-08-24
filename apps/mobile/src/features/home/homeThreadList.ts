@@ -20,6 +20,7 @@ import type {
   SidebarProjectSortOrder,
   SidebarThreadSortOrder,
 } from "@t3tools/contracts";
+import { displayMlCodeProjectName } from "@t3tools/shared/productBranding";
 import * as Arr from "effect/Array";
 import * as Option from "effect/Option";
 import * as Order from "effect/Order";
@@ -65,7 +66,7 @@ export function buildHomeProjectScopes(input: {
   }).map((group) => {
     return {
       key: group.key,
-      title: group.label,
+      title: displayMlCodeProjectName(group.label),
       representative: group.representative,
       projects: group.members.map((member) => member.project),
       projectRefs: group.memberProjectRefs,

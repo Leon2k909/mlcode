@@ -54,6 +54,7 @@ export interface ThreadFeedActivity {
     | "zap";
   readonly toolLike: boolean;
   readonly status: "success" | "failure" | "neutral" | null;
+  readonly sourceActivityKind?: OrchestrationThreadActivity["kind"];
 }
 
 const MAX_VISIBLE_WORK_LOG_ENTRIES = 1;
@@ -1566,6 +1567,7 @@ export function buildThreadFeed(
               icon: workEntryIcon(entry),
               toolLike: workLogEntryIsToolLike(entry),
               status: workEntryStatus(entry),
+              sourceActivityKind: entry.activityKind,
             },
           };
         }),
@@ -1575,4 +1577,19 @@ export function buildThreadFeed(
   );
 
   return groupAdjacentActivities(entries);
+}
+
+export function deriveStoppedEmployeeHandoffs(
+  feed: ReadonlyArray<ThreadFeedEntry>,
+): ReadonlyMap<TurnId, string> {
+  const stoppedByTurnId = new Map<TurnId, string>();
+  for (const entry of feed) {
+    if (entry.type !== "activity-group") continue;
+    for (const activity of entry.activities) {
+      if (activity.turnId !== null && activity.sourceActivityKind === "employee.handoff.stopped") {
+        stoppedByTurnId.set(activity.turnId, activity.detail ?? activity.summary);
+      }
+    }
+  }
+  return stoppedByTurnId;
 }

@@ -1720,7 +1720,7 @@ const make = Effect.gen(function* () {
       return false;
     }
 
-    if (!canContinueHandoffChain(input.completedHandoffs)) {
+    if (!canContinueHandoffChain(input.completedHandoffs, input.toEmployeeId)) {
       consecutiveEmployeeHandoffs.delete(input.thread.id);
       yield* appendEmployeeHandoffActivity({
         event: input.event,

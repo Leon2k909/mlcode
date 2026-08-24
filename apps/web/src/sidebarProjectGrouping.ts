@@ -1,10 +1,10 @@
 import type { EnvironmentId, ScopedProjectRef } from "@t3tools/contracts";
+import { displayMlCodeProjectName } from "@t3tools/shared/productBranding";
 import { buildProjectGroups, type ProjectGroupingSettings } from "./logicalProject";
 import type { Project } from "./types";
-import { APP_BASE_NAME } from "./branding";
 
 export function displayProjectName(label: string): string {
-  return /^(?:t3\s*code|t3code)$/i.test(label.trim()) ? APP_BASE_NAME : label;
+  return displayMlCodeProjectName(label);
 }
 
 export type EnvironmentPresence = "local-only" | "remote-only" | "mixed";

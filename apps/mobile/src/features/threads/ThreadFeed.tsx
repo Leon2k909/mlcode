@@ -93,6 +93,7 @@ import { useAppearanceCodeSurface } from "../settings/appearance/useAppearanceCo
 import { markdownFileIconSource } from "@t3tools/mobile-markdown-text/file-icons";
 import { resolveMarkdownLinkPresentation } from "@t3tools/mobile-markdown-text/links";
 import {
+  deriveStoppedEmployeeHandoffs,
   deriveThreadFeedPresentation,
   type ThreadFeedEntry,
   type ThreadFeedLatestTurn,
@@ -834,6 +835,7 @@ function renderFeedEntry(
     readonly expandedWorkRows: Record<string, boolean>;
     readonly terminalAssistantMessageIds: ReadonlySet<string>;
     readonly unsettledTurnId: TurnId | null;
+    readonly stoppedEmployeeHandoffByTurnId: ReadonlyMap<TurnId, string>;
     readonly onCopyWorkRow: (rowId: string, value: string) => void;
     readonly onToggleWorkGroup: (groupId: string) => void;
     readonly onToggleWorkRow: (rowId: string) => void;
@@ -909,6 +911,10 @@ function renderFeedEntry(
       handoffDisplay.toEmployeeId !== undefined
         ? (handoffEmployee?.displayName ?? handoffDisplay.toEmployeeId)
         : undefined;
+    const handoffStoppedDetail =
+      message.turnId === null
+        ? undefined
+        : props.stoppedEmployeeHandoffByTurnId.get(message.turnId);
     const isHumanUser = message.role === "user" && message.employeeId === undefined;
     const isEmployeeUser = message.role === "user" && message.employeeId !== undefined;
     const styles = isHumanUser ? markdownStyles.user : markdownStyles.assistant;
@@ -1060,7 +1066,20 @@ function renderFeedEntry(
             );
           })}
         </View>
-        {handoffEmployeeName !== undefined ? (
+        {handoffEmployeeName !== undefined && handoffStoppedDetail !== undefined ? (
+          <View className="mt-2 flex-row items-center gap-1.5 rounded-lg bg-warning/10 px-2.5 py-2">
+            <SymbolView
+              name="exclamationmark.triangle"
+              size={13}
+              tintColor={iconSubtleColor}
+              type="monochrome"
+            />
+            <View className="min-w-0 flex-1">
+              <Text className="text-xs font-t3-bold text-foreground">Employee workflow paused</Text>
+              <Text className="text-xs text-foreground-muted">{handoffStoppedDetail}</Text>
+            </View>
+          </View>
+        ) : handoffEmployeeName !== undefined ? (
           <View className="mt-2 flex-row items-center gap-1.5 rounded-lg bg-subtle px-2.5 py-2">
             <SymbolView
               name="arrow.right"
@@ -1713,6 +1732,10 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
     }
     return new Set(terminalIdsByTurn.values());
   }, [props.feed]);
+  const stoppedEmployeeHandoffByTurnId = useMemo(
+    () => deriveStoppedEmployeeHandoffs(props.feed),
+    [props.feed],
+  );
   const unsettledTurnId =
     props.latestTurn &&
     (props.latestTurn.completedAt === null || props.latestTurn.state === "running")
@@ -1898,6 +1921,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
         expandedWorkRows,
         terminalAssistantMessageIds,
         unsettledTurnId,
+        stoppedEmployeeHandoffByTurnId,
         onCopyWorkRow,
         onToggleWorkGroup,
         onToggleWorkRow,
@@ -1917,6 +1941,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       expandedWorkRows,
       terminalAssistantMessageIds,
       unsettledTurnId,
+      stoppedEmployeeHandoffByTurnId,
       iconSubtleColor,
       userBubbleColor,
       markdownStyles,

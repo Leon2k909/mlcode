@@ -1,4 +1,4 @@
-const REPO = "pingdotgg/t3code";
+const REPO = "Leon2k909/mlcode";
 
 export const RELEASES_URL = `https://github.com/${REPO}/releases`;
 

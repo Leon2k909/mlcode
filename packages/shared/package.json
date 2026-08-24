@@ -7,6 +7,10 @@
       "types": "./src/projectFavicon.ts",
       "import": "./src/projectFavicon.ts"
     },
+    "./productBranding": {
+      "types": "./src/productBranding.ts",
+      "import": "./src/productBranding.ts"
+    },
     "./model": {
       "types": "./src/model.ts",
       "import": "./src/model.ts"

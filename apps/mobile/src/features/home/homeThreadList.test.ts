@@ -105,7 +105,7 @@ describe("buildHomeThreadGroups", () => {
     });
 
     expect(scopes).toHaveLength(1);
-    expect(scopes[0]?.title).toBe("t3code");
+    expect(scopes[0]?.title).toBe("ML Code");
     expect(scopes[0]?.projects).toEqual(projects);
     expect(scopes[0]?.projectRefs).toEqual(
       projects.map((project) => ({
