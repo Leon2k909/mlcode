@@ -32,6 +32,7 @@ import {
   type AuthEnvironmentScope,
   DEFAULT_FRIEND_AVATAR_COLOR,
   type CommandId,
+  type EmployeeId,
   type EnvironmentId,
   type Friend,
   type FriendAvatarColor,
@@ -82,6 +83,7 @@ import * as PairingGrantStore from "../auth/PairingGrantStore.ts";
 import * as SessionStore from "../auth/SessionStore.ts";
 import { ServerConfig } from "../config.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
+import * as ServerSettings from "../serverSettings.ts";
 import * as OrchestrationEngine from "../orchestration/Services/OrchestrationEngine.ts";
 import * as ProjectionSnapshotQuery from "../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { resolveHeadlessConnectionString } from "../startupAccess.ts";
@@ -165,6 +167,7 @@ export const make = Effect.gen(function* () {
   const engine = yield* OrchestrationEngine.OrchestrationEngineService;
   const projections = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
   const serverConfig = yield* ServerConfig;
+  const serverSettings = yield* ServerSettings.ServerSettingsService;
   const crypto = yield* Crypto.Crypto;
   const httpClient = yield* HttpClient.HttpClient;
   const presence = yield* FriendPresence.make;
@@ -660,9 +663,28 @@ export const make = Effect.gen(function* () {
     }
   };
 
+  /**
+   * Employee display names, so a guest sees "Sol" rather than a generic "Agent"
+   * when the host works through a persona. Read once per room rather than per
+   * message: renaming an employee mid-conversation is rare, and the alternative
+   * is a settings read on every streamed delta.
+   */
+  const employeeNameResolver = serverSettings.getSettings.pipe(
+    Effect.map((settings) => {
+      const employees = settings.employees;
+      return (id: EmployeeId | undefined): string | null => {
+        if (id === undefined) {
+          return null;
+        }
+        return Object.hasOwn(employees, id) ? (employees[id]?.displayName ?? null) : null;
+      };
+    }),
+    Effect.catchCause(() => Effect.succeed((_id: EmployeeId | undefined) => null)),
+  );
+
   const toGuestMessage = (
     message: OrchestrationThread["messages"][number],
-    employeeNameOf: (id: string | undefined) => string | null,
+    employeeNameOf: (id: EmployeeId | undefined) => string | null,
   ): SharedThreadMessage => ({
     messageId: message.id,
     role: message.role,
@@ -773,6 +795,8 @@ export const make = Effect.gen(function* () {
           Effect.mapError((error) => streamFailure(error.reason, error.message)),
         );
 
+        const employeeNameOf = yield* employeeNameResolver;
+
         // Presence is scoped to this subscription, so a dropped socket removes
         // the viewer without any explicit leave message.
         yield* Effect.acquireRelease(presence.track({ friendId: record.friendId, threadId }), () =>
@@ -817,7 +841,9 @@ export const make = Effect.gen(function* () {
             type: "snapshot",
             payload: {
               thread: summaryOf({ ...loaded.value, host, canPrompt: share.canPrompt }),
-              messages: detail.value.messages.map((message) => toGuestMessage(message, () => null)),
+              messages: detail.value.messages.map((message) =>
+                toGuestMessage(message, employeeNameOf),
+              ),
               agentState: agentStateOf(loaded.value.thread),
               participants: yield* participantsOf,
             },
@@ -855,7 +881,7 @@ export const make = Effect.gen(function* () {
                       role: payload.role,
                       text: payload.text,
                       author: payload.author ?? null,
-                      speaker: null,
+                      speaker: employeeNameOf(payload.employeeId),
                       turnId: payload.turnId,
                       streaming: payload.streaming,
                       createdAt: payload.createdAt,

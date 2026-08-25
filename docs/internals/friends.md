@@ -101,6 +101,11 @@ untouched. It follows the same path `employeeId` already does — command → ev
 `projection_thread_messages.author_json` → snapshot query — so the host's timeline and the guest's
 room agree about who said what.
 
+The other half of attribution is `speaker`: when the host works through an employee, the guest sees
+that persona's display name instead of a generic "Agent". Employee names are resolved once when a
+room opens rather than per message, because renaming an employee mid-conversation is rare and the
+alternative is a settings read on every streamed delta.
+
 A friend's prompt is dispatched as an ordinary `thread.turn.start`. Running it through the same
 command as the owner's composer is what makes queueing, interrupts, and checkpointing behave
 identically for both people; there is no second code path for "remote" turns.
