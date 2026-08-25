@@ -10,9 +10,22 @@ import * as PlatformError from "effect/PlatformError";
 import { expandHomePath } from "../../pathExpansion.ts";
 
 export interface CodexHomeLayout {
-  readonly mode: "direct" | "authOverlay";
+  /**
+   * - `direct`: CODEX_HOME is the shared home. Codex and ML Code are the same
+   *   installation in every respect, including chat history.
+   * - `authOverlay`: separate account, shared everything else.
+   * - `privateHistory`: same account, separate history. The inverse of the one
+   *   above, and the two compose.
+   */
+  readonly mode: "direct" | "authOverlay" | "privateHistory";
   readonly sharedHomePath: string;
   readonly effectiveHomePath: string | undefined;
+  /**
+   * Whether a private-history home signs in with the shared account. False when
+   * the user asked for a separate account too, which is the only case where
+   * both separations are wanted at once.
+   */
+  readonly sharesAuth: boolean;
   readonly continuationKey: string;
 }
 
@@ -30,6 +43,31 @@ const KNOWN_SHARED_DIRECTORIES = [
 ] as const;
 
 const PRIVATE_ENTRY_NAMES = new Set(["auth.json", "models_cache.json"]);
+
+/**
+ * What a private-history home still borrows from the shared one.
+ *
+ * Deliberately an allowlist rather than a denylist of history files. Codex owns
+ * this directory and adds to it — rollouts, a session index, several sqlite
+ * databases, lock directories — and a denylist would silently leak each new
+ * kind of history the first time a Codex release introduced one. Anything not
+ * named here is ML Code's own.
+ *
+ * The entries here are configuration and capability, never conversation:
+ * credentials, config, instructions, and the skills/plugins that make Codex
+ * behave the way the user set it up.
+ */
+const PRIVATE_HISTORY_SHARED_ENTRY_NAMES = [
+  "auth.json",
+  "config.toml",
+  "AGENTS.md",
+  "instructions.md",
+  "skills",
+  "plugins",
+  "rules",
+  "prompts",
+  "vendor_imports",
+] as const;
 const SHADOW_LOCAL_ENTRY_NAMES = new Set(["log", "memories", "tmp"]);
 const REPLACEABLE_SHARED_RUNTIME_DIRECTORIES = new Set(["mcp-oauth-locks"]);
 
@@ -47,21 +85,33 @@ export const resolveCodexHomeLayout = Effect.fn("resolveCodexHomeLayout")(functi
   const path = yield* Path.Path;
   const sharedHomePath = resolveHomePath(path, config.homePath);
   const shadowHomePath = config.shadowHomePath.trim();
-  if (shadowHomePath.length === 0) {
+  const separateHistory = config.separateHistory;
+  if (shadowHomePath.length === 0 && !separateHistory) {
     return {
       mode: "direct",
       sharedHomePath,
       effectiveHomePath: config.homePath.trim().length > 0 ? sharedHomePath : undefined,
+      sharesAuth: true,
       continuationKey: `codex:home:${sharedHomePath}`,
     };
   }
 
-  const effectiveHomePath = path.resolve(expandHomePath(shadowHomePath));
+  const effectiveHomePath =
+    shadowHomePath.length > 0
+      ? path.resolve(expandHomePath(shadowHomePath))
+      : `${sharedHomePath}-mlcode`;
+
   return {
-    mode: "authOverlay",
+    mode: separateHistory ? "privateHistory" : "authOverlay",
     sharedHomePath,
     effectiveHomePath,
-    continuationKey: `codex:home:${sharedHomePath}`,
+    // Asking for a shadow home is asking for a separate account, so that stays
+    // the meaning of the setting even when private history is on as well.
+    sharesAuth: shadowHomePath.length === 0,
+    // Resume reads rollouts out of whichever home holds them, so continuation
+    // has to key on that home. Getting this wrong would offer to continue a
+    // thread whose transcript lives somewhere Codex is no longer looking.
+    continuationKey: `codex:home:${separateHistory ? effectiveHomePath : sharedHomePath}`,
   };
 });
 
@@ -317,9 +367,111 @@ const ensureShadowAuthIsPrivate = Effect.fn("CodexHomeLayout.ensureShadowAuthIsP
   },
 );
 
+/**
+ * Builds a home that shares an account and a configuration with the user's Codex
+ * install but keeps its own conversations.
+ *
+ * The interesting work is the removal pass: a home that was previously an
+ * `authOverlay` has `sessions` symlinked into the shared home, and leaving that
+ * link in place would mean the setting appeared to do nothing.
+ */
+const materializePrivateHistoryHome = Effect.fn("materializePrivateHistoryHome")(function* (input: {
+  readonly sharedHomePath: string;
+  readonly effectiveHomePath: string;
+  readonly shareAuth: boolean;
+}): Effect.fn.Return<void, CodexShadowHomeError, FileSystem.FileSystem | Path.Path> {
+  const fileSystem = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+
+  const makeDirectory = (directoryPath: string) =>
+    fileSystem.makeDirectory(directoryPath, { recursive: true }).pipe(
+      Effect.catchTags({
+        PlatformError: (cause) =>
+          new CodexShadowHomeFileSystemError({
+            sharedHomePath: input.sharedHomePath,
+            effectiveHomePath: input.effectiveHomePath,
+            operation: "makeDirectory",
+            path: directoryPath,
+            cause,
+          }),
+      }),
+    );
+
+  yield* makeDirectory(input.sharedHomePath);
+  yield* makeDirectory(input.effectiveHomePath);
+
+  const shared = new Set<string>(
+    PRIVATE_HISTORY_SHARED_ENTRY_NAMES.filter(
+      (entryName) => input.shareAuth || entryName !== "auth.json",
+    ),
+  );
+
+  const existingEntryNames = yield* fileSystem.readDirectory(input.effectiveHomePath).pipe(
+    Effect.catchTags({
+      PlatformError: (cause) =>
+        new CodexShadowHomeFileSystemError({
+          sharedHomePath: input.sharedHomePath,
+          effectiveHomePath: input.effectiveHomePath,
+          operation: "readDirectory",
+          path: input.effectiveHomePath,
+          cause,
+        }),
+    }),
+  );
+
+  // Anything linked out that is not on the allowlist becomes local again.
+  yield* Effect.forEach(
+    existingEntryNames.filter((entryName) => !shared.has(entryName)),
+    (entryName) =>
+      removePrivateSymlink({
+        fileSystem,
+        sharedHomePath: input.sharedHomePath,
+        effectiveHomePath: input.effectiveHomePath,
+        entryName,
+      }),
+    { discard: true },
+  );
+
+  // Only link what actually exists: a symlink to a missing target is worse than
+  // no symlink, because Codex would see a broken entry instead of creating one.
+  yield* Effect.forEach(
+    shared,
+    (entryName) =>
+      fileSystem.exists(path.join(input.sharedHomePath, entryName)).pipe(
+        Effect.catchTags({ PlatformError: () => Effect.succeed(false) }),
+        Effect.flatMap((present) =>
+          present
+            ? ensureSymlink({
+                fileSystem,
+                sharedHomePath: input.sharedHomePath,
+                effectiveHomePath: input.effectiveHomePath,
+                entryName,
+              })
+            : Effect.void,
+        ),
+      ),
+    { discard: true },
+  );
+});
+
 export const materializeCodexShadowHome = Effect.fn("materializeCodexShadowHome")(function* (
   layout: CodexHomeLayout,
 ) {
+  if (layout.mode === "privateHistory") {
+    const effectiveHomePath = layout.effectiveHomePath;
+    if (!effectiveHomePath) return;
+    if (layout.sharedHomePath === effectiveHomePath) {
+      return yield* new CodexShadowHomePathConflictError({
+        sharedHomePath: layout.sharedHomePath,
+        effectiveHomePath,
+      });
+    }
+    return yield* materializePrivateHistoryHome({
+      sharedHomePath: layout.sharedHomePath,
+      effectiveHomePath,
+      shareAuth: layout.sharesAuth,
+    });
+  }
   if (layout.mode !== "authOverlay") return;
   const effectiveHomePath = layout.effectiveHomePath;
   if (!effectiveHomePath) return;

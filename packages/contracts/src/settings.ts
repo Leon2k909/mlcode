@@ -302,6 +302,14 @@ export const CodexSettings = makeProviderSettingsSchema(
         },
       }),
     ),
+    separateHistory: Schema.Boolean.pipe(
+      Schema.withDecodingDefault(Effect.succeed(false)),
+      Schema.annotateKey({
+        title: "Keep chat history out of Codex",
+        description:
+          "Give ML Code its own Codex history so these chats do not appear in the Codex app. You stay signed in with the same account, and your Codex config, skills, and plugins keep working.",
+      }),
+    ),
     launchArgs: TrimmedString.pipe(
       Schema.withDecodingDefault(Effect.succeed("")),
       Schema.annotateKey({
@@ -315,7 +323,7 @@ export const CodexSettings = makeProviderSettingsSchema(
     ),
   },
   {
-    order: ["binaryPath", "homePath", "shadowHomePath", "launchArgs"],
+    order: ["binaryPath", "homePath", "shadowHomePath", "separateHistory", "launchArgs"],
   },
 );
 export type CodexSettings = typeof CodexSettings.Type;
