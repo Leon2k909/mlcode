@@ -106,6 +106,7 @@ import * as ProjectSetupScriptRunner from "./project/ProjectSetupScriptRunner.ts
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import * as BackgroundPolicy from "./background/BackgroundPolicy.ts";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
+import * as FriendService from "./friends/FriendService.ts";
 import { requiredScopeForRpcMethod } from "./auth/RpcAuthorization.ts";
 import * as ProcessDiagnostics from "./diagnostics/ProcessDiagnostics.ts";
 import * as ProcessResourceMonitor from "./diagnostics/ProcessResourceMonitor.ts";
@@ -358,6 +359,7 @@ function toAuthAccessStreamEvent(
 const makeWsRpcLayer = (
   currentSession: EnvironmentAuth.AuthenticatedSession,
   previewAutomationBroker: PreviewAutomationBroker.PreviewAutomationBroker["Service"],
+  friends: FriendService.FriendService["Service"],
 ) =>
   WsRpcGroup.toLayer(
     Effect.gen(function* () {
@@ -2411,6 +2413,98 @@ const makeWsRpcLayer = (
             ),
             { "rpc.aggregate": "server" },
           ),
+        // Friends — owner surface.
+        [WS_METHODS.friendsSubscribe]: (_input) =>
+          observeRpcStream(
+            WS_METHODS.friendsSubscribe,
+            friends.snapshots.pipe(
+              Stream.map((payload) => ({
+                version: 1 as const,
+                type: "snapshot" as const,
+                payload,
+              })),
+            ),
+            { "rpc.aggregate": "friends" },
+          ),
+        [WS_METHODS.friendsCreateInvite]: (_input) =>
+          observeRpcEffect(WS_METHODS.friendsCreateInvite, friends.createInvite, {
+            "rpc.aggregate": "friends",
+          }),
+        [WS_METHODS.friendsRedeemInvite]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.friendsRedeemInvite,
+            friends.redeemInvite(input.code).pipe(Effect.as({})),
+            { "rpc.aggregate": "friends" },
+          ),
+        [WS_METHODS.friendsRemove]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.friendsRemove,
+            friends.removeFriend(input.friendId).pipe(Effect.as({})),
+            { "rpc.aggregate": "friends" },
+          ),
+        [WS_METHODS.friendsMarkAnnounced]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.friendsMarkAnnounced,
+            friends.markAnnounced(input.friendId).pipe(Effect.as({})),
+            { "rpc.aggregate": "friends" },
+          ),
+        [WS_METHODS.friendsGetLinkCredential]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.friendsGetLinkCredential,
+            friends.getLinkCredential(input.friendId),
+            { "rpc.aggregate": "friends" },
+          ),
+        [WS_METHODS.friendsUpdateProfile]: (input) =>
+          observeRpcEffect(WS_METHODS.friendsUpdateProfile, friends.updateProfile(input), {
+            "rpc.aggregate": "friends",
+          }),
+        [WS_METHODS.friendsShareThread]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.friendsShareThread,
+            friends.shareThread(input).pipe(Effect.as({})),
+            { "rpc.aggregate": "friends" },
+          ),
+        [WS_METHODS.friendsUnshareThread]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.friendsUnshareThread,
+            friends.unshareThread(input).pipe(Effect.as({})),
+            { "rpc.aggregate": "friends" },
+          ),
+
+        // Friends — guest surface. `currentSession.subject` is the caller's
+        // identity here: it was fixed when their friend code was redeemed and
+        // cannot be chosen by the client, so the service resolves it back to a
+        // link rather than trusting anything in the payload.
+        [WS_METHODS.friendsGuestAnnounce]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.friendsGuestAnnounce,
+            friends.guestAnnounce(currentSession.subject, input).pipe(Effect.as({})),
+            { "rpc.aggregate": "friends" },
+          ),
+        [WS_METHODS.friendsGuestSubscribeThreads]: (_input) =>
+          observeRpcStream(
+            WS_METHODS.friendsGuestSubscribeThreads,
+            friends.guestSharedThreads(currentSession.subject).pipe(
+              Stream.map((payload) => ({
+                version: 1 as const,
+                type: "snapshot" as const,
+                payload,
+              })),
+            ),
+            { "rpc.aggregate": "friends" },
+          ),
+        [WS_METHODS.friendsGuestSubscribeThread]: (input) =>
+          observeRpcStream(
+            WS_METHODS.friendsGuestSubscribeThread,
+            friends.guestSharedThread(currentSession.subject, input.threadId),
+            { "rpc.aggregate": "friends" },
+          ),
+        [WS_METHODS.friendsGuestPostMessage]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.friendsGuestPostMessage,
+            friends.guestPostMessage(currentSession.subject, input),
+            { "rpc.aggregate": "friends" },
+          ),
       });
     }),
   );
@@ -2420,6 +2514,10 @@ export const websocketRpcRouteLayer = Layer.unwrap(
     const previewAutomationBroker = yield* PreviewAutomationBroker.PreviewAutomationBroker;
     const serverSelfUpdate = yield* ServerSelfUpdate.ServerSelfUpdate;
     const pullRequests = yield* PullRequestService.PullRequestService;
+    // Server-lifetime, like the PR service below it: friend presence and the
+    // snapshot PubSub are shared state, and one instance per socket would give
+    // each client its own idea of who is online.
+    const friends = yield* FriendService.FriendService;
     return HttpRouter.add(
       "GET",
       "/ws",
@@ -2439,7 +2537,7 @@ export const websocketRpcRouteLayer = Layer.unwrap(
           disableTracing: true,
         }).pipe(
           Effect.provide(
-            makeWsRpcLayer(session, previewAutomationBroker).pipe(
+            makeWsRpcLayer(session, previewAutomationBroker, friends).pipe(
               Layer.provideMerge(RpcSerialization.layerJson),
               Layer.provide(ProviderMaintenanceRunner.layer),
               Layer.provide(Layer.succeed(ServerSelfUpdate.ServerSelfUpdate, serverSelfUpdate)),

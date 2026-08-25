@@ -609,7 +609,12 @@ const buildAppUnderTest = (options?: {
     );
 
     const servedRoutesLayer = HttpRouter.serve(
-      makeRoutesLayer.pipe(Layer.provide(serviceLauncherClientLayer)),
+      makeRoutesLayer.pipe(
+        Layer.provide(serviceLauncherClientLayer),
+        // Friend links and thread shares are persisted, so the routes layer now
+        // needs a database the way the auth layer above it already does.
+        Layer.provide(SqlitePersistenceMemory),
+      ),
       {
         disableListenLog: true,
         disableLogger: true,

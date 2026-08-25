@@ -20,6 +20,7 @@ import {
   SearchIcon,
   Settings2Icon,
   UsersIcon,
+  UsersRoundIcon,
   XIcon,
 } from "lucide-react";
 import { useCanGoBack, useLocation, useNavigate } from "@tanstack/react-router";
@@ -53,6 +54,7 @@ const SETTINGS_SECTION_ICONS: Readonly<
   "/settings/keybindings": KeyboardIcon,
   "/settings/providers": BotIcon,
   "/settings/employees": UsersIcon,
+  "/settings/friends": UsersRoundIcon,
   "/settings/pets": PawPrintIcon,
   "/settings/source-control": GitBranchIcon,
   "/settings/connections": Link2Icon,

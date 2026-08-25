@@ -5,7 +5,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Struct from "effect/Struct";
-import { ChatAttachment, EmployeeId, ModelSelection } from "@t3tools/contracts";
+import { ChatAttachment, EmployeeId, MessageAuthor, ModelSelection } from "@t3tools/contracts";
 
 import { toPersistenceSqlError } from "../Errors.ts";
 import {
@@ -22,6 +22,7 @@ const ProjectionThreadMessageDbRowSchema = ProjectionThreadMessage.mapFields(
   Struct.assign({
     isStreaming: Schema.Number,
     employeeId: Schema.NullOr(EmployeeId),
+    author: Schema.NullOr(Schema.fromJsonString(MessageAuthor)),
     modelSelection: Schema.NullOr(Schema.fromJsonString(ModelSelection)),
     attachments: Schema.NullOr(Schema.fromJsonString(Schema.Array(ChatAttachment))),
   }),
@@ -40,6 +41,7 @@ function toProjectionThreadMessage(
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     ...(row.employeeId !== null ? { employeeId: row.employeeId } : {}),
+    ...(row.author !== null ? { author: row.author } : {}),
     ...(row.modelSelection !== null ? { modelSelection: row.modelSelection } : {}),
     ...(row.attachments !== null ? { attachments: row.attachments } : {}),
   };
@@ -55,6 +57,7 @@ const makeProjectionThreadMessageRepository = Effect.gen(function* () {
         row.attachments !== undefined ? JSON.stringify(row.attachments) : null;
       const nextModelSelectionJson =
         row.modelSelection !== undefined ? JSON.stringify(row.modelSelection) : null;
+      const nextAuthorJson = row.author !== undefined ? JSON.stringify(row.author) : null;
       return sql`
         INSERT INTO projection_thread_messages (
           message_id,
@@ -63,6 +66,7 @@ const makeProjectionThreadMessageRepository = Effect.gen(function* () {
           role,
           text,
           employee_id,
+          author_json,
           model_selection_json,
           attachments_json,
           is_streaming,
@@ -79,6 +83,14 @@ const makeProjectionThreadMessageRepository = Effect.gen(function* () {
             ${row.employeeId ?? null},
             (
               SELECT employee_id
+              FROM projection_thread_messages
+              WHERE message_id = ${row.messageId}
+            )
+          ),
+          COALESCE(
+            ${nextAuthorJson},
+            (
+              SELECT author_json
               FROM projection_thread_messages
               WHERE message_id = ${row.messageId}
             )
@@ -113,6 +125,10 @@ const makeProjectionThreadMessageRepository = Effect.gen(function* () {
             excluded.employee_id,
             projection_thread_messages.employee_id
           ),
+          author_json = COALESCE(
+            excluded.author_json,
+            projection_thread_messages.author_json
+          ),
           model_selection_json = COALESCE(
             excluded.model_selection_json,
             projection_thread_messages.model_selection_json
@@ -140,6 +156,7 @@ const makeProjectionThreadMessageRepository = Effect.gen(function* () {
           role,
           text,
           employee_id AS "employeeId",
+          author_json AS "author",
           model_selection_json AS "modelSelection",
           attachments_json AS "attachments",
           is_streaming AS "isStreaming",
@@ -163,6 +180,7 @@ const makeProjectionThreadMessageRepository = Effect.gen(function* () {
           role,
           text,
           employee_id AS "employeeId",
+          author_json AS "author",
           model_selection_json AS "modelSelection",
           attachments_json AS "attachments",
           is_streaming AS "isStreaming",

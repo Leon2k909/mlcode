@@ -81,6 +81,14 @@ export const AuthAccessReadScope = "access:read" as const;
 export const AuthAccessWriteScope = "access:write" as const;
 export const AuthRelayReadScope = "relay:read" as const;
 export const AuthRelayWriteScope = "relay:write" as const;
+/**
+ * Held by a linked friend's session and by nothing else. It authorizes the
+ * `friends.guest*` methods only, and each of those re-checks that the caller has
+ * been granted the specific thread it names. It is deliberately disjoint from
+ * every other scope: a friend session cannot read a project, open a terminal,
+ * browse the filesystem, or see a thread that was not shared with it.
+ */
+export const AuthFriendParticipateScope = "friend:participate" as const;
 export const AuthEnvironmentScope = Schema.Literals([
   AuthOrchestrationReadScope,
   AuthOrchestrationOperateScope,
@@ -90,6 +98,7 @@ export const AuthEnvironmentScope = Schema.Literals([
   AuthAccessWriteScope,
   AuthRelayReadScope,
   AuthRelayWriteScope,
+  AuthFriendParticipateScope,
 ]);
 export type AuthEnvironmentScope = typeof AuthEnvironmentScope.Type;
 export const AuthEnvironmentScopes = Schema.Array(AuthEnvironmentScope);
@@ -108,6 +117,21 @@ export const AuthAdministrativeScopes = [
   AuthAccessWriteScope,
   AuthRelayWriteScope,
 ] as const;
+/**
+ * The entire grant a friend link carries. It is intentionally not a subset of
+ * the client or administrative sets, and nothing else should ever be issued
+ * alongside it — a session either participates in shared threads or operates the
+ * environment, never both.
+ */
+export const AuthFriendScopes = [AuthFriendParticipateScope] as const;
+
+/**
+ * True when a scope set is exactly a friend grant. Used to route friend sessions
+ * onto their own lifetime and to keep them out of the authorized-clients list of
+ * ordinary devices.
+ */
+export const isFriendScopeSet = (scopes: ReadonlyArray<string>): boolean =>
+  scopes.length === 1 && scopes[0] === AuthFriendParticipateScope;
 
 export const AuthTokenExchangeGrantType =
   "urn:ietf:params:oauth:grant-type:token-exchange" as const;

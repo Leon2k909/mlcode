@@ -1002,6 +1002,11 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
               : previousMessage?.employeeId !== undefined
                 ? { employeeId: previousMessage.employeeId }
                 : {}),
+            ...(event.payload.author !== undefined
+              ? { author: event.payload.author }
+              : previousMessage?.author !== undefined
+                ? { author: previousMessage.author }
+                : {}),
             ...(event.payload.modelSelection !== undefined
               ? { modelSelection: event.payload.modelSelection }
               : previousMessage?.modelSelection !== undefined

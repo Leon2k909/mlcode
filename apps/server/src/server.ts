@@ -24,6 +24,8 @@ import { websocketRpcRouteLayer } from "./ws.ts";
 import * as ExternalLauncher from "./process/externalLauncher.ts";
 import { pullRequestHttpApiLayer } from "./pullRequest/http.ts";
 import * as PullRequestProviderRegistry from "./pullRequest/PullRequestProviderRegistry.ts";
+import * as FriendService from "./friends/FriendService.ts";
+import * as FriendStore from "./friends/FriendStore.ts";
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
 import { layerConfig as SqlitePersistenceLayerLive } from "./persistence/Layers/Sqlite.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
@@ -433,6 +435,13 @@ const commandReadinessLayer = HttpRouter.middleware(
   { global: true },
 );
 
+/**
+ * Friends sits above orchestration: it reads the same projections the owner's UI
+ * reads and dispatches the same turn command, so a friend's prompt is
+ * indistinguishable from the owner's once it reaches the engine.
+ */
+const FriendServiceLive = FriendService.layer.pipe(Layer.provide(FriendStore.layer));
+
 const PullRequestServiceLive = PullRequestService.layer.pipe(
   // One registry entry per supported host; the service only knows the registry.
   Layer.provide(PullRequestProviderRegistry.layer),
@@ -460,6 +469,7 @@ export const makeRoutesLayer = Layer.mergeAll(
   // Both transports consume the same service instance, so caches single-flight across clients
   // and mutations observed on WebSocket invalidate patches subsequently read over HTTP.
   Layer.provide(PullRequestServiceLive),
+  Layer.provide(FriendServiceLive),
   Layer.provide(PreviewAutomationBroker.layer),
   Layer.provide(ServerSelfUpdate.layer),
   Layer.provide(commandReadinessLayer),

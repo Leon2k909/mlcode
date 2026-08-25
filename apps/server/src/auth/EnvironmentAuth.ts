@@ -3,6 +3,7 @@ import {
   AuthAccessWriteScope,
   AuthAdministrativeScopes,
   AuthStandardClientScopes,
+  isFriendScopeSet,
   type AuthAccessTokenResult,
   type AuthBrowserSessionResult,
   type AuthClientMetadata,
@@ -34,6 +35,13 @@ import * as ServerSecretStore from "./ServerSecretStore.ts";
 import * as SessionStore from "./SessionStore.ts";
 import { verifyRequestDpopProof } from "./dpop.ts";
 import { layerConfig as SqlitePersistenceLayer } from "../persistence/Layers/Sqlite.ts";
+
+/**
+ * Friend sessions outlive ordinary device sessions on purpose: see the note
+ * at the exchange site. Removing the friend revokes the session immediately,
+ * which is the control that actually matters.
+ */
+const FRIEND_SESSION_TTL = Duration.days(365);
 
 export const DEFAULT_SESSION_SUBJECT = "cli-issued-session";
 export const INTERNAL_ADMINISTRATIVE_BOOTSTRAP_SUBJECT = "administrative-bootstrap";
@@ -698,6 +706,12 @@ export const make = Effect.gen(function* () {
             if (!grantedScopes.every((scope) => grant.scopes.includes(scope))) {
               return yield* new ServerAuthScopeNotGrantedError({});
             }
+            // A friend link is a relationship, not a device login. Expiring it on
+            // the ordinary session clock would silently drop people out of shared
+            // chats a month after they were invited, with no way back except
+            // trading codes again. Revocation is the intended way out, and
+            // removing the friend performs it.
+            const isFriendGrant = isFriendScopeSet(grantedScopes);
             return yield* sessions
               .issue({
                 method: input?.proofKeyThumbprint ? "dpop-access-token" : "bearer-access-token",
@@ -708,7 +722,9 @@ export const make = Effect.gen(function* () {
                       proofKeyThumbprint: input.proofKeyThumbprint,
                       ttl: Duration.hours(1),
                     }
-                  : {}),
+                  : isFriendGrant
+                    ? { ttl: FRIEND_SESSION_TTL }
+                    : {}),
                 client: {
                   ...requestMetadata,
                   ...(grant.label ? { label: grant.label } : {}),

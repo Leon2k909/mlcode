@@ -11,6 +11,7 @@ export * from "./terminal.ts";
 export * from "./provider.ts";
 export * from "./providerInstance.ts";
 export * from "./employee.ts";
+export * from "./friends.ts";
 export * from "./providerRuntime.ts";
 export * from "./providerRealtime.ts";
 export * from "./model.ts";

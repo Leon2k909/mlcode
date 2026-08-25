@@ -1,5 +1,6 @@
 import {
   AuthAccessReadScope,
+  AuthFriendParticipateScope,
   AuthOrchestrationOperateScope,
   AuthOrchestrationReadScope,
   AuthRelayReadScope,
@@ -130,6 +131,25 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.subscribeServerLifecycle]: AuthOrchestrationReadScope,
   [WS_METHODS.subscribeAuthAccess]: AuthAccessReadScope,
   [WS_METHODS.subscribeBackgroundPolicy]: AuthOrchestrationReadScope,
+  // Owner-facing friends management is ordinary environment operation: seeing
+  // who you are linked to is a read, changing links or shares is a write.
+  [WS_METHODS.friendsSubscribe]: AuthOrchestrationReadScope,
+  [WS_METHODS.friendsCreateInvite]: AuthOrchestrationOperateScope,
+  [WS_METHODS.friendsRedeemInvite]: AuthOrchestrationOperateScope,
+  [WS_METHODS.friendsRemove]: AuthOrchestrationOperateScope,
+  [WS_METHODS.friendsMarkAnnounced]: AuthOrchestrationOperateScope,
+  // Operate, not read: this hands back a bearer token for another environment.
+  [WS_METHODS.friendsGetLinkCredential]: AuthOrchestrationOperateScope,
+  [WS_METHODS.friendsUpdateProfile]: AuthOrchestrationOperateScope,
+  [WS_METHODS.friendsShareThread]: AuthOrchestrationOperateScope,
+  [WS_METHODS.friendsUnshareThread]: AuthOrchestrationOperateScope,
+  // The guest surface. `friend:participate` unlocks these four and nothing
+  // else, and each handler still re-checks the share grant for the thread it
+  // was handed. Holding a friend session is not authorization to read a thread.
+  [WS_METHODS.friendsGuestAnnounce]: AuthFriendParticipateScope,
+  [WS_METHODS.friendsGuestSubscribeThreads]: AuthFriendParticipateScope,
+  [WS_METHODS.friendsGuestSubscribeThread]: AuthFriendParticipateScope,
+  [WS_METHODS.friendsGuestPostMessage]: AuthFriendParticipateScope,
 } as const satisfies Readonly<Record<WsRpcMethod, AuthEnvironmentScope>>;
 
 export function requiredScopeForRpcMethod(method: string): AuthEnvironmentScope {

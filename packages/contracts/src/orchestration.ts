@@ -23,6 +23,7 @@ import {
 } from "./baseSchemas.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
 import { EmployeeId } from "./employee.ts";
+import { MessageAuthor } from "./friends.ts";
 
 export const ORCHESTRATION_WS_METHODS = {
   dispatchCommand: "orchestration.dispatchCommand",
@@ -265,6 +266,9 @@ export const OrchestrationMessage = Schema.Struct({
   // Employee-authored messages carry their durable speaker identity. Human
   // messages omit it.
   employeeId: Schema.optional(EmployeeId),
+  // Set when a linked friend wrote this message. Absent means the environment
+  // owner wrote it, which is the overwhelmingly common case.
+  author: Schema.optional(MessageAuthor),
   /** Effective provider/model selection used to produce this assistant row. */
   modelSelection: Schema.optional(ModelSelection),
   attachments: Schema.optional(Schema.Array(ChatAttachment)),
@@ -884,6 +888,9 @@ export const ThreadTurnStartCommand = Schema.Struct({
     // Only server-authored employee-to-employee messages set this. The client
     // command below intentionally omits it.
     employeeId: Schema.optional(EmployeeId),
+    // Set by the friends surface when a linked friend prompted this turn. Not
+    // on the client command: a client cannot claim to be somebody else.
+    author: Schema.optional(MessageAuthor),
   }),
   modelSelection: Schema.optional(ModelSelection),
   titleSeed: Schema.optional(TrimmedNonEmptyString),
@@ -1316,6 +1323,7 @@ export const ThreadMessageSentPayload = Schema.Struct({
   role: OrchestrationMessageRole,
   text: Schema.String,
   employeeId: Schema.optional(EmployeeId),
+  author: Schema.optional(MessageAuthor),
   modelSelection: Schema.optional(ModelSelection),
   attachments: Schema.optional(Schema.Array(ChatAttachment)),
   turnId: Schema.NullOr(TurnId),

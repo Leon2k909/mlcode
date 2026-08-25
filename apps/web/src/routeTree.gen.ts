@@ -21,6 +21,7 @@ import { Route as SettingsProvidersRouteImport } from './routes/settings.provide
 import { Route as SettingsPetsRouteImport } from './routes/settings.pets'
 import { Route as SettingsKeybindingsRouteImport } from './routes/settings.keybindings'
 import { Route as SettingsGeneralRouteImport } from './routes/settings.general'
+import { Route as SettingsFriendsRouteImport } from './routes/settings.friends'
 import { Route as SettingsEmployeesRouteImport } from './routes/settings.employees'
 import { Route as SettingsDiagnosticsRouteImport } from './routes/settings.diagnostics'
 import { Route as SettingsConnectionsRouteImport } from './routes/settings.connections'
@@ -29,8 +30,10 @@ import { Route as SettingsAppearanceRouteImport } from './routes/settings.appear
 import { Route as ProjectsProjectKeyRouteImport } from './routes/projects.$projectKey'
 import { Route as ConnectCallbackRouteImport } from './routes/connect_.callback'
 import { Route as ChatPullRequestsRouteImport } from './routes/_chat.pull-requests'
+import { Route as ChatFriendsIndexRouteImport } from './routes/_chat.friends.index'
 import { Route as ChatDraftDraftIdRouteImport } from './routes/_chat.draft.$draftId'
 import { Route as ChatEnvironmentIdThreadIdRouteImport } from './routes/_chat.$environmentId.$threadId'
+import { Route as ChatFriendsFriendIdThreadIdRouteImport } from './routes/_chat.friends.$friendId.$threadId'
 
 const UsageRoute = UsageRouteImport.update({
   id: '/usage',
@@ -91,6 +94,11 @@ const SettingsGeneralRoute = SettingsGeneralRouteImport.update({
   path: '/general',
   getParentRoute: () => SettingsRoute,
 } as any)
+const SettingsFriendsRoute = SettingsFriendsRouteImport.update({
+  id: '/friends',
+  path: '/friends',
+  getParentRoute: () => SettingsRoute,
+} as any)
 const SettingsEmployeesRoute = SettingsEmployeesRouteImport.update({
   id: '/employees',
   path: '/employees',
@@ -131,6 +139,11 @@ const ChatPullRequestsRoute = ChatPullRequestsRouteImport.update({
   path: '/pull-requests',
   getParentRoute: () => ChatRoute,
 } as any)
+const ChatFriendsIndexRoute = ChatFriendsIndexRouteImport.update({
+  id: '/friends/',
+  path: '/friends/',
+  getParentRoute: () => ChatRoute,
+} as any)
 const ChatDraftDraftIdRoute = ChatDraftDraftIdRouteImport.update({
   id: '/draft/$draftId',
   path: '/draft/$draftId',
@@ -140,6 +153,12 @@ const ChatEnvironmentIdThreadIdRoute =
   ChatEnvironmentIdThreadIdRouteImport.update({
     id: '/$environmentId/$threadId',
     path: '/$environmentId/$threadId',
+    getParentRoute: () => ChatRoute,
+  } as any)
+const ChatFriendsFriendIdThreadIdRoute =
+  ChatFriendsFriendIdThreadIdRouteImport.update({
+    id: '/friends/$friendId/$threadId',
+    path: '/friends/$friendId/$threadId',
     getParentRoute: () => ChatRoute,
   } as any)
 
@@ -157,6 +176,7 @@ export interface FileRoutesByFullPath {
   '/settings/connections': typeof SettingsConnectionsRoute
   '/settings/diagnostics': typeof SettingsDiagnosticsRoute
   '/settings/employees': typeof SettingsEmployeesRoute
+  '/settings/friends': typeof SettingsFriendsRoute
   '/settings/general': typeof SettingsGeneralRoute
   '/settings/keybindings': typeof SettingsKeybindingsRoute
   '/settings/pets': typeof SettingsPetsRoute
@@ -165,6 +185,8 @@ export interface FileRoutesByFullPath {
   '/settings/usage': typeof SettingsUsageRoute
   '/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
   '/draft/$draftId': typeof ChatDraftDraftIdRoute
+  '/friends/': typeof ChatFriendsIndexRoute
+  '/friends/$friendId/$threadId': typeof ChatFriendsFriendIdThreadIdRoute
 }
 export interface FileRoutesByTo {
   '/connect': typeof ConnectRoute
@@ -179,6 +201,7 @@ export interface FileRoutesByTo {
   '/settings/connections': typeof SettingsConnectionsRoute
   '/settings/diagnostics': typeof SettingsDiagnosticsRoute
   '/settings/employees': typeof SettingsEmployeesRoute
+  '/settings/friends': typeof SettingsFriendsRoute
   '/settings/general': typeof SettingsGeneralRoute
   '/settings/keybindings': typeof SettingsKeybindingsRoute
   '/settings/pets': typeof SettingsPetsRoute
@@ -188,6 +211,8 @@ export interface FileRoutesByTo {
   '/': typeof ChatIndexRoute
   '/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
   '/draft/$draftId': typeof ChatDraftDraftIdRoute
+  '/friends': typeof ChatFriendsIndexRoute
+  '/friends/$friendId/$threadId': typeof ChatFriendsFriendIdThreadIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -204,6 +229,7 @@ export interface FileRoutesById {
   '/settings/connections': typeof SettingsConnectionsRoute
   '/settings/diagnostics': typeof SettingsDiagnosticsRoute
   '/settings/employees': typeof SettingsEmployeesRoute
+  '/settings/friends': typeof SettingsFriendsRoute
   '/settings/general': typeof SettingsGeneralRoute
   '/settings/keybindings': typeof SettingsKeybindingsRoute
   '/settings/pets': typeof SettingsPetsRoute
@@ -213,6 +239,8 @@ export interface FileRoutesById {
   '/_chat/': typeof ChatIndexRoute
   '/_chat/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
   '/_chat/draft/$draftId': typeof ChatDraftDraftIdRoute
+  '/_chat/friends/': typeof ChatFriendsIndexRoute
+  '/_chat/friends/$friendId/$threadId': typeof ChatFriendsFriendIdThreadIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -230,6 +258,7 @@ export interface FileRouteTypes {
     | '/settings/connections'
     | '/settings/diagnostics'
     | '/settings/employees'
+    | '/settings/friends'
     | '/settings/general'
     | '/settings/keybindings'
     | '/settings/pets'
@@ -238,6 +267,8 @@ export interface FileRouteTypes {
     | '/settings/usage'
     | '/$environmentId/$threadId'
     | '/draft/$draftId'
+    | '/friends/'
+    | '/friends/$friendId/$threadId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/connect'
@@ -252,6 +283,7 @@ export interface FileRouteTypes {
     | '/settings/connections'
     | '/settings/diagnostics'
     | '/settings/employees'
+    | '/settings/friends'
     | '/settings/general'
     | '/settings/keybindings'
     | '/settings/pets'
@@ -261,6 +293,8 @@ export interface FileRouteTypes {
     | '/'
     | '/$environmentId/$threadId'
     | '/draft/$draftId'
+    | '/friends'
+    | '/friends/$friendId/$threadId'
   id:
     | '__root__'
     | '/_chat'
@@ -276,6 +310,7 @@ export interface FileRouteTypes {
     | '/settings/connections'
     | '/settings/diagnostics'
     | '/settings/employees'
+    | '/settings/friends'
     | '/settings/general'
     | '/settings/keybindings'
     | '/settings/pets'
@@ -285,6 +320,8 @@ export interface FileRouteTypes {
     | '/_chat/'
     | '/_chat/$environmentId/$threadId'
     | '/_chat/draft/$draftId'
+    | '/_chat/friends/'
+    | '/_chat/friends/$friendId/$threadId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -383,6 +420,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsGeneralRouteImport
       parentRoute: typeof SettingsRoute
     }
+    '/settings/friends': {
+      id: '/settings/friends'
+      path: '/friends'
+      fullPath: '/settings/friends'
+      preLoaderRoute: typeof SettingsFriendsRouteImport
+      parentRoute: typeof SettingsRoute
+    }
     '/settings/employees': {
       id: '/settings/employees'
       path: '/employees'
@@ -439,6 +483,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ChatPullRequestsRouteImport
       parentRoute: typeof ChatRoute
     }
+    '/_chat/friends/': {
+      id: '/_chat/friends/'
+      path: '/friends'
+      fullPath: '/friends/'
+      preLoaderRoute: typeof ChatFriendsIndexRouteImport
+      parentRoute: typeof ChatRoute
+    }
     '/_chat/draft/$draftId': {
       id: '/_chat/draft/$draftId'
       path: '/draft/$draftId'
@@ -453,6 +504,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ChatEnvironmentIdThreadIdRouteImport
       parentRoute: typeof ChatRoute
     }
+    '/_chat/friends/$friendId/$threadId': {
+      id: '/_chat/friends/$friendId/$threadId'
+      path: '/friends/$friendId/$threadId'
+      fullPath: '/friends/$friendId/$threadId'
+      preLoaderRoute: typeof ChatFriendsFriendIdThreadIdRouteImport
+      parentRoute: typeof ChatRoute
+    }
   }
 }
 
@@ -461,6 +519,8 @@ interface ChatRouteChildren {
   ChatIndexRoute: typeof ChatIndexRoute
   ChatEnvironmentIdThreadIdRoute: typeof ChatEnvironmentIdThreadIdRoute
   ChatDraftDraftIdRoute: typeof ChatDraftDraftIdRoute
+  ChatFriendsIndexRoute: typeof ChatFriendsIndexRoute
+  ChatFriendsFriendIdThreadIdRoute: typeof ChatFriendsFriendIdThreadIdRoute
 }
 
 const ChatRouteChildren: ChatRouteChildren = {
@@ -468,6 +528,8 @@ const ChatRouteChildren: ChatRouteChildren = {
   ChatIndexRoute: ChatIndexRoute,
   ChatEnvironmentIdThreadIdRoute: ChatEnvironmentIdThreadIdRoute,
   ChatDraftDraftIdRoute: ChatDraftDraftIdRoute,
+  ChatFriendsIndexRoute: ChatFriendsIndexRoute,
+  ChatFriendsFriendIdThreadIdRoute: ChatFriendsFriendIdThreadIdRoute,
 }
 
 const ChatRouteWithChildren = ChatRoute._addFileChildren(ChatRouteChildren)
@@ -478,6 +540,7 @@ interface SettingsRouteChildren {
   SettingsConnectionsRoute: typeof SettingsConnectionsRoute
   SettingsDiagnosticsRoute: typeof SettingsDiagnosticsRoute
   SettingsEmployeesRoute: typeof SettingsEmployeesRoute
+  SettingsFriendsRoute: typeof SettingsFriendsRoute
   SettingsGeneralRoute: typeof SettingsGeneralRoute
   SettingsKeybindingsRoute: typeof SettingsKeybindingsRoute
   SettingsPetsRoute: typeof SettingsPetsRoute
@@ -492,6 +555,7 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsConnectionsRoute: SettingsConnectionsRoute,
   SettingsDiagnosticsRoute: SettingsDiagnosticsRoute,
   SettingsEmployeesRoute: SettingsEmployeesRoute,
+  SettingsFriendsRoute: SettingsFriendsRoute,
   SettingsGeneralRoute: SettingsGeneralRoute,
   SettingsKeybindingsRoute: SettingsKeybindingsRoute,
   SettingsPetsRoute: SettingsPetsRoute,

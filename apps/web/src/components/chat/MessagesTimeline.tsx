@@ -51,6 +51,7 @@ import {
   resolveFileDiffPath,
 } from "../../lib/diffRendering";
 import ChatMarkdown from "../ChatMarkdown";
+import { FriendAvatar } from "../friends/FriendAvatar";
 import {
   BotIcon,
   CheckIcon,
@@ -1240,8 +1241,22 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
   const canRevertAgentWork = typeof row.revertTurnCount === "number";
   const canDeleteUserMessage = row.canDeleteUserMessage === true;
 
+  const author = row.message.author;
+
   return (
     <div className="group flex flex-col items-end gap-1">
+      {author === undefined ? null : (
+        // A friend's prompt lands in the same right-aligned bubble as your own,
+        // so without a name you would have no way to tell who asked for what.
+        <span className="flex items-center gap-1.5 pr-1 text-[11px] text-muted-foreground">
+          <FriendAvatar
+            displayName={author.displayName}
+            avatarColor={author.avatarColor}
+            size="sm"
+          />
+          {author.displayName}
+        </span>
+      )}
       <div className="relative max-w-[80%] rounded-2xl bg-message p-3 text-message-foreground">
         {regularImages.length > 0 && (
           <div className="mb-2 grid max-w-[420px] grid-cols-2 gap-2">
