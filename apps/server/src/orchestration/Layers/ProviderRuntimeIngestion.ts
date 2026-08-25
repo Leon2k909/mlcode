@@ -30,6 +30,7 @@ import * as Cache from "effect/Cache";
 import * as Cause from "effect/Cause";
 import * as Crypto from "effect/Crypto";
 import * as Duration from "effect/Duration";
+import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -141,6 +142,22 @@ const BUFFERED_PROPOSED_PLAN_BY_ID_TTL = Duration.minutes(120);
 const TASK_DESCRIPTION_BY_TASK_CACHE_CAPACITY = 10_000;
 const TASK_DESCRIPTION_BY_TASK_TTL = Duration.minutes(120);
 const MAX_BUFFERED_ASSISTANT_CHARS = 24_000;
+/**
+ * How often buffered assistant text reaches the UI while a reply is being
+ * written.
+ *
+ * The two obvious settings are both wrong. Dispatching every token costs a
+ * command, a SQL transaction, a projection, and a socket frame per token, which
+ * is what `enableLegacyTokenStreaming` opts back into and why it is not the
+ * default. Dispatching only at the end of the turn — what this used to do —
+ * costs almost nothing and shows the user a dead pane until the whole answer
+ * lands, which reads as the app being slow even when the model is fast.
+ *
+ * Coalescing on a short interval gets both: the reply appears to stream, at
+ * roughly eight updates a second, for one or two orders of magnitude fewer
+ * dispatches than a token stream on a fast model.
+ */
+const ASSISTANT_STREAM_FLUSH_INTERVAL_MS = 120;
 const MAX_EMPLOYEE_HANDOFF_TEXT_CHARS = 32_000;
 const STRICT_PROVIDER_LIFECYCLE_GUARD = process.env.T3CODE_STRICT_PROVIDER_LIFECYCLE_GUARD !== "0";
 
@@ -968,10 +985,15 @@ const make = Effect.gen(function* () {
     lookup: () => Effect.succeed(new Set<MessageId>()),
   });
 
-  const bufferedAssistantTextByMessageId = yield* Cache.make<MessageId, string>({
+  // `flushedAt` rides along with the text so pacing state expires on the same
+  // TTL as the buffer it paces; a separate map would outlive abandoned messages.
+  const bufferedAssistantTextByMessageId = yield* Cache.make<
+    MessageId,
+    { readonly text: string; readonly flushedAt: number }
+  >({
     capacity: BUFFERED_MESSAGE_TEXT_BY_MESSAGE_ID_CACHE_CAPACITY,
     timeToLive: BUFFERED_MESSAGE_TEXT_BY_MESSAGE_ID_TTL,
-    lookup: () => Effect.succeed(""),
+    lookup: () => Effect.succeed({ text: "", flushedAt: 0 }),
   });
 
   // A second, turn-scoped buffer retains the complete employee reply until
@@ -1224,31 +1246,58 @@ const make = Effect.gen(function* () {
       });
     });
 
+  /**
+   * Accumulates a delta and returns the text that is ready to be dispatched, or
+   * an empty string while it is still worth waiting. The caller dispatches
+   * whatever comes back, so partial and final flushes travel the same path the
+   * memory safety valve already used.
+   */
   const appendBufferedAssistantText = (messageId: MessageId, delta: string) =>
     Cache.getOption(bufferedAssistantTextByMessageId, messageId).pipe(
-      Effect.flatMap((existingText) =>
+      Effect.flatMap((existing) =>
         Effect.gen(function* () {
-          const nextText = Option.match(existingText, {
-            onNone: () => delta,
-            onSome: (text) => `${text}${delta}`,
-          });
-          if (nextText.length <= MAX_BUFFERED_ASSISTANT_CHARS) {
-            yield* Cache.set(bufferedAssistantTextByMessageId, messageId, nextText);
-            return "";
+          const now = yield* Clock.currentTimeMillis;
+          const previous = Option.getOrUndefined(existing);
+          const nextText = `${previous?.text ?? ""}${delta}`;
+          // A message with no history flushes its first delta immediately: the
+          // wait that matters most to the reader is the one before anything at
+          // all appears.
+          const flushedAt = previous?.flushedAt ?? 0;
+
+          if (nextText.length > MAX_BUFFERED_ASSISTANT_CHARS) {
+            // Safety valve: cap memory regardless of how recently we flushed.
+            yield* Cache.invalidate(bufferedAssistantTextByMessageId, messageId);
+            return nextText;
           }
 
-          // Safety valve: flush full buffered text as an assistant delta to cap memory.
-          yield* Cache.invalidate(bufferedAssistantTextByMessageId, messageId);
-          return nextText;
+          // Whitespace on its own must never reach the UI: dispatching it would
+          // project an assistant message, and a turn that only ever emits
+          // whitespace would leave an empty bubble behind.
+          if (
+            now - flushedAt >= ASSISTANT_STREAM_FLUSH_INTERVAL_MS &&
+            hasRenderableAssistantText(nextText)
+          ) {
+            yield* Cache.set(bufferedAssistantTextByMessageId, messageId, {
+              text: "",
+              flushedAt: now,
+            });
+            return nextText;
+          }
+
+          yield* Cache.set(bufferedAssistantTextByMessageId, messageId, {
+            text: nextText,
+            flushedAt,
+          });
+          return "";
         }),
       ),
     );
 
   const takeBufferedAssistantText = (messageId: MessageId) =>
     Cache.getOption(bufferedAssistantTextByMessageId, messageId).pipe(
-      Effect.flatMap((existingText) =>
+      Effect.flatMap((existing) =>
         Cache.invalidate(bufferedAssistantTextByMessageId, messageId).pipe(
-          Effect.as(Option.getOrElse(existingText, () => "")),
+          Effect.as(Option.match(existing, { onNone: () => "", onSome: (entry) => entry.text })),
         ),
       ),
     );
@@ -2515,14 +2564,14 @@ const make = Effect.gen(function* () {
           (settings) => (settings.enableLegacyTokenStreaming ? "streaming" : "buffered"),
         );
         if (assistantDeliveryMode === "buffered") {
-          const spillChunk = yield* appendBufferedAssistantText(assistantMessageId, assistantDelta);
-          if (spillChunk.length > 0) {
+          const readyChunk = yield* appendBufferedAssistantText(assistantMessageId, assistantDelta);
+          if (readyChunk.length > 0) {
             yield* orchestrationEngine.dispatch({
               type: "thread.message.assistant.delta",
               commandId: yield* providerCommandId(event, "assistant-delta-buffer-spill"),
               threadId: thread.id,
               messageId: assistantMessageId,
-              delta: spillChunk,
+              delta: readyChunk,
               ...(employeeId !== undefined ? { employeeId } : {}),
               modelSelection: thread.modelSelection,
               ...(turnId ? { turnId } : {}),
