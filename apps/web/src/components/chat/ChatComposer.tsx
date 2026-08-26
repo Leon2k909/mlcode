@@ -2813,8 +2813,22 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // ------------------------------------------------------------------
   const onComposerPaste = (event: React.ClipboardEvent<HTMLElement>) => {
     const files = Array.from(event.clipboardData.files);
-    if (files.length === 0) return;
-    const imageFiles = files.filter((file) => file.type.startsWith("image/"));
+    // Some clipboard sources (certain screenshot tools, "copy image" on some
+    // browsers) populate `items` with file-kind entries but leave `files`
+    // empty. Falling back to `items` here is what makes those pastes work
+    // instead of silently doing nothing.
+    const filesFromItems =
+      files.length === 0
+        ? Array.from(event.clipboardData.items)
+            .filter((item) => item.kind === "file")
+            .flatMap((item) => {
+              const file = item.getAsFile();
+              return file ? [file] : [];
+            })
+        : [];
+    const candidateFiles = files.length > 0 ? files : filesFromItems;
+    if (candidateFiles.length === 0) return;
+    const imageFiles = candidateFiles.filter((file) => file.type.startsWith("image/"));
     if (imageFiles.length === 0) return;
     event.preventDefault();
     void addComposerImages(imageFiles);

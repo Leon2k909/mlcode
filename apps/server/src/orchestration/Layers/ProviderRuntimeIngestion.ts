@@ -57,6 +57,10 @@ import { forkParked } from "../../serverActivation.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { recordUsageLimits } from "../../usage/usageLimits.ts";
 import {
+  getClaudeModelCapabilities,
+  resolveClaudeEffort,
+} from "../../provider/Layers/ClaudeProvider.ts";
+import {
   canContinueHandoffChain,
   type ClaudeHandoffAssignment,
   type CodexHandoffAssignment,
@@ -77,6 +81,18 @@ const applyCodexHandoffReasoning = (
   ...(options ?? []).filter((option) => option.id !== "reasoningEffort"),
   { id: "reasoningEffort", value: reasoning },
 ];
+
+/**
+ * A Claude handoff carries a model but never a `reasoning` attribute (Claude
+ * capabilities differ by model — Haiku has no effort selector, so the CEO
+ * cannot pick one). The model still runs at a real, defined default effort;
+ * this surfaces that default onto the turn's `modelSelection.options` so the
+ * timeline chip can show it, instead of silently having nothing to show.
+ */
+const claudeHandoffDefaultEffortOptions = (model: string): ModelSelection["options"] => {
+  const effort = resolveClaudeEffort(getClaudeModelCapabilities(model), undefined);
+  return effort === undefined ? undefined : [{ id: "effort", value: effort }];
+};
 
 const providerTurnKey = (threadId: ThreadId, turnId: TurnId) => `${threadId}:${turnId}`;
 const providerTaskKey = (threadId: ThreadId, taskId: string) => `${threadId}:${taskId}`;
@@ -1817,7 +1833,7 @@ const make = Effect.gen(function* () {
       : ceoCodexAssignment !== undefined
         ? applyCodexHandoffReasoning(inheritedOptions, ceoCodexAssignment.reasoning)
         : ceoClaudeAssignment !== undefined
-          ? undefined
+          ? claudeHandoffDefaultEffortOptions(targetModel)
           : inheritedOptions;
     const nextModelSelection: ModelSelection = {
       instanceId: targetInstanceId,
