@@ -2681,7 +2681,10 @@ describe("ProviderRuntimeIngestion", () => {
     expect(proposedPlan?.planMarkdown).toBe("## Buffered plan\n\n- first\n- second");
   });
 
-  it("buffers assistant deltas by default until completion", async () => {
+  it("shows the first assistant delta immediately and settles with the whole reply", async () => {
+    // Buffered delivery coalesces deltas rather than withholding them until the
+    // turn ends: a reader watching a reply being written should see it start
+    // straight away, and the coalescing must not drop or duplicate any of it.
     const harness = await createHarness();
     const now = "2026-01-01T00:00:00.000Z";
 
@@ -2716,11 +2719,26 @@ describe("ProviderRuntimeIngestion", () => {
     await harness.drain();
     const midReadModel = await harness.readModel();
     const midThread = midReadModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
-    expect(
-      midThread?.messages.some(
-        (message: ProviderRuntimeTestMessage) => message.id === "assistant:item-buffered",
-      ),
-    ).toBe(false);
+    const streamingMessage = midThread?.messages.find(
+      (message: ProviderRuntimeTestMessage) => message.id === "assistant:item-buffered",
+    );
+    expect(streamingMessage?.text).toBe("buffer me");
+    expect(streamingMessage?.streaming).toBe(true);
+
+    // Whatever the second delta does about pacing, none of it may go missing.
+    harness.emit({
+      type: "content.delta",
+      eventId: asEventId("evt-message-delta-buffered-2"),
+      provider: ProviderDriverKind.make("codex"),
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId: asTurnId("turn-buffered"),
+      itemId: asItemId("item-buffered"),
+      payload: {
+        streamKind: "assistant_text",
+        delta: " and me",
+      },
+    });
 
     harness.emit({
       type: "item.completed",
@@ -2745,7 +2763,7 @@ describe("ProviderRuntimeIngestion", () => {
     const message = thread.messages.find(
       (entry: ProviderRuntimeTestMessage) => entry.id === "assistant:item-buffered",
     );
-    expect(message?.text).toBe("buffer me");
+    expect(message?.text).toBe("buffer me and me");
     expect(message?.streaming).toBe(false);
   });
 
