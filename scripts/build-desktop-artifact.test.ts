@@ -728,7 +728,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         assert.isBelow(result.fileCount, WINDOWS_PACKAGED_PAYLOAD_FILE_LIMIT);
         assert.deepStrictEqual(secondAsar, firstAsar);
       }),
-    ),
+    ).pipe(Effect.provide(Layer.succeed(HostProcessPlatform, "linux"))),
   );
 
   it.effect("probes fff through the packaged Windows primary instead of helper executables", () => {
@@ -967,7 +967,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         assert.instanceOf(error, BundleNotSelfContainedError);
         assert.include(error.output, "t3code-deliberately-missing-package");
       }),
-    ),
+    ).pipe(Effect.provide(Layer.succeed(HostProcessPlatform, "linux"))),
   );
 
   it.effect("preserves both Linux icon resize failures with structural context", () => {
