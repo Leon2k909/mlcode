@@ -32,6 +32,7 @@ describe("contextWindow", () => {
         usedTokens: 14_000,
         maxTokens: 258_000,
         compactsAutomatically: true,
+        autoCompactThreshold: 200_000,
       }),
     ]);
 
@@ -40,6 +41,7 @@ describe("contextWindow", () => {
     expect(snapshot?.totalProcessedTokens).toBeNull();
     expect(snapshot?.maxTokens).toBe(258_000);
     expect(snapshot?.compactsAutomatically).toBe(true);
+    expect(snapshot?.autoCompactThreshold).toBe(200_000);
   });
 
   it("ignores malformed payloads", () => {

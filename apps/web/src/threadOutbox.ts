@@ -5,6 +5,7 @@ import type {
   ProviderInteractionMode,
   RuntimeMode,
   ThreadId,
+  ChatAttachment,
   UploadChatAttachment,
 } from "@t3tools/contracts";
 import { create } from "zustand";
@@ -19,7 +20,7 @@ export interface QueuedThreadOutboxPayload {
   readonly titleSeed: string;
   // This outbox intentionally lives only for the current app session. The
   // attachment preparation promise and blob preview URLs are not serializable.
-  readonly attachmentsPromise: Promise<ReadonlyArray<UploadChatAttachment>>;
+  readonly attachmentsPromise: Promise<ReadonlyArray<UploadChatAttachment | ChatAttachment>>;
   readonly optimisticAttachments: ReadonlyArray<QueuedThreadOutboxAttachment>;
   readonly modelSelection: ModelSelection;
   readonly runtimeMode: RuntimeMode;

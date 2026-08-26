@@ -2,6 +2,7 @@ import {
   DEFAULT_EMPLOYEES,
   isProviderDriverKind,
   isProviderAvailable,
+  resolveProviderInstanceEnabled,
   type ModelSelection,
   type Employee,
   type ProviderDriverKind,
@@ -38,7 +39,7 @@ export function isModelSelectionProviderEnabled(
 ): boolean {
   const instanceConfig = settings.providerInstances[selection.instanceId];
   if (instanceConfig !== undefined) {
-    return instanceConfig.enabled ?? true;
+    return resolveProviderInstanceEnabled(instanceConfig);
   }
 
   return (

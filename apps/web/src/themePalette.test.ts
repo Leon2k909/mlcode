@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vite-plus/test";
+import { BUILT_IN_THEMES } from "@t3tools/shared/themePalettes";
 
 import {
   applyThemeColorPreview,
@@ -78,6 +79,16 @@ function contrastRatio(first: string, second: string): number {
 }
 
 describe("theme files", () => {
+  it("keeps every built-in palette value in canonical OKLCH form", () => {
+    for (const theme of BUILT_IN_THEMES) {
+      for (const colors of [theme.colors, ...Object.values(theme.variants ?? {})]) {
+        for (const value of Object.values(colors)) {
+          expect(toCanonicalThemeColor(value)).toBe(value);
+        }
+      }
+    }
+  });
+
   it("derives a readable palette from extreme simple-editor colors", () => {
     const light = createManagedThemeColors("light", "#111827", "#ffff00");
     const dark = createManagedThemeColors("dark", "#ffffff", "#ffff00");
@@ -97,7 +108,7 @@ describe("theme files", () => {
     expect(dark.secondaryLabel).toBe(dark.textMuted);
     expect(contrastRatio(light.accentForeground, light.accent)).toBeGreaterThanOrEqual(4.5);
     expect(contrastRatio(dark.accentForeground, dark.accent)).toBeGreaterThanOrEqual(4.5);
-    // Status colors fall back to T3 Code's standard red and amber rather than
+    // Status colors fall back to ML Code's standard red and amber rather than
     // the flagship palette's, so no generated theme inherits a brand tint.
     const channels = (value: string) =>
       [1, 3, 5].map((index) => Number.parseInt(asHex(value).slice(index, index + 2), 16)) as [
@@ -244,6 +255,18 @@ describe("theme files", () => {
     ] as const) {
       expect(theme.colors[role]).toMatch(/^oklch\(/);
     }
+  });
+
+  it("gamut maps extreme finite OKLCH chroma from theme files", () => {
+    const theme = parseThemeFile({
+      version: THEME_FILE_VERSION,
+      name: "Extreme chroma",
+      appearance: "light",
+      colors: { accent: "oklch(0.5 1e303 0)" },
+    });
+
+    expect(theme.colors.accent).toBe("oklch(0.5 1e+303 0)");
+    expect(themeColorToHex(theme.colors.accent)).toBe("#b5005e");
   });
 
   it("rejects unknown roles and invalid color values", () => {

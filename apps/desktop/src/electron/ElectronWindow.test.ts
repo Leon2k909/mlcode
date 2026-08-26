@@ -53,7 +53,7 @@ describe("ElectronWindow", () => {
         throw cause;
       });
       const options = {
-        title: "T3 Code",
+        title: "ML Code",
         width: 1100,
         height: 780,
         minWidth: 840,
@@ -81,7 +81,7 @@ describe("ElectronWindow", () => {
       assert.instanceOf(error, ElectronWindow.ElectronWindowCreateError);
       assert.isTrue(ElectronWindow.isElectronWindowCreateError(error));
       assert.deepEqual(error.options, {
-        title: "T3 Code",
+        title: "ML Code",
         width: 1100,
         height: 780,
         minWidth: 840,
@@ -104,7 +104,7 @@ describe("ElectronWindow", () => {
       assert.isFalse("icon" in error.options);
       assert.isFalse("spellcheck" in error.options.webPreferences);
       assert.strictEqual(error.cause, cause);
-      assert.equal(error.message, 'Failed to create Electron BrowserWindow "T3 Code" (1100x780).');
+      assert.equal(error.message, 'Failed to create Electron BrowserWindow "ML Code" (1100x780).');
       assert.notInclude(error.message, cause.message);
       assert.deepEqual(browserWindowMock.mock.calls, [[options]]);
     }).pipe(Effect.provide(TestLayer)),
@@ -208,7 +208,7 @@ describe("ElectronWindow", () => {
     }).pipe(Effect.provide(TestLayer)),
   );
 
-  it.effect("preserves destroy failures with the target window", () =>
+  it.effect("preserves destroy failures and continues with later windows", () =>
     Effect.gen(function* () {
       const cause = new Error("window destroy failed");
       const window = {
@@ -217,7 +217,11 @@ describe("ElectronWindow", () => {
           throw cause;
         }),
       } as unknown as Electron.BrowserWindow;
-      getAllWindowsMock.mockReturnValueOnce([window]);
+      const laterWindow = {
+        id: 44,
+        destroy: vi.fn(),
+      } as unknown as Electron.BrowserWindow;
+      getAllWindowsMock.mockReturnValueOnce([window, laterWindow]);
 
       const electronWindow = yield* ElectronWindow.ElectronWindow;
       const exit = yield* Effect.exit(electronWindow.destroyAll);
@@ -231,6 +235,7 @@ describe("ElectronWindow", () => {
         assert.isNull(error.channel);
         assert.strictEqual(error.cause, cause);
       }
+      assert.equal(vi.mocked(laterWindow.destroy).mock.calls.length, 1);
     }).pipe(Effect.provide(TestLayer)),
   );
 });

@@ -1,6 +1,7 @@
 import { ArrowLeftIcon, GitPullRequestIcon, SettingsIcon, UsersRoundIcon } from "lucide-react";
+import type { ReactNode } from "react";
 import { memo, useCallback } from "react";
-import { Link, useLocation, useNavigate } from "@tanstack/react-router";
+import { Link, useCanGoBack, useLocation, useNavigate } from "@tanstack/react-router";
 
 import { useEnvironmentIdentificationMode } from "../../hooks/useSettings";
 import { cn } from "../../lib/utils";
@@ -114,7 +115,7 @@ function SidebarBrand({
     <Link
       aria-label="Go to threads"
       className={cn(
-        "sidebar-brand relative z-10 h-7 w-fit min-w-0 shrink-0 items-center gap-1.5 overflow-hidden rounded-md outline-hidden ring-ring focus-visible:ring-2",
+        "relative z-10 hidden h-7 w-fit min-w-0 shrink-0 items-center gap-1 overflow-hidden rounded-md outline-hidden ring-ring focus-visible:ring-2 md:flex",
         hasLeadingAction ? "ml-1" : "ml-[var(--workspace-titlebar-content-left)]",
         onBackdrop ? "text-white" : "text-foreground",
       )}
@@ -133,9 +134,45 @@ function SidebarBrand({
   );
 }
 
-export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
+function SidebarUtilityItem({
+  icon,
+  label,
+  onClick,
+}: {
+  icon: ReactNode;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <SidebarMenuItem className="shrink-0">
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <SidebarMenuButton aria-label={label} onClick={onClick} size="icon">
+              {icon}
+            </SidebarMenuButton>
+          }
+        />
+        <TooltipPopup side="top">{label}</TooltipPopup>
+      </Tooltip>
+    </SidebarMenuItem>
+  );
+}
+
+export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
   const navigate = useNavigate();
+  const canGoBack = useCanGoBack();
   const { isMobile, setOpenMobile } = useSidebar();
+  const currentFooterPage = useLocation({
+    select: (location) =>
+      /^\/settings(?:\/|$)/.test(location.pathname)
+        ? "settings"
+        : location.pathname === "/usage"
+          ? "usage"
+          : location.pathname === "/pull-requests"
+            ? "pull-requests"
+            : null,
+  });
   const { environments } = useEnvironments();
   // The entry point only exists once there is somebody to share with, so an
   // unused feature does not permanently occupy sidebar space.
@@ -163,68 +200,58 @@ export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
     closeMobileSidebar();
     void navigate({ to: "/friends" });
   }, [closeMobileSidebar, navigate]);
+  const handleBackClick = useCallback(() => {
+    closeMobileSidebar();
+    if (canGoBack) {
+      window.history.back();
+      return;
+    }
+    void navigate({ to: "/" });
+  }, [canGoBack, closeMobileSidebar, navigate]);
 
+  return (
+    <SidebarMenu className="flex-row items-center">
+      {currentFooterPage ? (
+        <SidebarMenuItem className="min-w-0 flex-1">
+          <SidebarMenuButton onClick={handleBackClick}>
+            <ArrowLeftIcon />
+            <span>Back</span>
+          </SidebarMenuButton>
+        </SidebarMenuItem>
+      ) : (
+        <>
+          <SidebarUtilityItem
+            icon={<SettingsIcon />}
+            label="Settings"
+            onClick={handleSettingsClick}
+          />
+          {hasFriends ? (
+            <SidebarUtilityItem
+              icon={<UsersRoundIcon />}
+              label="Shared with me"
+              onClick={handleSharedChatsClick}
+            />
+          ) : null}
+          {pullRequestsSupported ? (
+            <SidebarUtilityItem
+              icon={<GitPullRequestIcon />}
+              label="Pull Requests"
+              onClick={handlePullRequestsClick}
+            />
+          ) : null}
+        </>
+      )}
+      <SidebarUpdatePill />
+    </SidebarMenu>
+  );
+});
+
+export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
   return (
     <SidebarFooter className="p-[var(--sidebar-content-inset)]">
       <SidebarProviderUpdatePill />
       <SidebarUpdateArchitectureWarning />
-      <SidebarMenu className="flex-row items-center">
-        <>
-          <SidebarMenuItem className="shrink-0">
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <SidebarMenuButton
-                    aria-label="Settings"
-                    onClick={handleSettingsClick}
-                    size="icon"
-                  >
-                    <SettingsIcon />
-                  </SidebarMenuButton>
-                }
-              />
-              <TooltipPopup side="top">Settings</TooltipPopup>
-            </Tooltip>
-          </SidebarMenuItem>
-          {hasFriends ? (
-            <SidebarMenuItem className="shrink-0">
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <SidebarMenuButton
-                      aria-label="Shared with me"
-                      onClick={handleSharedChatsClick}
-                      size="icon"
-                    >
-                      <UsersRoundIcon />
-                    </SidebarMenuButton>
-                  }
-                />
-                <TooltipPopup side="top">Shared with me</TooltipPopup>
-              </Tooltip>
-            </SidebarMenuItem>
-          ) : null}
-          {pullRequestsSupported ? (
-            <SidebarMenuItem className="shrink-0">
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <SidebarMenuButton
-                      aria-label="Pull Requests"
-                      onClick={handlePullRequestsClick}
-                      size="icon"
-                    >
-                      <GitPullRequestIcon />
-                    </SidebarMenuButton>
-                  }
-                />
-                <TooltipPopup side="top">Pull Requests</TooltipPopup>
-              </Tooltip>
-            </SidebarMenuItem>
-          ) : null}
-        </>
-        <SidebarUpdatePill />
-      </SidebarMenu>
+      <SidebarUtilityMenu />
     </SidebarFooter>
   );
 });

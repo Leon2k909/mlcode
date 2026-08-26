@@ -46,6 +46,7 @@ import {
   shouldSubmitComposerOnEnter,
 } from "../../composer-logic";
 import { deriveComposerSendState, readFileAsDataUrl } from "../ChatView.logic";
+import { getComposerSubmissionValidationMessage } from "./composerSubmission";
 import {
   dataTransferHasComposerMention,
   makeComposerMentionDragHandlers,
@@ -484,6 +485,12 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
 export interface ChatComposerHandle {
   focusAtEnd: () => void;
   focusAt: (cursor: number) => void;
+  /** Attach files dropped anywhere on the workspace, not just on the composer. */
+  addDroppedFiles: (files: File[]) => void;
+  /** Send the provider's own compaction command for this thread. */
+  compactContext: () => void;
+  /** Validate the fully composed text immediately before a provider turn starts. */
+  validateProviderInput: (providerInput: string) => boolean;
   insertTextAtEnd: (text: string, options?: { ensureLeadingBoundary?: boolean }) => boolean;
   openModelPicker: () => void;
   toggleModelPicker: () => void;
@@ -1149,6 +1156,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         model: selectedModel,
         models: selectedProviderModels,
         promptInjectionState: composerPromptInjectionState,
+        planModeEnabled: settings.planModeEnabled,
         modelOptions: composerModelOptions?.[selectedInstanceId],
       }),
     [
@@ -1396,6 +1404,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
    * next draft.
    */
   const pendingImageCompressionsRef = useRef<Map<ThreadId, number>>(new Map());
+  // ChatView asks the composer to vet the fully composed text before it
+  // starts a turn; the answer has to survive the async gap in between.
+  const providerInputRejectedRef = useRef(false);
 
   // ------------------------------------------------------------------
   // Derived: composer send state
@@ -1619,6 +1630,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     ...(routeKind === "draft" && draftId ? { draftId } : {}),
     model: selectedModel,
     models: selectedProviderModels,
+    planModeEnabled: settings.planModeEnabled,
     modelOptions: composerModelOptions?.[selectedInstanceId],
     prompt,
     onPromptChange: setPromptFromTraits,
@@ -1630,6 +1642,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     ...(routeKind === "draft" && draftId ? { draftId } : {}),
     model: selectedModel,
     models: selectedProviderModels,
+    planModeEnabled: settings.planModeEnabled,
     modelOptions: composerModelOptions?.[selectedInstanceId],
     prompt,
     onPromptChange: setPromptFromTraits,
@@ -2272,6 +2285,41 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       shouldBlurMobileComposerOnSubmit,
     ],
   );
+  const compactThreadContext = useCallback(() => {
+    if (noProviderAvailable || isSendDisabled || !activeThreadId) {
+      return;
+    }
+    // The compact button cannot see the compression counter (it lives in a
+    // ref), so it renders enabled during a paste; say so instead of
+    // silently ignoring the click.
+    if ((pendingImageCompressionsRef.current.get(activeThreadId) ?? 0) > 0) {
+      toastManager.add({
+        type: "info",
+        title: "Still compressing a pasted image.",
+        description: "Compact again once its thumbnail appears.",
+      });
+      return;
+    }
+    promptRef.current = "/compact";
+    setComposerDraftPrompt(composerDraftTarget, "/compact");
+    submitComposer();
+    // A blocked dispatch would leave the injected "/compact" behind as if
+    // the user had typed it. Clearing here is safe even when the send did
+    // dispatch: it snapshots the prompt synchronously and clears the draft.
+    if (promptRef.current === "/compact") {
+      promptRef.current = "";
+      setComposerDraftPrompt(composerDraftTarget, "");
+    }
+  }, [
+    activeThreadId,
+    composerDraftTarget,
+    isSendDisabled,
+    noProviderAvailable,
+    promptRef,
+    setComposerDraftPrompt,
+    submitComposer,
+  ]);
+
   const submitComposerMode = useCallback(
     (mode: ThreadTurnDispatchMode) => submitComposer(undefined, mode),
     [submitComposer],
@@ -2977,6 +3025,26 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       focusAt: (cursor: number) => {
         composerEditorRef.current?.focusAt(cursor);
       },
+      addDroppedFiles: (files: File[]) => {
+        void addComposerImages(files);
+        focusComposer();
+      },
+      compactContext: compactThreadContext,
+      validateProviderInput: (providerInput: string) => {
+        const validationMessage = getComposerSubmissionValidationMessage({
+          prompt: promptRef.current,
+          providerInput,
+          submissionTarget: "provider-turn",
+        });
+        providerInputRejectedRef.current = validationMessage !== null;
+        if (validationMessage !== null) {
+          toastManager.add({
+            type: "warning",
+            title: validationMessage,
+          });
+        }
+        return validationMessage === null;
+      },
       insertTextAtEnd: insertComposerTextAtEnd,
       openModelPicker: () => {
         setIsComposerModelPickerOpen(true);
@@ -3324,10 +3392,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   resolvedTheme={resolvedTheme}
                   isLoading={isComposerMenuLoading}
                   triggerKind={composerTriggerKind}
-                  groupSlashCommandSections={
-                    composerTrigger?.kind === "slash-command" &&
-                    composerTrigger.query.trim().length === 0
-                  }
                   emptyStateText={composerMenuEmptyState}
                   activeItemId={activeComposerMenuItem?.id ?? null}
                   onHighlightedItemChange={onComposerMenuItemHighlighted}

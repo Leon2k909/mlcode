@@ -57,6 +57,7 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.pullRequestsListStats]: AuthOrchestrationReadScope,
   [WS_METHODS.pullRequestsDetail]: AuthOrchestrationReadScope,
   [WS_METHODS.pullRequestsActivity]: AuthOrchestrationReadScope,
+  [WS_METHODS.pullRequestsThreadComments]: AuthOrchestrationReadScope,
   [WS_METHODS.pullRequestsDiffFileContents]: AuthOrchestrationReadScope,
   [WS_METHODS.pullRequestsRunAction]: AuthOrchestrationOperateScope,
   [WS_METHODS.pullRequestsUpdate]: AuthOrchestrationOperateScope,
@@ -90,6 +91,9 @@ export const RPC_REQUIRED_SCOPES = {
   // the same scope as any other change to environment-side state.
   [WS_METHODS.petsInstall]: AuthOrchestrationOperateScope,
   [WS_METHODS.petsUninstall]: AuthOrchestrationOperateScope,
+  [WS_METHODS.attachmentsCreateUploadUrl]: AuthOrchestrationOperateScope,
+  [WS_METHODS.attachmentsDelete]: AuthOrchestrationOperateScope,
+  [WS_METHODS.providerUploadFeedback]: AuthOrchestrationOperateScope,
   [WS_METHODS.subscribeVcsStatus]: AuthOrchestrationReadScope,
   [WS_METHODS.subscribeResourceTelemetry]: AuthOrchestrationReadScope,
   [WS_METHODS.vcsRefreshStatus]: AuthOrchestrationReadScope,

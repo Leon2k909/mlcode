@@ -20,6 +20,7 @@ import { Route as SettingsSourceControlRouteImport } from './routes/settings.sou
 import { Route as SettingsProvidersRouteImport } from './routes/settings.providers'
 import { Route as SettingsPetsRouteImport } from './routes/settings.pets'
 import { Route as SettingsKeybindingsRouteImport } from './routes/settings.keybindings'
+import { Route as SettingsIntegrationsRouteImport } from './routes/settings.integrations'
 import { Route as SettingsGeneralRouteImport } from './routes/settings.general'
 import { Route as SettingsFriendsRouteImport } from './routes/settings.friends'
 import { Route as SettingsEmployeesRouteImport } from './routes/settings.employees'
@@ -87,6 +88,11 @@ const SettingsPetsRoute = SettingsPetsRouteImport.update({
 const SettingsKeybindingsRoute = SettingsKeybindingsRouteImport.update({
   id: '/keybindings',
   path: '/keybindings',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsIntegrationsRoute = SettingsIntegrationsRouteImport.update({
+  id: '/integrations',
+  path: '/integrations',
   getParentRoute: () => SettingsRoute,
 } as any)
 const SettingsGeneralRoute = SettingsGeneralRouteImport.update({
@@ -178,6 +184,7 @@ export interface FileRoutesByFullPath {
   '/settings/employees': typeof SettingsEmployeesRoute
   '/settings/friends': typeof SettingsFriendsRoute
   '/settings/general': typeof SettingsGeneralRoute
+  '/settings/integrations': typeof SettingsIntegrationsRoute
   '/settings/keybindings': typeof SettingsKeybindingsRoute
   '/settings/pets': typeof SettingsPetsRoute
   '/settings/providers': typeof SettingsProvidersRoute
@@ -203,6 +210,7 @@ export interface FileRoutesByTo {
   '/settings/employees': typeof SettingsEmployeesRoute
   '/settings/friends': typeof SettingsFriendsRoute
   '/settings/general': typeof SettingsGeneralRoute
+  '/settings/integrations': typeof SettingsIntegrationsRoute
   '/settings/keybindings': typeof SettingsKeybindingsRoute
   '/settings/pets': typeof SettingsPetsRoute
   '/settings/providers': typeof SettingsProvidersRoute
@@ -231,6 +239,7 @@ export interface FileRoutesById {
   '/settings/employees': typeof SettingsEmployeesRoute
   '/settings/friends': typeof SettingsFriendsRoute
   '/settings/general': typeof SettingsGeneralRoute
+  '/settings/integrations': typeof SettingsIntegrationsRoute
   '/settings/keybindings': typeof SettingsKeybindingsRoute
   '/settings/pets': typeof SettingsPetsRoute
   '/settings/providers': typeof SettingsProvidersRoute
@@ -260,6 +269,7 @@ export interface FileRouteTypes {
     | '/settings/employees'
     | '/settings/friends'
     | '/settings/general'
+    | '/settings/integrations'
     | '/settings/keybindings'
     | '/settings/pets'
     | '/settings/providers'
@@ -285,6 +295,7 @@ export interface FileRouteTypes {
     | '/settings/employees'
     | '/settings/friends'
     | '/settings/general'
+    | '/settings/integrations'
     | '/settings/keybindings'
     | '/settings/pets'
     | '/settings/providers'
@@ -312,6 +323,7 @@ export interface FileRouteTypes {
     | '/settings/employees'
     | '/settings/friends'
     | '/settings/general'
+    | '/settings/integrations'
     | '/settings/keybindings'
     | '/settings/pets'
     | '/settings/providers'
@@ -411,6 +423,13 @@ declare module '@tanstack/react-router' {
       path: '/keybindings'
       fullPath: '/settings/keybindings'
       preLoaderRoute: typeof SettingsKeybindingsRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/integrations': {
+      id: '/settings/integrations'
+      path: '/integrations'
+      fullPath: '/settings/integrations'
+      preLoaderRoute: typeof SettingsIntegrationsRouteImport
       parentRoute: typeof SettingsRoute
     }
     '/settings/general': {
@@ -542,6 +561,7 @@ interface SettingsRouteChildren {
   SettingsEmployeesRoute: typeof SettingsEmployeesRoute
   SettingsFriendsRoute: typeof SettingsFriendsRoute
   SettingsGeneralRoute: typeof SettingsGeneralRoute
+  SettingsIntegrationsRoute: typeof SettingsIntegrationsRoute
   SettingsKeybindingsRoute: typeof SettingsKeybindingsRoute
   SettingsPetsRoute: typeof SettingsPetsRoute
   SettingsProvidersRoute: typeof SettingsProvidersRoute
@@ -557,6 +577,7 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsEmployeesRoute: SettingsEmployeesRoute,
   SettingsFriendsRoute: SettingsFriendsRoute,
   SettingsGeneralRoute: SettingsGeneralRoute,
+  SettingsIntegrationsRoute: SettingsIntegrationsRoute,
   SettingsKeybindingsRoute: SettingsKeybindingsRoute,
   SettingsPetsRoute: SettingsPetsRoute,
   SettingsProvidersRoute: SettingsProvidersRoute,

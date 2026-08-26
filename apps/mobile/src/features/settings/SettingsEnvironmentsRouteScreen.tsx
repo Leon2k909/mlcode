@@ -51,12 +51,6 @@ export function SettingsEnvironmentsRouteScreen() {
   const accentColor = useThemeColor("--color-icon-muted");
   const headerIconColor = useThemeColor("--color-icon");
 
-  useEffect(() => {
-    if (!SHOWCASE_ENABLED) return;
-    const timer = setTimeout(() => markNativeShowcaseReady("environments"), 500);
-    return () => clearTimeout(timer);
-  }, []);
-
   const handleToggle = useCallback((environmentId: EnvironmentId) => {
     setExpandedId((prev) => (prev === environmentId ? null : environmentId));
   }, []);

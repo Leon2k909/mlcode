@@ -27,6 +27,9 @@ describe("ChangedFilesCard", () => {
       'class="group flex min-w-0 flex-1 items-center rounded-xl px-2 py-1.5',
     );
     expect(markup).toContain('class="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden');
+    expect(markup).toContain('class="group flex min-w-0 flex-1 items-center rounded-xl');
+    expect(markup).not.toMatch(/class="group flex min-w-0 flex-1 items-center[^"]*overflow-hidden/);
+    expect(markup).toContain('class="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden"');
     expect(markup).toContain('class="flex shrink-0 items-center gap-1 whitespace-nowrap');
     expect(markup).toContain('class="ml-1 hidden min-w-0 flex-1 truncate');
     expect(markup).toContain("@[24rem]/changed-files:inline");

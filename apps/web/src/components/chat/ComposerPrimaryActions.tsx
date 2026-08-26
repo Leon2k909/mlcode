@@ -6,6 +6,7 @@ import { cn } from "~/lib/utils";
 import { StageBackdropButtonArt, useSidebarStageBackdropVariant } from "../SidebarStageBackdrop";
 import { Button } from "../ui/button";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { Spinner } from "../ui/spinner";
 
 interface PendingActionState {
@@ -31,6 +32,8 @@ interface ComposerPrimaryActionsProps {
   queuesRunningTurns: boolean;
   onSubmitMode: (mode: ThreadTurnDispatchMode) => void;
   preserveComposerFocusOnPointerDown?: boolean;
+  /** Enter-to-send is disabled on mobile viewports, where stop would otherwise
+   * be the only primary action and a running turn could not be steered. */
   onPreviousPendingQuestion: () => void;
   onInterrupt: () => void;
   onImplementPlanInNewThread: () => void;
@@ -164,30 +167,41 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
         {renderStopGenerationButton(false)}
         {hasSendableContent ? (
           <div className="flex items-center gap-1.5">
-            <button
-              type="button"
-              className="flex h-8 items-center gap-1.5 rounded-full bg-message-action px-3 text-message-action-foreground text-xs font-medium shadow-xs transition-all duration-150 enabled:cursor-pointer hover:bg-message-action-hover hover:scale-105 disabled:pointer-events-none disabled:opacity-30"
-              {...pointerFocusProps}
-              onClick={() => onSubmitMode("queue")}
-              disabled={isSendBusy || isSendDisabled || isConnecting || isEnvironmentUnavailable}
-              aria-label="Queue next turn"
-              title={
-                queuesRunningTurns
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <button
+                    type="button"
+                    className="flex h-8 items-center gap-1.5 rounded-full bg-message-action px-3 text-message-action-foreground text-xs font-medium shadow-xs transition-all duration-150 enabled:cursor-pointer hover:bg-message-action-hover hover:scale-105 disabled:pointer-events-none disabled:opacity-30"
+                    {...pointerFocusProps}
+                    onClick={() => onSubmitMode("queue")}
+                    disabled={
+                      isSendBusy || isSendDisabled || isConnecting || isEnvironmentUnavailable
+                    }
+                    aria-label={
+                      queuesRunningTurns
+                        ? "Queue this message for the next turn"
+                        : "Hold this message for the next turn"
+                    }
+                  />
+                }
+              >
+                Queue
+              </TooltipTrigger>
+              <TooltipPopup>
+                {queuesRunningTurns
                   ? "Queue this message for the next turn"
-                  : "Hold this message for the next turn"
-              }
-            >
-              Queue
-            </button>
+                  : "Hold this message for the next turn"}
+              </TooltipPopup>
+            </Tooltip>
             <button
               type="button"
               className="pointer-events-none flex h-8 max-w-0 translate-x-1 items-center gap-1.5 overflow-hidden whitespace-nowrap rounded-full border border-border bg-muted/40 px-0 text-xs font-medium text-foreground/80 opacity-0 shadow-xs transition-[max-width,opacity,transform,padding,background-color] duration-200 group-hover/turn-actions:pointer-events-auto group-hover/turn-actions:max-w-28 group-hover/turn-actions:translate-x-0 group-hover/turn-actions:px-3 group-hover/turn-actions:opacity-100 group-focus-within/turn-actions:pointer-events-auto group-focus-within/turn-actions:max-w-28 group-focus-within/turn-actions:translate-x-0 group-focus-within/turn-actions:px-3 group-focus-within/turn-actions:opacity-100 hover:border-foreground/20 hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-30 motion-reduce:transition-none"
               {...pointerFocusProps}
               onClick={() => onSubmitMode("steer")}
               disabled={isSendBusy || isSendDisabled || isConnecting || isEnvironmentUnavailable}
-              aria-label="Steer running turn"
+              aria-label="Steer now (Ctrl+Enter)"
               aria-keyshortcuts="Control+Enter"
-              title="Steer now (Ctrl+Enter)"
             >
               Steer
               <svg width="12" height="12" viewBox="0 0 14 14" fill="none" aria-hidden="true">
@@ -263,7 +277,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
     );
   }
 
-  return (
+  const sendButton = (
     <button
       type="submit"
       className={cn(
@@ -314,4 +328,6 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
       )}
     </button>
   );
+
+  return sendButton;
 });

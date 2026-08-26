@@ -202,7 +202,24 @@ function openCodeEventSessionTitle(event: OpenCodeSubscribedEvent): string | und
     return undefined;
   }
 
-  return trimText(event.properties.info.title);
+  const title = trimText(event.properties.info.title);
+  // OpenCode mints a placeholder title at session.create when no title was
+  // provided, and re-emits it on every `session.updated`. Mirroring it would
+  // overwrite the thread's real title (openCodeEventSessionTitle feeds the
+  // `thread.metadata.updated` mirror). Ignore OpenCode's auto-generated
+  // placeholders so the thread isn't locked onto them.
+  if (!title || isOpenCodeDefaultTitle(title)) {
+    return undefined;
+  }
+
+  return title;
+}
+
+const OPENCODE_DEFAULT_TITLE_PATTERN =
+  /^(New session - |Child session - )\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+
+function isOpenCodeDefaultTitle(title: string): boolean {
+  return OPENCODE_DEFAULT_TITLE_PATTERN.test(title);
 }
 
 interface OpenCodeSessionContext {
@@ -1333,6 +1350,7 @@ export function makeOpenCodeAdapter(
                       input.runtimeMode,
                       input.toolPolicy ?? "normal",
                     ),
+                    ...(input.title ? { title: input.title } : {}),
                   }),
                 );
                 if (!createdSession.data) {

@@ -16,6 +16,7 @@ import {
   RuntimeMode,
   ThreadGoal,
   ThreadContinuation,
+  ThreadLinkedPullRequest,
   ThreadId,
   TurnId,
 } from "@t3tools/contracts";
@@ -35,6 +36,7 @@ export const ProjectionThread = Schema.Struct({
   interactionMode: ProviderInteractionMode,
   branch: Schema.NullOr(Schema.String),
   worktreePath: Schema.NullOr(Schema.String),
+  linkedPullRequest: Schema.optional(Schema.NullOr(ThreadLinkedPullRequest)),
   latestTurnId: Schema.NullOr(TurnId),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
@@ -43,6 +45,7 @@ export const ProjectionThread = Schema.Struct({
   settledAt: Schema.NullOr(IsoDateTime),
   goal: Schema.optional(Schema.NullOr(ThreadGoal)),
   continuation: Schema.optional(Schema.NullOr(ThreadContinuation)),
+  unsettledAt: Schema.NullOr(IsoDateTime),
   snoozedUntil: Schema.NullOr(IsoDateTime),
   snoozedAt: Schema.NullOr(IsoDateTime),
   pinnedAt: Schema.NullOr(IsoDateTime),

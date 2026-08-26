@@ -358,6 +358,7 @@ function EmployeeForm({
               instanceId={draft.providerInstanceId as ProviderInstanceId}
               models={traitModels}
               model={traitModel}
+              planModeEnabled={false}
               prompt=""
               onPromptChange={() => {}}
               modelOptions={draft.modelOptions}

@@ -7,6 +7,7 @@ import { INLINE_TERMINAL_CONTEXT_PLACEHOLDER } from "./lib/terminalContext";
 
 export type ComposerTriggerKind = "path" | "slash-command" | "skill";
 export type ComposerSlashCommand = "model" | "plan" | "default" | "goal";
+export type ComposerSubmissionIntent = "foreground" | "background";
 
 export type ComposerGoalCommand = ThreadGoalCommand;
 
@@ -22,6 +23,18 @@ export function shouldSubmitComposerOnEnter(input: {
   shiftKey: boolean;
 }): boolean {
   return !input.isMobileViewport && !input.shiftKey;
+}
+
+export function composerSubmissionIntentForEnter(input: {
+  isMobileViewport: boolean;
+  shiftKey: boolean;
+  modifierKey: boolean;
+  isDraftThread: boolean;
+}): ComposerSubmissionIntent | null {
+  if (input.isMobileViewport || input.shiftKey) {
+    return null;
+  }
+  return input.modifierKey && input.isDraftThread ? "background" : "foreground";
 }
 
 const isInlineTokenSegment = (

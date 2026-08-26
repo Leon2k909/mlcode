@@ -728,6 +728,9 @@ describe("DesktopBackendManager", () => {
 
           // The backend stays 503 through the first two readiness budgets and
           // only becomes healthy for the third round.
+          // The backend stays 503 through the first *two* readiness budgets
+          // and only becomes healthy (200) for the third round, i.e. it comes
+          // up well after the initial 50ms budget has expired.
           const httpLayer = httpClientLayer((request) =>
             Effect.gen(function* () {
               requestCount += 1;
@@ -755,10 +758,18 @@ describe("DesktopBackendManager", () => {
           assert.equal(readyCount, 0);
           assert.equal(readinessTimeoutCount, 0);
 
+          // The first 50ms readiness budget expires while the backend still
+          // answers 503. The child is alive and may yet become healthy, so the
+          // probe must start a fresh round instead of stopping permanently —
+          // the pre-fix behavior left the app stuck on "Connecting to WSL…"
+          // forever even though the backend kept running.
           yield* TestClock.adjust(Duration.millis(50));
           assert.equal(readinessTimeoutCount, 1);
           assert.equal(readyCount, 0);
 
+          // The second budget also expires (backend still 503), then the third
+          // round connects. The point is the probe persisted across budgets
+          // while the process was alive instead of giving up after the first.
           yield* TestClock.adjust(Duration.millis(100));
           assert.equal(readinessTimeoutCount, 2);
           assert.equal(readyCount, 1);

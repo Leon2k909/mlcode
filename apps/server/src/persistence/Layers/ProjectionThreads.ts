@@ -14,13 +14,19 @@ import {
   ProjectionThreadRepository,
   type ProjectionThreadRepositoryShape,
 } from "../Services/ProjectionThreads.ts";
-import { ModelSelection, ThreadContinuation, ThreadGoal } from "@t3tools/contracts";
+import {
+  ModelSelection,
+  ThreadContinuation,
+  ThreadGoal,
+  ThreadLinkedPullRequest,
+} from "@t3tools/contracts";
 
 const ProjectionThreadDbRow = ProjectionThread.mapFields(
   Struct.assign({
     modelSelection: Schema.fromJsonString(ModelSelection),
     goal: Schema.optional(Schema.NullOr(Schema.fromJsonString(ThreadGoal))),
     continuation: Schema.optional(Schema.NullOr(Schema.fromJsonString(ThreadContinuation))),
+    linkedPullRequest: Schema.NullOr(Schema.fromJsonString(ThreadLinkedPullRequest)),
   }),
 );
 type ProjectionThreadDbRow = typeof ProjectionThreadDbRow.Type;
@@ -41,6 +47,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           interaction_mode,
           branch,
           worktree_path,
+          linked_pull_request_json,
           latest_turn_id,
           created_at,
           updated_at,
@@ -49,6 +56,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           settled_at,
           goal_json,
           continuation_json,
+          unsettled_at,
           snoozed_until,
           snoozed_at,
           pinned_at,
@@ -70,6 +78,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           ${row.interactionMode},
           ${row.branch},
           ${row.worktreePath},
+          ${row.linkedPullRequest === undefined || row.linkedPullRequest === null ? null : JSON.stringify(row.linkedPullRequest)},
           ${row.latestTurnId},
           ${row.createdAt},
           ${row.updatedAt},
@@ -78,6 +87,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           ${row.settledAt},
           ${row.goal ? JSON.stringify(row.goal) : null},
           ${row.continuation ? JSON.stringify(row.continuation) : null},
+          ${row.unsettledAt},
           ${row.snoozedUntil},
           ${row.snoozedAt},
           ${row.pinnedAt},
@@ -99,6 +109,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           interaction_mode = excluded.interaction_mode,
           branch = excluded.branch,
           worktree_path = excluded.worktree_path,
+          linked_pull_request_json = excluded.linked_pull_request_json,
           latest_turn_id = excluded.latest_turn_id,
           created_at = excluded.created_at,
           updated_at = excluded.updated_at,
@@ -107,6 +118,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           settled_at = excluded.settled_at,
           goal_json = excluded.goal_json,
           continuation_json = excluded.continuation_json,
+          unsettled_at = excluded.unsettled_at,
           snoozed_until = excluded.snoozed_until,
           snoozed_at = excluded.snoozed_at,
           pinned_at = excluded.pinned_at,
@@ -135,6 +147,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           interaction_mode AS "interactionMode",
           branch,
           worktree_path AS "worktreePath",
+          linked_pull_request_json AS "linkedPullRequest",
           latest_turn_id AS "latestTurnId",
           created_at AS "createdAt",
           updated_at AS "updatedAt",
@@ -143,6 +156,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           settled_at AS "settledAt",
           goal_json AS "goal",
           continuation_json AS "continuation",
+          unsettled_at AS "unsettledAt",
           snoozed_until AS "snoozedUntil",
           snoozed_at AS "snoozedAt",
           pinned_at AS "pinnedAt",
@@ -173,6 +187,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           interaction_mode AS "interactionMode",
           branch,
           worktree_path AS "worktreePath",
+          linked_pull_request_json AS "linkedPullRequest",
           latest_turn_id AS "latestTurnId",
           created_at AS "createdAt",
           updated_at AS "updatedAt",
@@ -181,6 +196,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           settled_at AS "settledAt",
           goal_json AS "goal",
           continuation_json AS "continuation",
+          unsettled_at AS "unsettledAt",
           snoozed_until AS "snoozedUntil",
           snoozed_at AS "snoozedAt",
           pinned_at AS "pinnedAt",
