@@ -2479,6 +2479,64 @@ describe("ProviderCommandReactor", () => {
     });
   });
 
+  it("keeps a claude session warm when only the speaking employee changes", async () => {
+    const groupSelection = (employeeId: string) => ({
+      instanceId: ProviderInstanceId.make("claudeAgent"),
+      model: "claude-sonnet-4-6",
+      options: [{ id: "effort", value: "medium" }],
+      employeeId: EmployeeId.make(employeeId),
+      employeeIds: [EmployeeId.make("worker_alpha"), EmployeeId.make("worker_gamma")],
+    });
+    const harness = await createHarness({
+      threadModelSelection: groupSelection("worker_alpha"),
+    });
+    const now = "2026-01-01T00:00:00.000Z";
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-turn-start-warm-handoff-1"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-message-warm-handoff-1"),
+          role: "user",
+          text: "alpha implements",
+          attachments: [],
+        },
+        modelSelection: groupSelection("worker_alpha"),
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: now,
+      }),
+    );
+
+    await waitFor(() => harness.startSession.mock.calls.length === 1);
+    await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+
+    // The handoff changes who is speaking and nothing the CLI is configured
+    // with, so the warm session has to survive it.
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-turn-start-warm-handoff-2"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-message-warm-handoff-2"),
+          role: "user",
+          text: "gamma verifies",
+          attachments: [],
+        },
+        modelSelection: groupSelection("worker_gamma"),
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: now,
+      }),
+    );
+
+    await waitFor(() => harness.sendTurn.mock.calls.length === 2);
+    expect(harness.startSession.mock.calls.length).toBe(1);
+  });
+
   it("restarts the provider session when runtime mode is updated on the thread", async () => {
     const harness = await createHarness();
     const now = "2026-01-01T00:00:00.000Z";

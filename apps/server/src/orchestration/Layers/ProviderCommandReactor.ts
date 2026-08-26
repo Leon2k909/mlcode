@@ -919,10 +919,26 @@ const make = Effect.gen(function* () {
         desiredInfo.continuationIdentity.continuationKey;
       const shouldRestartForModelChange = modelChanged && sessionModelSwitch === "unsupported";
       const previousModelSelection = threadModelSelections.get(threadId);
+      // Only what the provider session is actually configured with counts.
+      // `employeeId`/`employeeIds` are routing metadata the CLI never sees —
+      // personas reach it as message text — so comparing whole selections
+      // restarted a warm Claude session on every employee handoff, which is
+      // four needless restarts per group pipeline.
+      const providerFacingSelection = (selection: ModelSelection | undefined) =>
+        selection === undefined
+          ? undefined
+          : {
+              instanceId: selection.instanceId,
+              model: selection.model,
+              ...(selection.options === undefined ? {} : { options: selection.options }),
+            };
       const shouldRestartForModelSelectionChange =
         preferredProvider === "claudeAgent" &&
         requestedModelSelection !== undefined &&
-        !Equal.equals(previousModelSelection, requestedModelSelection);
+        !Equal.equals(
+          providerFacingSelection(previousModelSelection),
+          providerFacingSelection(requestedModelSelection),
+        );
 
       if (
         !runtimeModeChanged &&
