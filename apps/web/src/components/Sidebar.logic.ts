@@ -627,6 +627,33 @@ export function resolveWorkingStartedAt(
   return firstValidTimestamp(thread.session?.updatedAt);
 }
 
+/**
+ * How long the whole conversation has been going, as opposed to the turn
+ * running right now.
+ *
+ * These are different numbers and both are worth seeing: a chat picked up and
+ * put down across an afternoon reads as hours here while its live turn reads as
+ * seconds. Counts to now only while a turn is actually running, so a finished
+ * chat stops ageing instead of growing for as long as it is left open.
+ */
+export function resolveChatDurationMs(
+  thread: Pick<SidebarThreadSummary, "createdAt" | "updatedAt" | "latestTurn">,
+  options: { readonly nowMs: number },
+): number | null {
+  const startedMs = Date.parse(thread.createdAt);
+  if (!Number.isFinite(startedMs)) {
+    return null;
+  }
+  const isWorking = thread.latestTurn !== null && thread.latestTurn.completedAt === null;
+  const lastActivityMs = Date.parse(thread.updatedAt);
+  const endMs = isWorking
+    ? options.nowMs
+    : Number.isFinite(lastActivityMs)
+      ? lastActivityMs
+      : options.nowMs;
+  return Math.max(0, endMs - startedMs);
+}
+
 export function formatWorkingDurationLabel(elapsedMs: number): string {
   const seconds = Number.isFinite(elapsedMs) ? Math.max(0, Math.floor(elapsedMs / 1000)) : 0;
   if (seconds < 60) return `${seconds}s`;

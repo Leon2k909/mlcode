@@ -3,6 +3,7 @@ import { useAtomValue } from "@effect/atom-react";
 import { useEffect, useMemo } from "react";
 
 import { isCommandPaletteOpen } from "../commandPaletteBus";
+import { useFriendLinkCompletion } from "../components/friends/useFriends";
 import { useClientSettings, useLegacySidebarEnabled } from "../hooks/useSettings";
 import { openCommandPalette } from "../commandPaletteBus";
 import { useProjects } from "../state/entities";
@@ -174,10 +175,21 @@ function ChatRouteGlobalShortcuts() {
   return null;
 }
 
+/**
+ * Finishes half-formed friend links in the background. Mounted on the shell
+ * rather than the friends screens so a link completes as soon as the app is
+ * open, not only when somebody happens to look at their friends list.
+ */
+function FriendLinkCompletion() {
+  useFriendLinkCompletion();
+  return null;
+}
+
 function ChatRouteLayout() {
   return (
     <>
       <ChatRouteGlobalShortcuts />
+      <FriendLinkCompletion />
       <Outlet />
     </>
   );

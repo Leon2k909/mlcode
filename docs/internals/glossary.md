@@ -11,6 +11,7 @@ This is a living glossary for ML Code. It explains what common terms mean in thi
 - [Orchestration](#orchestration)
 - [Provider runtime](#provider-runtime)
 - [Checkpointing](#checkpointing)
+- [Friends](#friends)
 
 ## Concepts
 
@@ -183,3 +184,33 @@ The file patch and changed-file summary for one turn. It is usually computed in 
 [22]: ../../apps/server/src/checkpointing/Utils.ts
 [23]: ../../apps/server/src/checkpointing/Diffs.ts
 [24]: ./overview.md
+
+### Friends
+
+#### Friend
+
+Another person's environment, mutually linked with this one. Each side holds a `friend:participate`
+session on the other; there are no accounts and no broker. Identity is a display name and color the
+environment reports for itself. See [friends.md](./friends.md).
+
+#### Friend code
+
+The pasteable string that starts a link: `mlfriend1_` plus base64url JSON carrying the inviter's
+endpoint, profile, and a one-time bootstrap credential. Encoded in
+[`friendCode.ts`](../../packages/shared/src/friendCode.ts) and redeemed once.
+
+#### Share
+
+A grant of one thread to one friend, with a `canPrompt` flag deciding whether they may only watch or
+may also type. A share is the complete authorization for guest access: no share, no thread.
+
+#### Guest surface
+
+The four `friends.guest*` RPCs, the only methods a friend session can reach. Each re-checks the share
+for the thread it names. Distinct from the owner-facing `friends.*` methods, which need ordinary
+orchestration scopes.
+
+#### Announce code
+
+A reciprocal friend code parked on a friend row, waiting to be delivered to that friend so the link
+becomes mutual. Carried over by the owner's own client, since the server holds no socket to them.

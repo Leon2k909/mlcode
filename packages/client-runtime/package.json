@@ -39,6 +39,18 @@
       "types": "./src/relay/index.ts",
       "default": "./src/relay/index.ts"
     },
+    "./friends": {
+      "types": "./src/friends/link.ts",
+      "default": "./src/friends/link.ts"
+    },
+    "./state/friends": {
+      "types": "./src/state/friends.ts",
+      "default": "./src/state/friends.ts"
+    },
+    "./state/sharedThreads": {
+      "types": "./src/state/sharedThreads.ts",
+      "default": "./src/state/sharedThreads.ts"
+    },
     "./state/auth": {
       "types": "./src/state/auth.ts",
       "default": "./src/state/auth.ts"

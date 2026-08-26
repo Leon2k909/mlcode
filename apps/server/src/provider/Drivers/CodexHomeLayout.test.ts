@@ -19,6 +19,7 @@ const decodeCodexSettings = (input: {
   readonly enabled?: boolean;
   readonly homePath?: string;
   readonly shadowHomePath?: string;
+  readonly separateHistory?: boolean;
   readonly customModels?: readonly string[];
   readonly binaryPath?: string;
 }): CodexSettings => decodeCodexSettingsValue(input);
@@ -84,6 +85,49 @@ it.layer(NodeServices.layer)("CodexHomeLayout", (it) => {
   });
 
   describe("materializeCodexShadowHome", () => {
+    it.effect("keeps history local and the account shared when history is separated", () =>
+      Effect.gen(function* () {
+        const homePath = yield* makeTempDir("t3code-codex-private-history-");
+
+        const layout = yield* resolveCodexHomeLayout(
+          decodeCodexSettings({ homePath, separateHistory: true }),
+        );
+
+        expect(layout).toMatchObject({
+          mode: "privateHistory",
+          sharedHomePath: homePath,
+          effectiveHomePath: `${homePath}-mlcode`,
+          sharesAuth: true,
+        });
+        // Resume reads rollouts from the home that holds them, so continuation
+        // must follow the private home rather than the shared one.
+        expect(layout.continuationKey).toBe(`codex:home:${homePath}-mlcode`);
+      }),
+    );
+
+    it.effect("keeps the account separate too when a shadow home is also configured", () =>
+      Effect.gen(function* () {
+        const path = yield* Path.Path;
+        const homePath = yield* makeTempDir("t3code-codex-both-shared-");
+        const shadowRoot = yield* makeTempDir("t3code-codex-both-shadow-");
+        const shadowHome = path.join(shadowRoot, "shadow");
+
+        const layout = yield* resolveCodexHomeLayout(
+          decodeCodexSettings({
+            homePath,
+            shadowHomePath: shadowHome,
+            separateHistory: true,
+          }),
+        );
+
+        expect(layout).toMatchObject({
+          mode: "privateHistory",
+          effectiveHomePath: shadowHome,
+          sharesAuth: false,
+        });
+      }),
+    );
+
     it.effect("materializes a shadow home with shared state links and private auth", () =>
       Effect.gen(function* () {
         const fileSystem = yield* FileSystem.FileSystem;
@@ -207,6 +251,73 @@ it.layer(NodeServices.layer)("CodexHomeLayout", (it) => {
         expect(logLinkResult._tag).toBe("Failure");
         expect(memoriesLinkResult._tag).toBe("Failure");
         expect(tmpLinkResult._tag).toBe("Failure");
+      }),
+    );
+
+    it.effect("gives a private-history home its own sessions and a shared login", () =>
+      Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const sharedRoot = yield* makeTempDir("t3code-codex-history-shared-");
+        const sharedHome = path.join(sharedRoot, "codex");
+
+        yield* fileSystem.makeDirectory(path.join(sharedHome, "sessions"), { recursive: true });
+        yield* writeTextFile(path.join(sharedHome, "auth.json"), '{"account":"shared"}\n');
+        yield* writeTextFile(path.join(sharedHome, "config.toml"), 'model = "gpt-5-codex"\n');
+        yield* fileSystem.makeDirectory(path.join(sharedHome, "skills"), { recursive: true });
+
+        const layout = yield* resolveCodexHomeLayout(
+          decodeCodexSettings({ homePath: sharedHome, separateHistory: true }),
+        );
+        yield* materializeCodexShadowHome(layout);
+
+        const privateHome = `${sharedHome}-mlcode`;
+        // The account and the configuration follow the user; the conversations
+        // do not.
+        const authTarget = yield* fileSystem.readLink(path.join(privateHome, "auth.json"));
+        const configTarget = yield* fileSystem.readLink(path.join(privateHome, "config.toml"));
+        const skillsTarget = yield* fileSystem.readLink(path.join(privateHome, "skills"));
+        const sessionsLink = yield* fileSystem
+          .readLink(path.join(privateHome, "sessions"))
+          .pipe(Effect.result);
+
+        expect(authTarget).toBe(path.join(sharedHome, "auth.json"));
+        expect(configTarget).toBe(path.join(sharedHome, "config.toml"));
+        expect(skillsTarget).toBe(path.join(sharedHome, "skills"));
+        // Not linked at all: Codex creates it locally on first use, which is the
+        // whole point of the setting.
+        expect(sessionsLink._tag).toBe("Failure");
+      }),
+    );
+
+    it.effect("unlinks history that an earlier shadow home had shared", () =>
+      Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const sharedRoot = yield* makeTempDir("t3code-codex-history-relink-");
+        const sharedHome = path.join(sharedRoot, "codex");
+        const privateHome = `${sharedHome}-mlcode`;
+
+        yield* fileSystem.makeDirectory(path.join(sharedHome, "sessions"), { recursive: true });
+        yield* writeTextFile(path.join(sharedHome, "auth.json"), '{"account":"shared"}\n');
+        yield* fileSystem.makeDirectory(privateHome, { recursive: true });
+        // Left behind by the shadow-home layout, which shares sessions on
+        // purpose. If this survived, turning the setting on would look like it
+        // had done nothing.
+        yield* fileSystem.symlink(
+          path.join(sharedHome, "sessions"),
+          path.join(privateHome, "sessions"),
+        );
+
+        const layout = yield* resolveCodexHomeLayout(
+          decodeCodexSettings({ homePath: sharedHome, separateHistory: true }),
+        );
+        yield* materializeCodexShadowHome(layout);
+
+        const sessionsLink = yield* fileSystem
+          .readLink(path.join(privateHome, "sessions"))
+          .pipe(Effect.result);
+        expect(sessionsLink._tag).toBe("Failure");
       }),
     );
 

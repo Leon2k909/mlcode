@@ -4,6 +4,7 @@ export type SettingsPath =
   | "/settings/keybindings"
   | "/settings/providers"
   | "/settings/employees"
+  | "/settings/friends"
   | "/settings/pets"
   | "/settings/source-control"
   | "/settings/connections"
@@ -26,6 +27,7 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/keybindings": "Keybindings",
   "/settings/providers": "Providers",
   "/settings/employees": "Employees",
+  "/settings/friends": "Friends",
   "/settings/pets": "Pets",
   "/settings/source-control": "Source Control",
   "/settings/connections": "Connections",
@@ -189,8 +191,18 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/employees",
   },
   {
+    id: "friends",
+    title: "Friends",
+    to: "/settings/friends",
+  },
+  {
     id: "pets",
     title: "Pets",
+    to: "/settings/pets",
+  },
+  {
+    id: "pet-gallery",
+    title: "Browse Codex Pets",
     to: "/settings/pets",
   },
   {

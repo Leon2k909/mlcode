@@ -521,6 +521,7 @@ export function projectEvent(
             role: payload.role,
             text: payload.text,
             ...(payload.employeeId !== undefined ? { employeeId: payload.employeeId } : {}),
+            ...(payload.author !== undefined ? { author: payload.author } : {}),
             ...(payload.modelSelection !== undefined
               ? { modelSelection: payload.modelSelection }
               : {}),
@@ -549,6 +550,7 @@ export function projectEvent(
                     updatedAt: message.updatedAt,
                     turnId: message.turnId,
                     ...(message.employeeId !== undefined ? { employeeId: message.employeeId } : {}),
+                    ...(message.author !== undefined ? { author: message.author } : {}),
                     ...(message.modelSelection !== undefined
                       ? { modelSelection: message.modelSelection }
                       : {}),

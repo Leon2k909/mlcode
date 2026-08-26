@@ -1,10 +1,11 @@
-import { ArrowLeftIcon, GitPullRequestIcon, SettingsIcon } from "lucide-react";
+import { ArrowLeftIcon, GitPullRequestIcon, SettingsIcon, UsersRoundIcon } from "lucide-react";
 import { memo, useCallback } from "react";
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 
 import { useEnvironmentIdentificationMode } from "../../hooks/useSettings";
 import { cn } from "../../lib/utils";
 import { useEnvironments } from "../../state/environments";
+import { useFriends } from "../friends/useFriends";
 import {
   resolveEnvironmentIdentificationPillLabel,
   resolveSidebarStageBackdropVariant,
@@ -136,6 +137,10 @@ export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
   const navigate = useNavigate();
   const { isMobile, setOpenMobile } = useSidebar();
   const { environments } = useEnvironments();
+  // The entry point only exists once there is somebody to share with, so an
+  // unused feature does not permanently occupy sidebar space.
+  const { friends } = useFriends();
+  const hasFriends = friends.length > 0;
   // The page reads every connected server, so one of them offering pull requests is enough for
   // the link to lead somewhere.
   const pullRequestsSupported = environments.some(
@@ -153,6 +158,10 @@ export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
   const handleSettingsClick = useCallback(() => {
     closeMobileSidebar();
     void navigate({ to: "/settings" });
+  }, [closeMobileSidebar, navigate]);
+  const handleSharedChatsClick = useCallback(() => {
+    closeMobileSidebar();
+    void navigate({ to: "/friends" });
   }, [closeMobileSidebar, navigate]);
 
   return (
@@ -177,6 +186,24 @@ export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
               <TooltipPopup side="top">Settings</TooltipPopup>
             </Tooltip>
           </SidebarMenuItem>
+          {hasFriends ? (
+            <SidebarMenuItem className="shrink-0">
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <SidebarMenuButton
+                      aria-label="Shared with me"
+                      onClick={handleSharedChatsClick}
+                      size="icon"
+                    >
+                      <UsersRoundIcon />
+                    </SidebarMenuButton>
+                  }
+                />
+                <TooltipPopup side="top">Shared with me</TooltipPopup>
+              </Tooltip>
+            </SidebarMenuItem>
+          ) : null}
           {pullRequestsSupported ? (
             <SidebarMenuItem className="shrink-0">
               <Tooltip>

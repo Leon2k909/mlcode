@@ -77,6 +77,8 @@ Full docs live in [docs/](./docs).
 
 - [Install and first run](./docs/user/install.md)
 - [Employees and group chats](./docs/user/employees.md)
+- [Friends and shared chats](./docs/user/friends.md)
+- [Pets](./docs/user/pets.md)
 - [Thread goals](./docs/user/goals.md)
 - [Long-thread management](./docs/user/long-threads.md)
 - [Permission modes](./docs/user/permission-modes.md)

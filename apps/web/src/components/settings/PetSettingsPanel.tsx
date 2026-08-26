@@ -9,6 +9,7 @@ import { PetSprite } from "../pets/PetSprite";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Skeleton } from "../ui/skeleton";
+import { PetGalleryBrowser } from "./PetGalleryBrowser";
 import { searchableSetting } from "./settingsSearch";
 import { SettingsPageContainer, SettingsSection } from "./settingsLayout";
 
@@ -163,6 +164,29 @@ export function PetSettingsPanel() {
             </div>
           </div>
         ) : null}
+      </SettingsSection>
+
+      <SettingsSection
+        title="Browse Codex Pets"
+        icon={<PawPrintIcon className="size-5" />}
+        headerAction={
+          <a
+            href="https://codex-pets.net/"
+            target="_blank"
+            rel="noreferrer"
+            className="text-xs text-muted-foreground underline-offset-2 hover:underline"
+          >
+            codex-pets.net
+          </a>
+        }
+      >
+        <div className="rounded-xl px-3 pt-1 pb-2 sm:px-4">
+          <p className="max-w-2xl text-[13px] leading-[1.5] text-muted-foreground/80">
+            Pets shared by the community. Installing one downloads its sprite kit into your Codex
+            pets folder, where it shows up in the list above.
+          </p>
+        </div>
+        <PetGalleryBrowser environmentId={environmentId} onInstalled={refresh} />
       </SettingsSection>
     </SettingsPageContainer>
   );

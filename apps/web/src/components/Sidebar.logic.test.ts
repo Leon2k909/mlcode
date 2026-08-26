@@ -20,6 +20,7 @@ import {
   resolveThreadRowClassName,
   resolveSidebarThreadStatus,
   resolveThreadStatusPill,
+  resolveChatDurationMs,
   resolveWorkingStartedAt,
   searchSidebarThreadsByTitle,
   formatWorkingDurationLabel,
@@ -1029,6 +1030,83 @@ describe("resolveWorkingStartedAt", () => {
 
   it("returns null with neither a running turn nor a session", () => {
     expect(resolveWorkingStartedAt({ latestTurn: null, session: null })).toBeNull();
+  });
+});
+
+describe("resolveChatDurationMs", () => {
+  const nowMs = Date.parse("2026-03-09T12:00:00.000Z");
+
+  it("measures a live chat up to now, not to its last recorded activity", () => {
+    // A turn that is still running means the conversation is still going, so
+    // the number has to keep moving even though updatedAt has not.
+    expect(
+      resolveChatDurationMs(
+        {
+          createdAt: "2026-03-09T10:00:00.000Z",
+          updatedAt: "2026-03-09T10:05:00.000Z",
+          latestTurn: makeLatestTurn({ completedAt: null }),
+        },
+        { nowMs },
+      ),
+    ).toBe(2 * 60 * 60_000);
+  });
+
+  it("stops a finished chat at its last activity", () => {
+    // Otherwise a chat left open in a tab would appear to grow for days.
+    expect(
+      resolveChatDurationMs(
+        {
+          createdAt: "2026-03-09T10:00:00.000Z",
+          updatedAt: "2026-03-09T10:30:00.000Z",
+          latestTurn: makeLatestTurn(),
+        },
+        { nowMs },
+      ),
+    ).toBe(30 * 60_000);
+  });
+
+  it("treats a chat with no turns as finished at its last activity", () => {
+    expect(
+      resolveChatDurationMs(
+        {
+          createdAt: "2026-03-09T10:00:00.000Z",
+          updatedAt: "2026-03-09T10:01:00.000Z",
+          latestTurn: null,
+        },
+        { nowMs },
+      ),
+    ).toBe(60_000);
+  });
+
+  it("returns null when the chat has no usable start", () => {
+    expect(
+      resolveChatDurationMs(
+        { createdAt: "not-a-date", updatedAt: "2026-03-09T10:30:00.000Z", latestTurn: null },
+        { nowMs },
+      ),
+    ).toBeNull();
+  });
+
+  it("falls back to now when the last activity is unreadable", () => {
+    expect(
+      resolveChatDurationMs(
+        { createdAt: "2026-03-09T11:00:00.000Z", updatedAt: "nonsense", latestTurn: null },
+        { nowMs },
+      ),
+    ).toBe(60 * 60_000);
+  });
+
+  it("never reports a negative duration", () => {
+    expect(
+      resolveChatDurationMs(
+        {
+          createdAt: "2026-03-09T10:00:00.000Z",
+          updatedAt: "2026-03-09T09:00:00.000Z",
+          latestTurn: null,
+        },
+        { nowMs },
+      ),
+    ).toBe(0);
   });
 });
 

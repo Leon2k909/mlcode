@@ -19,7 +19,17 @@ import {
   FilesystemBrowseError,
 } from "./filesystem.ts";
 import { AssetAccessError, AssetCreateUrlInput, AssetCreateUrlResult } from "./assets.ts";
-import { PetCatalog, PetListInput } from "./pets.ts";
+import {
+  PetCatalog,
+  PetGalleryError,
+  PetGalleryPage,
+  PetListInput,
+  PetsBrowseGalleryInput,
+  PetsEmptyResult,
+  PetsInstallInput,
+  PetsInstallResult,
+  PetsUninstallInput,
+} from "./pets.ts";
 import {
   GitActionProgressEvent,
   VcsSwitchRefInput,
@@ -67,6 +77,30 @@ import {
   OrchestrationRpcSchemas,
   OrchestrationGetWorkflowScriptError,
 } from "./orchestration.ts";
+import {
+  FriendInvite,
+  FriendOperationError,
+  FriendProfile,
+  FriendsCreateInviteInput,
+  FriendsEmptyResult,
+  FriendsGuestAnnounceInput,
+  FriendsGuestPostMessageInput,
+  FriendsGuestPostMessageResult,
+  FriendsGuestSubscribeThreadInput,
+  FriendsGetLinkCredentialInput,
+  FriendsGuestSubscribeThreadsInput,
+  FriendsLinkCredential,
+  FriendsMarkAnnouncedInput,
+  FriendsRedeemInviteInput,
+  FriendsRemoveInput,
+  FriendsShareThreadInput,
+  FriendsStreamEvent,
+  FriendsUnshareThreadInput,
+  FriendsUpdateProfileInput,
+  SharedThreadListEvent,
+  SharedThreadStreamError,
+  SharedThreadStreamEvent,
+} from "./friends.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
 import {
   ProviderRealtimeAppendAudioInput,
@@ -222,6 +256,9 @@ export const WS_METHODS = {
   filesystemBrowse: "filesystem.browse",
   assetsCreateUrl: "assets.createUrl",
   petsList: "pets.list",
+  petsBrowseGallery: "pets.browseGallery",
+  petsInstall: "pets.install",
+  petsUninstall: "pets.uninstall",
 
   // VCS methods
   vcsPull: "vcs.pull",
@@ -332,7 +369,37 @@ export const WS_METHODS = {
   subscribeAuthAccess: "subscribeAuthAccess",
   subscribeBackgroundPolicy: "subscribeBackgroundPolicy",
   subscribeResourceTelemetry: "subscribeResourceTelemetry",
+
+  // Friends — owner methods. These operate on your own environment and need
+  // ordinary orchestration scopes.
+  friendsSubscribe: "friends.subscribe",
+  friendsCreateInvite: "friends.createInvite",
+  friendsRedeemInvite: "friends.redeemInvite",
+  friendsRemove: "friends.remove",
+  friendsMarkAnnounced: "friends.markAnnounced",
+  friendsGetLinkCredential: "friends.getLinkCredential",
+  friendsUpdateProfile: "friends.updateProfile",
+  friendsShareThread: "friends.shareThread",
+  friendsUnshareThread: "friends.unshareThread",
+
+  // Friends — guest methods. The complete surface a linked friend may call.
+  // Every one re-checks the share grant for the thread it names.
+  friendsGuestAnnounce: "friends.guestAnnounce",
+  friendsGuestSubscribeThreads: "friends.guestSubscribeThreads",
+  friendsGuestSubscribeThread: "friends.guestSubscribeThread",
+  friendsGuestPostMessage: "friends.guestPostMessage",
 } as const;
+
+/**
+ * The guest half of the friends surface, named once so authorization tests and
+ * the server can assert that a friend session reaches these and nothing else.
+ */
+export const FRIEND_GUEST_WS_METHODS = [
+  "friends.guestAnnounce",
+  "friends.guestSubscribeThreads",
+  "friends.guestSubscribeThread",
+  "friends.guestPostMessage",
+] as const;
 
 export const WsServerUpsertKeybindingRpc = Rpc.make(WS_METHODS.serverUpsertKeybinding, {
   payload: ServerUpsertKeybindingInput,
@@ -1038,6 +1105,105 @@ export const WsSubscribeResourceTelemetryRpc = Rpc.make(WS_METHODS.subscribeReso
   stream: true,
 });
 
+export const WsPetsBrowseGalleryRpc = Rpc.make(WS_METHODS.petsBrowseGallery, {
+  payload: PetsBrowseGalleryInput,
+  success: PetGalleryPage,
+  error: Schema.Union([PetGalleryError, EnvironmentAuthorizationError]),
+});
+
+export const WsPetsInstallRpc = Rpc.make(WS_METHODS.petsInstall, {
+  payload: PetsInstallInput,
+  success: PetsInstallResult,
+  error: Schema.Union([PetGalleryError, EnvironmentAuthorizationError]),
+});
+
+export const WsPetsUninstallRpc = Rpc.make(WS_METHODS.petsUninstall, {
+  payload: PetsUninstallInput,
+  success: PetsEmptyResult,
+  error: Schema.Union([PetGalleryError, EnvironmentAuthorizationError]),
+});
+
+export const WsFriendsSubscribeRpc = Rpc.make(WS_METHODS.friendsSubscribe, {
+  payload: Schema.Struct({}),
+  success: FriendsStreamEvent,
+  error: Schema.Union([FriendOperationError, EnvironmentAuthorizationError]),
+  stream: true,
+});
+
+export const WsFriendsCreateInviteRpc = Rpc.make(WS_METHODS.friendsCreateInvite, {
+  payload: FriendsCreateInviteInput,
+  success: FriendInvite,
+  error: Schema.Union([FriendOperationError, EnvironmentAuthorizationError]),
+});
+
+export const WsFriendsRedeemInviteRpc = Rpc.make(WS_METHODS.friendsRedeemInvite, {
+  payload: FriendsRedeemInviteInput,
+  success: FriendsEmptyResult,
+  error: Schema.Union([FriendOperationError, EnvironmentAuthorizationError]),
+});
+
+export const WsFriendsRemoveRpc = Rpc.make(WS_METHODS.friendsRemove, {
+  payload: FriendsRemoveInput,
+  success: FriendsEmptyResult,
+  error: Schema.Union([FriendOperationError, EnvironmentAuthorizationError]),
+});
+
+export const WsFriendsMarkAnnouncedRpc = Rpc.make(WS_METHODS.friendsMarkAnnounced, {
+  payload: FriendsMarkAnnouncedInput,
+  success: FriendsEmptyResult,
+  error: Schema.Union([FriendOperationError, EnvironmentAuthorizationError]),
+});
+
+export const WsFriendsGetLinkCredentialRpc = Rpc.make(WS_METHODS.friendsGetLinkCredential, {
+  payload: FriendsGetLinkCredentialInput,
+  success: FriendsLinkCredential,
+  error: Schema.Union([FriendOperationError, EnvironmentAuthorizationError]),
+});
+
+export const WsFriendsUpdateProfileRpc = Rpc.make(WS_METHODS.friendsUpdateProfile, {
+  payload: FriendsUpdateProfileInput,
+  success: FriendProfile,
+  error: Schema.Union([FriendOperationError, EnvironmentAuthorizationError]),
+});
+
+export const WsFriendsShareThreadRpc = Rpc.make(WS_METHODS.friendsShareThread, {
+  payload: FriendsShareThreadInput,
+  success: FriendsEmptyResult,
+  error: Schema.Union([FriendOperationError, EnvironmentAuthorizationError]),
+});
+
+export const WsFriendsUnshareThreadRpc = Rpc.make(WS_METHODS.friendsUnshareThread, {
+  payload: FriendsUnshareThreadInput,
+  success: FriendsEmptyResult,
+  error: Schema.Union([FriendOperationError, EnvironmentAuthorizationError]),
+});
+
+export const WsFriendsGuestAnnounceRpc = Rpc.make(WS_METHODS.friendsGuestAnnounce, {
+  payload: FriendsGuestAnnounceInput,
+  success: FriendsEmptyResult,
+  error: Schema.Union([FriendOperationError, EnvironmentAuthorizationError]),
+});
+
+export const WsFriendsGuestSubscribeThreadsRpc = Rpc.make(WS_METHODS.friendsGuestSubscribeThreads, {
+  payload: FriendsGuestSubscribeThreadsInput,
+  success: SharedThreadListEvent,
+  error: Schema.Union([SharedThreadStreamError, EnvironmentAuthorizationError]),
+  stream: true,
+});
+
+export const WsFriendsGuestSubscribeThreadRpc = Rpc.make(WS_METHODS.friendsGuestSubscribeThread, {
+  payload: FriendsGuestSubscribeThreadInput,
+  success: SharedThreadStreamEvent,
+  error: Schema.Union([SharedThreadStreamError, EnvironmentAuthorizationError]),
+  stream: true,
+});
+
+export const WsFriendsGuestPostMessageRpc = Rpc.make(WS_METHODS.friendsGuestPostMessage, {
+  payload: FriendsGuestPostMessageInput,
+  success: FriendsGuestPostMessageResult,
+  error: Schema.Union([FriendOperationError, EnvironmentAuthorizationError]),
+});
+
 export const WsRpcGroup = RpcGroup.make(
   WsServerProbeRpc,
   WsServerGetConfigRpc,
@@ -1090,6 +1256,9 @@ export const WsRpcGroup = RpcGroup.make(
   WsFilesystemBrowseRpc,
   WsAssetsCreateUrlRpc,
   WsPetsListRpc,
+  WsPetsBrowseGalleryRpc,
+  WsPetsInstallRpc,
+  WsPetsUninstallRpc,
   WsSubscribeVcsStatusRpc,
   WsVcsPullRpc,
   WsVcsRefreshStatusRpc,
@@ -1144,4 +1313,17 @@ export const WsRpcGroup = RpcGroup.make(
   WsOrchestrationGetArchivedShellSnapshotRpc,
   WsOrchestrationSubscribeShellRpc,
   WsOrchestrationSubscribeThreadRpc,
+  WsFriendsSubscribeRpc,
+  WsFriendsCreateInviteRpc,
+  WsFriendsRedeemInviteRpc,
+  WsFriendsRemoveRpc,
+  WsFriendsMarkAnnouncedRpc,
+  WsFriendsGetLinkCredentialRpc,
+  WsFriendsUpdateProfileRpc,
+  WsFriendsShareThreadRpc,
+  WsFriendsUnshareThreadRpc,
+  WsFriendsGuestAnnounceRpc,
+  WsFriendsGuestSubscribeThreadsRpc,
+  WsFriendsGuestSubscribeThreadRpc,
+  WsFriendsGuestPostMessageRpc,
 );

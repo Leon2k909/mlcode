@@ -53,7 +53,12 @@ export type EnvironmentSubscriptionRpcTag =
   | typeof WS_METHODS.subscribeResourceTelemetry
   | typeof WS_METHODS.previewAutomationConnect
   | typeof WS_METHODS.subscribeVcsStatus
-  | typeof WS_METHODS.terminalAttach;
+  | typeof WS_METHODS.terminalAttach
+  | typeof WS_METHODS.friendsSubscribe
+  // Guest subscriptions run over a friend link rather than the environment
+  // registry, but they are the same shape and reuse the same helpers.
+  | typeof WS_METHODS.friendsGuestSubscribeThreads
+  | typeof WS_METHODS.friendsGuestSubscribeThread;
 
 export type EnvironmentStreamCommandRpcTag =
   | typeof WS_METHODS.cloudInstallRelayClient

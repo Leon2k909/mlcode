@@ -83,6 +83,25 @@ Shadow home path: ~/.codex_p
 The important part is that both providers use the same `CODEX_HOME path`, but only the second one
 has a `Shadow home path`.
 
+## My ML Code Chats Show Up In The Codex App
+
+They will, unless you tell them not to. ML Code runs the real Codex, and Codex keeps its history in
+whatever directory `CODEX_HOME` points at. By default that is `~/.codex`, the same directory the
+Codex app reads, so both see the same conversations.
+
+Turn on **Keep chat history out of Codex** on the Codex provider in Settings. ML Code then gets its
+own Codex history directory next to your existing one, and:
+
+- you stay signed in with the same account, so there is nothing to log into again;
+- your Codex config, skills, plugins, and instructions keep working, because those are shared;
+- new ML Code chats stop appearing in the Codex app, and Codex chats stop appearing here.
+
+Chats you had before turning it on stay where they were written. This changes where new ones go, it
+does not move old ones.
+
+If you want the accounts separated as well as the history, set a **Shadow home path** too. With both
+set, that provider signs in separately _and_ keeps its own history.
+
 ## Which Account Am I Using?
 
 Open Settings and look at the provider row.
@@ -138,4 +157,5 @@ find ~/.codex_p -mindepth 1 ! -name auth.json -exec rm -rf {} +
 Use a totally separate `CODEX_HOME path` only when you want a separate Codex workspace.
 
 That means separate sessions and less account switching inside old threads. Most dual-account users
-should use the shared-home plus shadow-home setup instead.
+should use the shared-home plus shadow-home setup instead, and most people who only want their
+chats kept apart want **Keep chat history out of Codex** rather than a separate home.

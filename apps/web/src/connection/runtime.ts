@@ -1,4 +1,5 @@
 import { Connection } from "@t3tools/client-runtime/connection";
+import { layerWithSession as friendLinkLayer } from "@t3tools/client-runtime/friends";
 import { shellSnapshotLoaderLayer } from "@t3tools/client-runtime/state/shell";
 import { threadSnapshotLoaderLayer } from "@t3tools/client-runtime/state/threads";
 import { pullRequestDiffLoaderLayer } from "@t3tools/client-runtime/state/pull-requests";
@@ -24,13 +25,20 @@ const snapshotLoaderLayer = Layer.mergeAll(
 
 type ConnectionLayerSource =
   | typeof Connection.layer
+  | typeof friendLinkLayer
   | typeof snapshotLoaderLayer
   | typeof runtimeContextLayer
   | typeof connectionPlatformLayer
   | typeof backgroundActivityObserverLayer
   | typeof backgroundActivityReporterLayer;
 
-const providedClientConnectionLayer = Layer.merge(Connection.layer, snapshotLoaderLayer).pipe(
+// Guest links sit beside the connection layer, not inside it: a friend's server
+// is somebody else's environment and must never be registered as one of ours.
+const providedClientConnectionLayer = Layer.mergeAll(
+  Connection.layer,
+  snapshotLoaderLayer,
+  friendLinkLayer,
+).pipe(
   Layer.provideMerge(
     Layer.mergeAll(
       runtimeContextLayer,
