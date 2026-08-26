@@ -29,6 +29,9 @@ jobs:
           sparse-checkout-cone-mode: false
 
       - name: Reject repository-owned PR assets
+        # Upstream runs this guard on Linux; this fork's runner is Windows,
+        # where the default shell is PowerShell.
+        shell: bash
         run: |
           files="$(git ls-files .github/pr-assets)"
           if test -n "$files"; then
