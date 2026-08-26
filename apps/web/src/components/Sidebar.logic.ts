@@ -643,19 +643,29 @@ export function resolveWorkingStartedAt(
 }
 
 /**
- * How long the whole conversation has been going, as opposed to the turn
- * running right now.
+ * How long the current task has been going — since the human's own last
+ * message — as opposed to the turn running right now.
  *
- * These are different numbers and both are worth seeing: a chat picked up and
- * put down across an afternoon reads as hours here while its live turn reads as
- * seconds. Counts to now only while a turn is actually running, so a finished
- * chat stops ageing instead of growing for as long as it is left open.
+ * An employee handoff (Ceo to Alpha to Beta...) starts a fresh turn inside
+ * the same warm session, so the running turn's own elapsed time resets at
+ * every handoff. This counts from the human's last message instead, so a
+ * multi-employee task reads as "how long since I asked" rather than
+ * restarting at each handoff, and rather than the thread's entire lifetime
+ * (a thread reused across unrelated sessions over days would otherwise read
+ * as that many hours). Falls back to the thread's creation time for the rare
+ * row with no recorded user message. Counts to now only while a turn is
+ * actually running, so a finished task stops ageing instead of growing for
+ * as long as it is left open.
  */
-export function resolveChatDurationMs(
-  thread: Pick<SidebarThreadSummary, "createdAt" | "updatedAt" | "latestTurn">,
+export function resolveTaskDurationMs(
+  thread: Pick<
+    SidebarThreadSummary,
+    "latestUserMessageAt" | "createdAt" | "updatedAt" | "latestTurn"
+  >,
   options: { readonly nowMs: number },
 ): number | null {
-  const startedMs = Date.parse(thread.createdAt);
+  const started = firstValidTimestamp(thread.latestUserMessageAt, thread.createdAt);
+  const startedMs = started === null ? Number.NaN : Date.parse(started);
   if (!Number.isFinite(startedMs)) {
     return null;
   }

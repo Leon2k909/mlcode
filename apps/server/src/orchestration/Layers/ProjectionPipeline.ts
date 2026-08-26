@@ -606,8 +606,15 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
 
       let latestUserMessageAt: string | null = null;
       for (const message of messages) {
+        // An employee handoff also dispatches a role: "user" message so the
+        // provider treats it as a fresh turn's input, but it is server-
+        // authored, not typed by the human — it carries employeeId, which a
+        // genuine human message never does (see OrchestrationMessage's
+        // employeeId doc). Counting it here would make this timestamp reset
+        // on every handoff, same as the turn it starts.
         if (
           message.role === "user" &&
+          message.employeeId === undefined &&
           (latestUserMessageAt === null || message.createdAt > latestUserMessageAt)
         ) {
           latestUserMessageAt = message.createdAt;

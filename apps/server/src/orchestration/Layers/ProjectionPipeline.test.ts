@@ -2,6 +2,7 @@ import {
   CheckpointRef,
   CommandId,
   CorrelationId,
+  EmployeeId,
   EventId,
   MessageId,
   ProjectId,
@@ -2054,6 +2055,127 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
       `;
       assert.deepEqual(threadRows, [{ pendingApprovalCount: 0 }]);
     }),
+  );
+
+  it.effect(
+    "does not advance latestUserMessageAt for an employee handoff's synthetic user message",
+    () =>
+      Effect.gen(function* () {
+        const projectionPipeline = yield* OrchestrationProjectionPipeline;
+        const eventStore = yield* OrchestrationEventStore;
+        const sql = yield* SqlClient.SqlClient;
+        const appendAndProject = (event: Parameters<typeof eventStore.append>[0]) =>
+          eventStore
+            .append(event)
+            .pipe(Effect.flatMap((savedEvent) => projectionPipeline.projectEvent(savedEvent)));
+
+        yield* appendAndProject({
+          type: "project.created",
+          eventId: EventId.make("evt-handoff-latest-message-1"),
+          aggregateKind: "project",
+          aggregateId: ProjectId.make("project-handoff-latest-message"),
+          occurredAt: "2026-02-27T09:00:00.000Z",
+          commandId: CommandId.make("cmd-handoff-latest-message-1"),
+          causationEventId: null,
+          correlationId: CorrelationId.make("cmd-handoff-latest-message-1"),
+          metadata: {},
+          payload: {
+            projectId: ProjectId.make("project-handoff-latest-message"),
+            title: "Handoff Latest Message Project",
+            workspaceRoot: "/tmp/project-handoff-latest-message",
+            defaultModelSelection: null,
+            scripts: [],
+            createdAt: "2026-02-27T09:00:00.000Z",
+            updatedAt: "2026-02-27T09:00:00.000Z",
+          },
+        });
+
+        yield* appendAndProject({
+          type: "thread.created",
+          eventId: EventId.make("evt-handoff-latest-message-2"),
+          aggregateKind: "thread",
+          aggregateId: ThreadId.make("thread-handoff-latest-message"),
+          occurredAt: "2026-02-27T09:00:00.000Z",
+          commandId: CommandId.make("cmd-handoff-latest-message-2"),
+          causationEventId: null,
+          correlationId: CorrelationId.make("cmd-handoff-latest-message-2"),
+          metadata: {},
+          payload: {
+            threadId: ThreadId.make("thread-handoff-latest-message"),
+            projectId: ProjectId.make("project-handoff-latest-message"),
+            title: "Handoff Latest Message Thread",
+            modelSelection: {
+              instanceId: ProviderInstanceId.make("codex"),
+              model: "gpt-5-codex",
+            },
+            runtimeMode: "full-access",
+            branch: null,
+            worktreePath: null,
+            createdAt: "2026-02-27T09:00:00.000Z",
+            updatedAt: "2026-02-27T09:00:00.000Z",
+          },
+        });
+
+        // The human's own message: no employeeId, exactly what the client
+        // command always omits.
+        yield* appendAndProject({
+          type: "thread.message-sent",
+          eventId: EventId.make("evt-handoff-latest-message-3"),
+          aggregateKind: "thread",
+          aggregateId: ThreadId.make("thread-handoff-latest-message"),
+          occurredAt: "2026-02-27T09:05:00.000Z",
+          commandId: CommandId.make("cmd-handoff-latest-message-3"),
+          causationEventId: null,
+          correlationId: CorrelationId.make("cmd-handoff-latest-message-3"),
+          metadata: {},
+          payload: {
+            threadId: ThreadId.make("thread-handoff-latest-message"),
+            messageId: MessageId.make("message-handoff-latest-human"),
+            role: "user",
+            text: "Fix the sidebar duration bug",
+            turnId: null,
+            streaming: false,
+            createdAt: "2026-02-27T09:05:00.000Z",
+            updatedAt: "2026-02-27T09:05:00.000Z",
+          },
+        });
+
+        // A later employee handoff: still role "user" (so the provider
+        // treats it as fresh turn input), but server-authored and carrying
+        // employeeId, the way ProviderRuntimeIngestion's handoff dispatch
+        // does.
+        yield* appendAndProject({
+          type: "thread.message-sent",
+          eventId: EventId.make("evt-handoff-latest-message-4"),
+          aggregateKind: "thread",
+          aggregateId: ThreadId.make("thread-handoff-latest-message"),
+          occurredAt: "2026-02-27T09:10:00.000Z",
+          commandId: CommandId.make("cmd-handoff-latest-message-4"),
+          causationEventId: null,
+          correlationId: CorrelationId.make("cmd-handoff-latest-message-4"),
+          metadata: {},
+          payload: {
+            threadId: ThreadId.make("thread-handoff-latest-message"),
+            messageId: MessageId.make("message-handoff-latest-handoff"),
+            role: "user",
+            text: "To Alpha, from Ceo:\n\nImplement the fix.",
+            employeeId: EmployeeId.make("ceo"),
+            turnId: null,
+            streaming: false,
+            createdAt: "2026-02-27T09:10:00.000Z",
+            updatedAt: "2026-02-27T09:10:00.000Z",
+          },
+        });
+
+        const threadRows = yield* sql<{
+          readonly latestUserMessageAt: string | null;
+        }>`
+          SELECT latest_user_message_at AS "latestUserMessageAt"
+          FROM projection_threads
+          WHERE thread_id = 'thread-handoff-latest-message'
+        `;
+        assert.deepEqual(threadRows, [{ latestUserMessageAt: "2026-02-27T09:05:00.000Z" }]);
+      }),
   );
 
   it.effect("clears stale pending user input from projected shell summaries", () =>

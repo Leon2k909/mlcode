@@ -22,7 +22,7 @@ import {
   resolveThreadRowClassName,
   resolveSidebarThreadStatus,
   resolveThreadStatusPill,
-  resolveChatDurationMs,
+  resolveTaskDurationMs,
   resolveWorkingStartedAt,
   searchSidebarThreadsByTitle,
   formatWorkingDurationLabel,
@@ -1088,15 +1088,30 @@ describe("resolveWorkingStartedAt", () => {
   });
 });
 
-describe("resolveChatDurationMs", () => {
+describe("resolveTaskDurationMs", () => {
   const nowMs = Date.parse("2026-03-09T12:00:00.000Z");
 
-  it("measures a live chat up to now, not to its last recorded activity", () => {
-    // A turn that is still running means the conversation is still going, so
-    // the number has to keep moving even though updatedAt has not.
+  it("measures since the human's last message, not the thread's entire lifetime", () => {
+    // A thread reused across unrelated sessions over days must not read as
+    // that many hours just because it is old; only the current ask counts.
     expect(
-      resolveChatDurationMs(
+      resolveTaskDurationMs(
         {
+          latestUserMessageAt: "2026-03-09T10:00:00.000Z",
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-03-09T10:05:00.000Z",
+          latestTurn: makeLatestTurn({ completedAt: null }),
+        },
+        { nowMs },
+      ),
+    ).toBe(2 * 60 * 60_000);
+  });
+
+  it("falls back to createdAt when there is no recorded user message", () => {
+    expect(
+      resolveTaskDurationMs(
+        {
+          latestUserMessageAt: null,
           createdAt: "2026-03-09T10:00:00.000Z",
           updatedAt: "2026-03-09T10:05:00.000Z",
           latestTurn: makeLatestTurn({ completedAt: null }),
@@ -1106,11 +1121,28 @@ describe("resolveChatDurationMs", () => {
     ).toBe(2 * 60 * 60_000);
   });
 
-  it("stops a finished chat at its last activity", () => {
-    // Otherwise a chat left open in a tab would appear to grow for days.
+  it("measures a live task up to now, not to its last recorded activity", () => {
+    // A turn that is still running means the task is still going, so the
+    // number has to keep moving even though updatedAt has not.
     expect(
-      resolveChatDurationMs(
+      resolveTaskDurationMs(
         {
+          latestUserMessageAt: "2026-03-09T10:00:00.000Z",
+          createdAt: "2026-03-09T10:00:00.000Z",
+          updatedAt: "2026-03-09T10:05:00.000Z",
+          latestTurn: makeLatestTurn({ completedAt: null }),
+        },
+        { nowMs },
+      ),
+    ).toBe(2 * 60 * 60_000);
+  });
+
+  it("stops a finished task at its last activity", () => {
+    // Otherwise a task left open in a tab would appear to grow for days.
+    expect(
+      resolveTaskDurationMs(
+        {
+          latestUserMessageAt: "2026-03-09T10:00:00.000Z",
           createdAt: "2026-03-09T10:00:00.000Z",
           updatedAt: "2026-03-09T10:30:00.000Z",
           latestTurn: makeLatestTurn(),
@@ -1120,10 +1152,11 @@ describe("resolveChatDurationMs", () => {
     ).toBe(30 * 60_000);
   });
 
-  it("treats a chat with no turns as finished at its last activity", () => {
+  it("treats a task with no turns as finished at its last activity", () => {
     expect(
-      resolveChatDurationMs(
+      resolveTaskDurationMs(
         {
+          latestUserMessageAt: "2026-03-09T10:00:00.000Z",
           createdAt: "2026-03-09T10:00:00.000Z",
           updatedAt: "2026-03-09T10:01:00.000Z",
           latestTurn: null,
@@ -1133,10 +1166,15 @@ describe("resolveChatDurationMs", () => {
     ).toBe(60_000);
   });
 
-  it("returns null when the chat has no usable start", () => {
+  it("returns null when the task has no usable start", () => {
     expect(
-      resolveChatDurationMs(
-        { createdAt: "not-a-date", updatedAt: "2026-03-09T10:30:00.000Z", latestTurn: null },
+      resolveTaskDurationMs(
+        {
+          latestUserMessageAt: null,
+          createdAt: "not-a-date",
+          updatedAt: "2026-03-09T10:30:00.000Z",
+          latestTurn: null,
+        },
         { nowMs },
       ),
     ).toBeNull();
@@ -1144,8 +1182,13 @@ describe("resolveChatDurationMs", () => {
 
   it("falls back to now when the last activity is unreadable", () => {
     expect(
-      resolveChatDurationMs(
-        { createdAt: "2026-03-09T11:00:00.000Z", updatedAt: "nonsense", latestTurn: null },
+      resolveTaskDurationMs(
+        {
+          latestUserMessageAt: "2026-03-09T11:00:00.000Z",
+          createdAt: "2026-03-09T11:00:00.000Z",
+          updatedAt: "nonsense",
+          latestTurn: null,
+        },
         { nowMs },
       ),
     ).toBe(60 * 60_000);
@@ -1153,8 +1196,9 @@ describe("resolveChatDurationMs", () => {
 
   it("never reports a negative duration", () => {
     expect(
-      resolveChatDurationMs(
+      resolveTaskDurationMs(
         {
+          latestUserMessageAt: "2026-03-09T10:00:00.000Z",
           createdAt: "2026-03-09T10:00:00.000Z",
           updatedAt: "2026-03-09T09:00:00.000Z",
           latestTurn: null,
