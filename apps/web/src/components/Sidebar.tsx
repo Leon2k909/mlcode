@@ -122,6 +122,7 @@ import { buildThreadActionMenuItems } from "./threadActionMenu.logic";
 import {
   buildBulkTitleRegenerationContextMenuItem,
   formatWorkingDurationLabel,
+  resolveChatDurationMs,
   firstValidTimestampMs,
   hasUnseenCompletion,
   isSidebarNestedLinkClick,
@@ -256,6 +257,13 @@ function WorkingThreadStatus(props: { thread: SidebarThreadSummary }) {
       </>
     );
   }
+  // The turn's elapsed time and the chat's own are different questions. Showing
+  // the chat total only once it exceeds the current turn keeps a brand new chat
+  // from rendering the same number twice.
+  const chatDurationMs = resolveChatDurationMs(props.thread, { nowMs: Date.now() });
+  const showChatDuration =
+    chatDurationMs !== null &&
+    (Number.isNaN(startedMs) || chatDurationMs - (Date.now() - startedMs) >= 60_000);
   return (
     <>
       <CircleDashedIcon aria-hidden className="size-4 shrink-0" />
@@ -263,6 +271,11 @@ function WorkingThreadStatus(props: { thread: SidebarThreadSummary }) {
       {!Number.isNaN(startedMs) ? (
         <span aria-hidden className="font-mono tabular-nums">
           {formatWorkingDurationLabel(Date.now() - startedMs)}
+        </span>
+      ) : null}
+      {showChatDuration ? (
+        <span aria-hidden className="font-mono tabular-nums text-muted-foreground/70">
+          · {formatWorkingDurationLabel(chatDurationMs)} total
         </span>
       ) : null}
     </>
