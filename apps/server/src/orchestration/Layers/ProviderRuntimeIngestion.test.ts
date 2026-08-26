@@ -750,6 +750,102 @@ describe("ProviderRuntimeIngestion", () => {
     expect(thread.modelSelection).toEqual({
       instanceId: ProviderInstanceId.make("claudeAgent"),
       model: "claude-sonnet-5",
+      options: [{ id: "effort", value: "high" }],
+      employeeId: workerId,
+      employeeIds: [ceoId, workerId],
+    });
+  });
+
+  it("attaches no effort option for a Claude CEO assignment to a Haiku worker", async () => {
+    const ceoId = EmployeeId.make("ceo");
+    const workerId = EmployeeId.make("worker_alpha");
+    const harness = await createHarness({
+      serverSettings: {
+        employees: {
+          [ceoId]: {
+            displayName: "Casey",
+            role: "CEO",
+            providerInstanceId: ProviderInstanceId.make("claudeAgent"),
+            modelMode: "override",
+            model: "claude-fable-5",
+            modelOptions: [{ id: "effort", value: "ultracode" }],
+            instructions: "Route the request.",
+            enabled: true,
+          },
+          [workerId]: {
+            displayName: "Alex",
+            role: "Implementation",
+            providerInstanceId: ProviderInstanceId.make("claudeAgent"),
+            modelMode: "auto",
+            instructions: "Implement the request.",
+            enabled: true,
+          },
+        },
+      },
+      threadModelSelection: {
+        instanceId: ProviderInstanceId.make("claudeAgent"),
+        model: "claude-fable-5",
+        options: [
+          { id: "effort", value: "ultracode" },
+          { id: "contextWindow", value: "1m" },
+        ],
+        employeeId: ceoId,
+        employeeIds: [ceoId, workerId],
+      },
+    });
+    const now = "2026-08-18T15:00:00.000Z";
+    const turnId = asTurnId("turn-claude-ceo-handoff-haiku");
+
+    harness.emit({
+      type: "turn.started",
+      eventId: asEventId("evt-claude-ceo-handoff-haiku-started"),
+      provider: ProviderDriverKind.make("claudeAgent"),
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId,
+    });
+    await waitForThread(harness.readModel, (thread) => thread.session?.activeTurnId === turnId);
+    harness.emit({
+      type: "content.delta",
+      eventId: asEventId("evt-claude-ceo-handoff-haiku-delta"),
+      provider: ProviderDriverKind.make("claudeAgent"),
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId,
+      itemId: asItemId("item-claude-ceo-handoff-haiku"),
+      payload: {
+        streamKind: "assistant_text",
+        delta:
+          'Delegate the small fix.\n\n<handoff to="worker_alpha" model="claude-haiku-4-5">Implement it.</handoff>',
+      },
+    });
+    harness.emit({
+      type: "item.completed",
+      eventId: asEventId("evt-claude-ceo-handoff-haiku-item-complete"),
+      provider: ProviderDriverKind.make("claudeAgent"),
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId,
+      itemId: asItemId("item-claude-ceo-handoff-haiku"),
+      payload: { itemType: "assistant_message", status: "completed" },
+    });
+    harness.emit({
+      type: "turn.completed",
+      eventId: asEventId("evt-claude-ceo-handoff-haiku-turn-complete"),
+      provider: ProviderDriverKind.make("claudeAgent"),
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId,
+      payload: { state: "completed" },
+    });
+
+    const thread = await waitForThread(
+      harness.readModel,
+      (entry) => entry.modelSelection.employeeId === workerId,
+    );
+    expect(thread.modelSelection).toEqual({
+      instanceId: ProviderInstanceId.make("claudeAgent"),
+      model: "claude-haiku-4-5",
       employeeId: workerId,
       employeeIds: [ceoId, workerId],
     });

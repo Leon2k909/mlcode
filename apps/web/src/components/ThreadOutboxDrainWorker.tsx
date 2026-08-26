@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef } from "react";
 
 import {
   mapAtomCommandResult,
+  settlePromise,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
@@ -12,6 +13,7 @@ import { useThreadShells } from "../state/entities";
 import { useEnvironments } from "../state/environments";
 import { useAtomCommand } from "../state/use-atom-command";
 import { threadEnvironment } from "../state/threads";
+import { toastManager } from "./ui/toast";
 
 function isReadyForQueuedTurn(
   message: QueuedThreadOutboxMessage,
@@ -90,7 +92,16 @@ export function ThreadOutboxDrainWorker() {
       try {
         const thread = threadsByKey.get(scopedThreadKey(next));
         if (!thread) return;
-        const attachments = await next.payload.attachmentsPromise;
+        const attachmentsResult = await settlePromise(() => next.payload.attachmentsPromise);
+        if (attachmentsResult._tag === "Failure") {
+          toastManager.add({
+            type: "error",
+            title: "Couldn't attach images to queued message",
+            description: "The message will be marked as failed so you can retry it.",
+          });
+          throw squashAtomCommandFailure(attachmentsResult);
+        }
+        const attachments = attachmentsResult.value;
         const metadataUpdate = resolveThreadMetadataUpdateForNextTurn({
           currentModelSelection: thread.modelSelection,
           nextModelSelection: next.payload.modelSelection,
