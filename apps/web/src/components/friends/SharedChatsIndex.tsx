@@ -95,7 +95,7 @@ function FriendSection({
 
 /** Everything your friends currently share with you, grouped by person. */
 export function SharedChatsIndex() {
-  const { environmentId, friends, isPending } = useFriends();
+  const { environmentId, friends, isLoading } = useFriends();
 
   return (
     <div className="mx-auto w-full max-w-2xl px-4 py-6">
@@ -105,11 +105,11 @@ export function SharedChatsIndex() {
           Shared with me
         </h1>
       </header>
-      {environmentId === null || friends.length === 0 ? (
+      {isLoading ? (
+        <p className="text-sm text-muted-foreground">Loading…</p>
+      ) : environmentId === null || friends.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          {isPending
-            ? "Loading…"
-            : "No friends yet. Add one from Settings → Friends, then anything they share shows up here."}
+          No friends yet. Add one from Settings → Friends, then anything they share shows up here.
         </p>
       ) : (
         friends.map((friend) => (

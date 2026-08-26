@@ -81,7 +81,7 @@ export class FriendLinkPool extends Context.Service<
       use: (client: WsRpcProtocolClient) => Stream.Stream<A, E>,
     ) => Stream.Stream<A, E | ConnectionTransientError>;
   }
->()("@t3tools/client-runtime/friends/FriendLinkPool") {}
+>()("@t3tools/client-runtime/friends/link/FriendLinkPool") {}
 
 export const make = Effect.gen(function* () {
   const sessions = yield* RpcSessionFactory;

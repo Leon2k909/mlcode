@@ -20,7 +20,15 @@ export interface FriendsView {
   readonly snapshot: FriendsSnapshot | null;
   readonly friends: ReadonlyArray<Friend>;
   readonly error: string | null;
-  readonly isPending: boolean;
+  /**
+   * True only until the first snapshot lands.
+   *
+   * This is deliberately not the query's `isPending`. The friends list is a
+   * subscription, so it stays "waiting" for as long as the stream is open —
+   * which is forever. Rendering a spinner from that means a user with no
+   * friends is told the app is loading something, permanently.
+   */
+  readonly isLoading: boolean;
 }
 
 /** The friends list for the environment this device is signed into. */
@@ -35,7 +43,7 @@ export function useFriends(): FriendsView {
     snapshot: query.data,
     friends,
     error: query.error,
-    isPending: query.isPending,
+    isLoading: query.isPending && query.data === null,
   };
 }
 

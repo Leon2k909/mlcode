@@ -18,6 +18,7 @@ import {
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Schedule from "effect/Schedule";
+import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { Atom } from "effect/unstable/reactivity";
 
@@ -34,6 +35,27 @@ import { createRuntimeCommand, runInEnvironment } from "./runtime.ts";
  * not after whatever delay an exponential had wandered up to.
  */
 const RECONNECT = Schedule.spaced("5 seconds");
+
+/**
+ * Anything that stops us reaching a friend's shared chat, flattened into one
+ * type. The causes are genuinely varied — our own server refusing the
+ * credential, their machine being asleep, the socket dropping mid-stream — but
+ * every one of them means the same thing to a reader, and the stream retries
+ * regardless of which it was.
+ */
+export class SharedThreadUnavailableError extends Schema.TaggedErrorClass<SharedThreadUnavailableError>()(
+  "SharedThreadUnavailableError",
+  { detail: Schema.String },
+) {
+  override get message(): string {
+    return this.detail;
+  }
+}
+
+const unavailable = (cause: unknown) =>
+  new SharedThreadUnavailableError({
+    detail: cause instanceof Error ? cause.message : "That chat is not reachable right now.",
+  });
 
 // Atom families are keyed by string and ids are opaque, so join on a control
 // character that cannot occur inside one.
@@ -57,7 +79,7 @@ const parseTargetKey = (parts: ReadonlyArray<string>): SharedThreadTarget => ({
 
 const credentialFor = (
   target: SharedThreadTarget,
-): Effect.Effect<FriendLinkCredential, unknown, EnvironmentRegistry> =>
+): Effect.Effect<FriendLinkCredential, SharedThreadUnavailableError, EnvironmentRegistry> =>
   runInEnvironment(
     target.environmentId,
     request(WS_METHODS.friendsGetLinkCredential, { friendId: target.friendId }),
@@ -68,6 +90,7 @@ const credentialFor = (
       httpBaseUrl: credential.httpBaseUrl,
       accessToken: credential.accessToken,
     })),
+    Effect.mapError(unavailable),
   );
 
 export function createSharedThreadAtoms<R, E>(
@@ -77,7 +100,7 @@ export function createSharedThreadAtoms<R, E>(
     target: SharedThreadTarget,
   ): Stream.Stream<
     ReadonlyArray<SharedThreadSummary>,
-    unknown,
+    SharedThreadUnavailableError,
     EnvironmentRegistry | FriendLinkPool
   > =>
     Stream.unwrap(
@@ -88,12 +111,16 @@ export function createSharedThreadAtoms<R, E>(
           .stream(credential, (client) => client[WS_METHODS.friendsGuestSubscribeThreads]({}))
           .pipe(Stream.map((event) => event.payload.threads));
       }),
-    ).pipe(Stream.retry(RECONNECT));
+    ).pipe(Stream.mapError(unavailable), Stream.retry(RECONNECT));
 
   const roomStream = (
     target: SharedThreadTarget,
     threadId: ThreadId,
-  ): Stream.Stream<SharedThreadStreamEvent, unknown, EnvironmentRegistry | FriendLinkPool> =>
+  ): Stream.Stream<
+    SharedThreadStreamEvent,
+    SharedThreadUnavailableError,
+    EnvironmentRegistry | FriendLinkPool
+  > =>
     Stream.unwrap(
       Effect.gen(function* () {
         const pool = yield* FriendLinkPool;
@@ -102,7 +129,7 @@ export function createSharedThreadAtoms<R, E>(
           client[WS_METHODS.friendsGuestSubscribeThread]({ threadId }),
         );
       }),
-    ).pipe(Stream.retry(RECONNECT));
+    ).pipe(Stream.mapError(unavailable), Stream.retry(RECONNECT));
 
   const listFamily = Atom.family((key: string) =>
     runtime

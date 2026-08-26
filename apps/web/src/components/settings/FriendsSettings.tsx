@@ -124,7 +124,7 @@ function FriendRow({
 }
 
 export function FriendsSettings() {
-  const { environmentId, snapshot, friends, error, isPending } = useFriends();
+  const { environmentId, snapshot, friends, error, isLoading } = useFriends();
   const setting = searchableSetting("friends");
 
   const createInvite = useAtomCommand(friendsEnvironment.createInvite);
@@ -287,14 +287,12 @@ export function FriendsSettings() {
       <SettingsSection title="Your friends" icon={<UsersIcon className="size-5" />}>
         {error !== null ? (
           <SettingsRow title="Could not load friends" description={error} />
+        ) : isLoading ? (
+          <SettingsRow title="Loading…" />
         ) : friends.length === 0 ? (
           <SettingsRow
             title="Nobody yet"
-            description={
-              isPending
-                ? "Loading…"
-                : "Swap friend codes with a coworker, then share a chat with them from its menu."
-            }
+            description="Swap friend codes with a coworker, then share a chat with them from its menu."
           />
         ) : (
           friends.map((friend) => (
