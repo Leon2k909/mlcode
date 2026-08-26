@@ -1,8 +1,8 @@
 // @effect-diagnostics nodeBuiltinImport:off
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 
+import * as NodeFS from "node:fs";
+import * as NodeOS from "node:os";
+import * as NodePath from "node:path";
 import { afterEach, describe, expect, it } from "vite-plus/test";
 
 import { discoverPetCatalog, resolvePetSpritesheet } from "./PetCatalog.ts";
@@ -10,7 +10,7 @@ import { discoverPetCatalog, resolvePetSpritesheet } from "./PetCatalog.ts";
 const temporaryDirectories: string[] = [];
 
 function temporaryRoot(): string {
-  const root = mkdtempSync(join(tmpdir(), "ml-code-pets-"));
+  const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "ml-code-pets-"));
   temporaryDirectories.push(root);
   return root;
 }
@@ -21,26 +21,26 @@ function writePet(
   manifest: Record<string, unknown>,
   location: "pets" | "avatars" = "pets",
 ): string {
-  const directory = join(home, location, folder);
-  mkdirSync(directory, { recursive: true });
+  const directory = NodePath.join(home, location, folder);
+  NodeFS.mkdirSync(directory, { recursive: true });
   const manifestName = location === "avatars" ? "avatar.json" : "pet.json";
-  writeFileSync(join(directory, manifestName), JSON.stringify(manifest));
-  const spritesheetPath = join(directory, "spritesheet.webp");
-  writeFileSync(spritesheetPath, "sprite");
+  NodeFS.writeFileSync(NodePath.join(directory, manifestName), JSON.stringify(manifest));
+  const spritesheetPath = NodePath.join(directory, "spritesheet.webp");
+  NodeFS.writeFileSync(spritesheetPath, "sprite");
   return spritesheetPath;
 }
 
 afterEach(() => {
   for (const directory of temporaryDirectories.splice(0)) {
-    rmSync(directory, { recursive: true, force: true });
+    NodeFS.rmSync(directory, { recursive: true, force: true });
   }
 });
 
 describe("discoverPetCatalog", () => {
   it("discovers Micheon and Codex pets with Micheon taking duplicate ids", () => {
     const root = temporaryRoot();
-    const micheonHome = join(root, "micheon");
-    const codexHome = join(root, "codex");
+    const micheonHome = NodePath.join(root, "micheon");
+    const codexHome = NodePath.join(root, "codex");
     writePet(micheonHome, "riley", {
       id: "riley",
       displayName: "Riley from Micheon",
@@ -54,7 +54,10 @@ describe("discoverPetCatalog", () => {
       displayName: "Michelle",
       spriteVersionNumber: 2,
     });
-    writeFileSync(join(codexHome, "config.toml"), 'selected-avatar-id = "custom:michelle"');
+    NodeFS.writeFileSync(
+      NodePath.join(codexHome, "config.toml"),
+      'selected-avatar-id = "custom:michelle"',
+    );
 
     const catalog = discoverPetCatalog({ codexHome, micheonHome });
 
@@ -66,13 +69,13 @@ describe("discoverPetCatalog", () => {
 
   it("ignores spritesheets that escape their pet directory", () => {
     const root = temporaryRoot();
-    const micheonHome = join(root, "micheon");
-    const codexHome = join(root, "codex");
-    const petDirectory = join(codexHome, "pets", "unsafe");
-    mkdirSync(petDirectory, { recursive: true });
-    writeFileSync(join(codexHome, "pets", "outside.webp"), "sprite");
-    writeFileSync(
-      join(petDirectory, "pet.json"),
+    const micheonHome = NodePath.join(root, "micheon");
+    const codexHome = NodePath.join(root, "codex");
+    const petDirectory = NodePath.join(codexHome, "pets", "unsafe");
+    NodeFS.mkdirSync(petDirectory, { recursive: true });
+    NodeFS.writeFileSync(NodePath.join(codexHome, "pets", "outside.webp"), "sprite");
+    NodeFS.writeFileSync(
+      NodePath.join(petDirectory, "pet.json"),
       JSON.stringify({ id: "unsafe", spritesheetPath: "../outside.webp" }),
     );
 
@@ -84,8 +87,8 @@ describe("discoverPetCatalog", () => {
 
   it("supports legacy Codex avatars and custom animation metadata", () => {
     const root = temporaryRoot();
-    const micheonHome = join(root, "micheon");
-    const codexHome = join(root, "codex");
+    const micheonHome = NodePath.join(root, "micheon");
+    const codexHome = NodePath.join(root, "codex");
     writePet(
       codexHome,
       "dewey",

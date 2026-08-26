@@ -1,8 +1,8 @@
 // @effect-diagnostics nodeBuiltinImport:off - Pet discovery mirrors files owned by Codex and Micheon.
-import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from "node:fs";
-import { homedir } from "node:os";
-import { basename, extname, isAbsolute, join, relative, resolve } from "node:path";
 
+import * as NodeFS from "node:fs";
+import * as NodeOS from "node:os";
+import * as NodePath from "node:path";
 import type { PetAnimation, PetCatalogEntry, PetFrame, PetSource } from "@t3tools/contracts";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -85,16 +85,19 @@ export interface DiscoveredPetCatalog {
 
 function environmentPath(value: string | undefined, fallback: string): string {
   const candidate = value?.trim();
-  return resolve(candidate && candidate.length > 0 ? candidate : fallback);
+  return NodePath.resolve(candidate && candidate.length > 0 ? candidate : fallback);
 }
 
 export function resolvePetDiscoveryRoots(
   environment: NodeJS.ProcessEnv = process.env,
-  homeDirectory = homedir(),
+  homeDirectory = NodeOS.homedir(),
 ): PetDiscoveryRoots {
   return {
-    codexHome: environmentPath(environment.CODEX_HOME, join(homeDirectory, ".codex")),
-    micheonHome: environmentPath(environment.MICHEON_HOME, join(homeDirectory, ".micheon")),
+    codexHome: environmentPath(environment.CODEX_HOME, NodePath.join(homeDirectory, ".codex")),
+    micheonHome: environmentPath(
+      environment.MICHEON_HOME,
+      NodePath.join(homeDirectory, ".micheon"),
+    ),
   };
 }
 
@@ -117,30 +120,32 @@ function titleFromId(id: string): string {
 
 function readManifest(manifestPath: string): PetManifest | null {
   try {
-    const info = statSync(manifestPath);
+    const info = NodeFS.statSync(manifestPath);
     if (!info.isFile() || info.size <= 0 || info.size > MANIFEST_MAX_BYTES) return null;
-    return Option.getOrNull(decodePetManifest(readFileSync(manifestPath, "utf8")));
+    return Option.getOrNull(decodePetManifest(NodeFS.readFileSync(manifestPath, "utf8")));
   } catch {
     return null;
   }
 }
 
 function resolveContainedSpritesheet(petDirectory: string, requestedPath: string): string | null {
-  if (isAbsolute(requestedPath)) return null;
+  if (NodePath.isAbsolute(requestedPath)) return null;
   try {
-    const canonicalDirectory = realpathSync(petDirectory);
-    const candidate = resolve(canonicalDirectory, requestedPath);
-    const canonicalCandidate = realpathSync(candidate);
-    const relativePath = relative(canonicalDirectory, canonicalCandidate);
+    const canonicalDirectory = NodeFS.realpathSync(petDirectory);
+    const candidate = NodePath.resolve(canonicalDirectory, requestedPath);
+    const canonicalCandidate = NodeFS.realpathSync(candidate);
+    const relativePath = NodePath.relative(canonicalDirectory, canonicalCandidate);
     if (
       relativePath.length === 0 ||
       relativePath.startsWith("..") ||
-      isAbsolute(relativePath) ||
-      !SUPPORTED_SPRITESHEET_EXTENSIONS.has(extname(canonicalCandidate).toLocaleLowerCase())
+      NodePath.isAbsolute(relativePath) ||
+      !SUPPORTED_SPRITESHEET_EXTENSIONS.has(
+        NodePath.extname(canonicalCandidate).toLocaleLowerCase(),
+      )
     ) {
       return null;
     }
-    return statSync(canonicalCandidate).isFile() ? canonicalCandidate : null;
+    return NodeFS.statSync(canonicalCandidate).isFile() ? canonicalCandidate : null;
   } catch {
     return null;
   }
@@ -188,7 +193,7 @@ function manifestPet(
   source: PetSource,
   manifestFileName: "pet.json" | "avatar.json",
 ): DiscoveredPet | null {
-  const manifest = readManifest(join(petDirectory, manifestFileName));
+  const manifest = readManifest(NodePath.join(petDirectory, manifestFileName));
   if (!manifest) return null;
   const id = clampString(manifest.id, folderName, 256);
   const spritesheetPath = resolveContainedSpritesheet(
@@ -218,10 +223,10 @@ function discoverManifestPets(
   manifestFileName: "pet.json" | "avatar.json",
 ): ReadonlyArray<DiscoveredPet> {
   try {
-    return readdirSync(rootDirectory, { withFileTypes: true }).flatMap((entry) => {
+    return NodeFS.readdirSync(rootDirectory, { withFileTypes: true }).flatMap((entry) => {
       if (!entry.isDirectory()) return [];
       const pet = manifestPet(
-        join(rootDirectory, entry.name),
+        NodePath.join(rootDirectory, entry.name),
         entry.name,
         source,
         manifestFileName,
@@ -234,10 +239,10 @@ function discoverManifestPets(
 }
 
 function discoverBuiltinPets(codexHome: string): ReadonlyArray<DiscoveredPet> {
-  const assetsDirectory = join(codexHome, "cache", "tui-pets", "v1", "assets");
+  const assetsDirectory = NodePath.join(codexHome, "cache", "tui-pets", "v1", "assets");
   let fileNames: ReadonlyArray<string>;
   try {
-    fileNames = readdirSync(assetsDirectory, { withFileTypes: true })
+    fileNames = NodeFS.readdirSync(assetsDirectory, { withFileTypes: true })
       .filter((entry) => entry.isFile())
       .map((entry) => entry.name);
   } catch {
@@ -251,7 +256,7 @@ function discoverBuiltinPets(codexHome: string): ReadonlyArray<DiscoveredPet> {
       fileNames.find(
         (candidate) =>
           candidate.startsWith(`${id}-spritesheet-`) &&
-          SUPPORTED_SPRITESHEET_EXTENSIONS.has(extname(candidate).toLocaleLowerCase()),
+          SUPPORTED_SPRITESHEET_EXTENSIONS.has(NodePath.extname(candidate).toLocaleLowerCase()),
       );
     if (!fileName) return [];
     const spritesheetPath = resolveContainedSpritesheet(assetsDirectory, fileName);
@@ -280,9 +285,12 @@ function discoverBuiltinPets(codexHome: string): ReadonlyArray<DiscoveredPet> {
 function readSelectedPetKey(codexHome: string, pets: ReadonlyArray<DiscoveredPet>): string | null {
   let selected: string | null = null;
   try {
-    const configPath = join(codexHome, "config.toml");
-    if (!existsSync(configPath) || statSync(configPath).size > MANIFEST_MAX_BYTES * 4) return null;
-    const match = /^\s*selected-avatar-id\s*=\s*"([^"]+)"/m.exec(readFileSync(configPath, "utf8"));
+    const configPath = NodePath.join(codexHome, "config.toml");
+    if (!NodeFS.existsSync(configPath) || NodeFS.statSync(configPath).size > MANIFEST_MAX_BYTES * 4)
+      return null;
+    const match = /^\s*selected-avatar-id\s*=\s*"([^"]+)"/m.exec(
+      NodeFS.readFileSync(configPath, "utf8"),
+    );
     selected = match?.[1]?.trim() ?? null;
   } catch {
     return null;
@@ -298,14 +306,14 @@ export function discoverPetCatalog(
   roots: PetDiscoveryRoots = resolvePetDiscoveryRoots(),
 ): DiscoveredPetCatalog {
   const micheonPets = discoverManifestPets(
-    join(roots.micheonHome, "pets"),
+    NodePath.join(roots.micheonHome, "pets"),
     "micheon-custom",
     "pet.json",
   );
   const micheonIds = new Set(micheonPets.map((pet) => pet.id));
   const codexPets = [
-    ...discoverManifestPets(join(roots.codexHome, "pets"), "custom", "pet.json"),
-    ...discoverManifestPets(join(roots.codexHome, "avatars"), "legacy", "avatar.json"),
+    ...discoverManifestPets(NodePath.join(roots.codexHome, "pets"), "custom", "pet.json"),
+    ...discoverManifestPets(NodePath.join(roots.codexHome, "avatars"), "legacy", "avatar.json"),
     ...discoverBuiltinPets(roots.codexHome),
   ].filter((pet) => !micheonIds.has(pet.id));
   const seenKeys = new Set<string>();
@@ -332,5 +340,5 @@ export function resolvePetSpritesheet(
 }
 
 export function petSpritesheetFileName(pet: DiscoveredPet): string {
-  return basename(pet.spritesheetPath);
+  return NodePath.basename(pet.spritesheetPath);
 }
