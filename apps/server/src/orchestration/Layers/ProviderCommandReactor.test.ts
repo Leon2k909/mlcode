@@ -3175,6 +3175,78 @@ describe("ProviderCommandReactor", () => {
     });
   });
 
+  it("stops repeating the persona and the full lane briefing on warm turns", async () => {
+    const ceoId = EmployeeId.make("ceo");
+    const reviewerId = EmployeeId.make("reviewer");
+    const groupSelection: ModelSelection = {
+      instanceId: ProviderInstanceId.make("codex"),
+      model: "gpt-5-codex",
+      employeeId: ceoId,
+      employeeIds: [ceoId, reviewerId],
+    };
+    const harness = await createHarness({
+      threadModelSelection: groupSelection,
+      serverSettings: {
+        employees: {
+          [ceoId]: {
+            displayName: "Casey",
+            role: "CEO",
+            providerInstanceId: ProviderInstanceId.make("codex"),
+            model: "gpt-5-codex",
+            instructions: "Own the implementation.",
+            enabled: true,
+          },
+          [reviewerId]: {
+            displayName: "Riley",
+            role: "Reviewer",
+            providerInstanceId: ProviderInstanceId.make("codex"),
+            model: "gpt-5-codex",
+            instructions: "Review carefully.",
+            enabled: true,
+          },
+        },
+      },
+    });
+    const now = "2026-08-13T10:00:00.000Z";
+
+    const sendCeoTurn = async (index: number) => {
+      await Effect.runPromise(
+        harness.engine.dispatch({
+          type: "thread.turn.start",
+          commandId: CommandId.make(`cmd-warm-briefing-${index}`),
+          threadId: ThreadId.make("thread-1"),
+          message: {
+            messageId: asMessageId(`user-message-warm-briefing-${index}`),
+            role: "user",
+            text: `turn ${index}`,
+            attachments: [],
+          },
+          modelSelection: groupSelection,
+          interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+          runtimeMode: "approval-required",
+          createdAt: now,
+        }),
+      );
+      await waitFor(() => harness.sendTurn.mock.calls.length === index);
+      return (harness.sendTurn.mock.calls[index - 1]?.[0] as { input?: string }).input ?? "";
+    };
+
+    const first = await sendCeoTurn(1);
+    expect(first).toContain("You are Casey, working as CEO.");
+    expect(first).toContain("CEO delegation gate (mandatory)");
+
+    // The session stays warm and the same employee keeps speaking, so neither
+    // the persona nor the full routing table needs resending. A third turn
+    // guards the regression where skipping the introduction cleared the record
+    // and made every other turn reintroduce.
+    for (const index of [2, 3]) {
+      const warm = await sendCeoTurn(index);
+      expect(warm).not.toContain("You are Casey, working as CEO.");
+      expect(warm).not.toContain("CEO delegation gate (mandatory)");
+      expect(warm).toContain("CEO delegation gate: delegate with exactly one handoff tag");
+    }
+  });
+
   it("keeps a group handoff on the selected provider with only group teammates", async () => {
     const ceoId = EmployeeId.make("ceo");
     const reviewerId = EmployeeId.make("reviewer");

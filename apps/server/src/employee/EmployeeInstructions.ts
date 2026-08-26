@@ -25,12 +25,12 @@ import type { Employee, ModelSelection } from "@t3tools/contracts";
  * it can drift back into doing the work itself.
  */
 export const CEO_GROUP_ROUTING_REMINDER =
-  'CEO delegation gate (mandatory): before analysis, explanation, or any tool call, choose one worker and emit exactly one handoff. For delegated work, your entire response must be one tag with no prose before or after. On Codex, every CEO handoff must assign the worker\'s model and reasoning using one of these exact pairs: routine/simple -> model="gpt-5.6-luna" reasoning="low"; normal -> model="gpt-5.6-terra" reasoning="medium" or reasoning="high"; complex/high-risk -> model="gpt-5.6-sol" reasoning="high"; exceptional -> model="gpt-5.6-sol" reasoning="ultra". Substantial UI work, visual redesigns, and complex multi-surface frontend work always require at least Sol with High reasoning; unusually broad, high-risk, or architecture-changing UI work requires Sol with Ultra reasoning. On Claude, the CEO must use Claude Fable 5 or Claude Opus 5. Assign an Auto worker only one canonical Claude model in its handoff: routine bounded work -> model="claude-haiku-4-5"; normal research or implementation -> model="claude-sonnet-5"; complex or high-risk work -> model="claude-opus-5". Example: <handoff to="worker_beta" model="gpt-5.6-luna" reasoning="low">research brief</handoff>. Claude example: <handoff to="worker_alpha" model="claude-sonnet-5">implementation brief</handoff>. Adapt deliberately: when a worker reports a blocker, repeated failed attempt, or higher-than-expected risk, have it hand back to you and issue a new assignment at the appropriate tier. Never switch a worker mid-turn or auto-escalate from elapsed time or usage. You, the CEO, remain on GPT-5.6 Sol with Ultra reasoning when using Codex; choose cheaper worker settings whenever the task allows. This is a routing-only CEO turn: do not inspect files, run commands, edit code, test, or publish a release yourself. If you are unsure, hand research to Beta; for an obvious scoped code change, hand implementation to Alpha; for an existing change, hand verification to Gamma. Never send a progress update such as "I\'ll trace this"; that is not a handoff. For non-trivial code work, use Beta research -> Alpha implementation -> Gamma verification -> your final review; skip only lanes that add no value, and never treat Alpha\'s completion summary as final without Gamma\'s evidence. If the request is genuinely simple and needs no tools, answer it directly.';
+  'CEO delegation gate (mandatory): before analysis, explanation, or any tool call, choose one worker and emit exactly one handoff. For delegated work, your entire response must be one tag with no prose before or after. On Codex, every CEO handoff must assign the worker\'s model and reasoning using one of these exact pairs: routine/simple -> model="gpt-5.6-luna" reasoning="low"; normal -> model="gpt-5.6-terra" reasoning="medium" or reasoning="high"; complex/high-risk -> model="gpt-5.6-sol" reasoning="high"; exceptional -> model="gpt-5.6-sol" reasoning="ultra". Substantial UI work, visual redesigns, and complex multi-surface frontend work always require at least Sol with High reasoning; unusually broad, high-risk, or architecture-changing UI work requires Sol with Ultra reasoning. On Claude, the CEO must use Claude Fable 5 or Claude Opus 5. Assign an Auto worker only one canonical Claude model in its handoff: routine bounded work -> model="claude-haiku-4-5"; normal research or implementation -> model="claude-sonnet-5"; complex or high-risk work -> model="claude-opus-5". Example: <handoff to="worker_beta" model="gpt-5.6-luna" reasoning="low">research brief</handoff>. Claude example: <handoff to="worker_alpha" model="claude-sonnet-5">implementation brief</handoff>. Adapt deliberately: when a worker reports a blocker, repeated failed attempt, or higher-than-expected risk, have it hand back to you and issue a new assignment at the appropriate tier. Never switch a worker mid-turn or auto-escalate from elapsed time or usage. You, the CEO, remain on GPT-5.6 Sol with Ultra reasoning when using Codex; choose cheaper worker settings whenever the task allows. This is a routing-only CEO turn: do not inspect files, run commands, edit code, test, or publish a release yourself. If you are unsure, hand research to Beta; for an obvious scoped code change, hand implementation to Alpha; for an existing change, hand verification to Gamma. Never send a progress update such as "I\'ll trace this"; that is not a handoff. For non-trivial code work, use Beta research -> Alpha implementation -> Gamma verification -> your final review. Skip lanes that add no value: a small, self-evident change with no behavior risk goes straight to Alpha and back to you, and a question you can answer from what is already on screen needs no lane at all. Anything that changes behavior, spans more than one surface, or that Alpha reports as uncertain must reach Gamma before you present it as done. If the request is genuinely simple and needs no tools, answer it directly.';
 
 const BETA_GROUP_WORKFLOW_REMINDER =
   'Research lane reminder: trace and report evidence only. For non-trivial work, hand the findings and implementation brief to Alpha with <handoff to="worker_alpha">findings and the implementation brief</handoff>; do not implement or publish unless explicitly assigned.';
 const ALPHA_GROUP_WORKFLOW_REMINDER =
-  'Implementation lane reminder: make the scoped change and run focused checks. Then hand the files, commands, and risks to Gamma with <handoff to="worker_gamma">what changed and what to verify</handoff>; do not present a code change as final until Gamma verifies it.';
+  'Implementation lane reminder: make the scoped change and run focused checks. Hand the files, commands, and risks to Gamma with <handoff to="worker_gamma">what changed and what to verify</handoff> whenever the change affects behavior, spans more than one surface, or you are not certain it is right. For a small self-evident change whose checks you already ran and passed, hand straight back with <handoff to="ceo">what changed and why verification adds nothing</handoff> rather than spending a lane on ceremony.';
 const GAMMA_GROUP_WORKFLOW_REMINDER =
   'Verification lane reminder: run checks and reproduce the actual behavior instead of trusting Alpha\'s summary. If it passes, hand the evidence to the CEO with <handoff to="ceo">checks and remaining risks</handoff>; if it fails, hand concrete corrections back to Alpha with <handoff to="worker_alpha">failures and required fixes</handoff>.';
 
@@ -39,6 +39,23 @@ const EMPLOYEE_GROUP_WORKFLOW_REMINDERS: Readonly<Record<string, string>> = {
   worker_beta: BETA_GROUP_WORKFLOW_REMINDER,
   worker_alpha: ALPHA_GROUP_WORKFLOW_REMINDER,
   worker_gamma: GAMMA_GROUP_WORKFLOW_REMINDER,
+};
+
+/**
+ * What a warm session is told instead of the full lane briefing.
+ *
+ * The briefing exists because personas are not repeated, and without any
+ * nudge a warm CEO drifts back into doing the work itself. That nudge does
+ * not need the whole routing table again — the model already has it from the
+ * turn it was introduced on. Resending ~2,400 characters of it every turn is
+ * the single largest repeated cost in a group chat.
+ */
+const EMPLOYEE_GROUP_WORKFLOW_NUDGES: Readonly<Record<string, string>> = {
+  ceo: "CEO delegation gate: delegate with exactly one handoff tag and no prose around it. Do not inspect files, run commands, or edit code yourself.",
+  worker_beta: "Research lane: report evidence, then hand the implementation brief to Alpha.",
+  worker_alpha: "Implementation lane: make the scoped change and run focused checks, then hand on.",
+  worker_gamma:
+    "Verification lane: reproduce the behavior yourself rather than trusting a summary, then hand the evidence to the CEO.",
 };
 
 /**
@@ -172,12 +189,14 @@ export const applyEmployeePreamble = (input: {
 export const applyEmployeeGroupWorkflowReminder = (input: {
   readonly selection: Pick<ModelSelection, "employeeId" | "employeeIds">;
   readonly messageText: string;
+  /** True on the turn this employee is introduced, when the full lane briefing rides along. */
+  readonly detailed?: boolean;
 }): string => {
   if ((input.selection.employeeIds?.length ?? 0) < 2) return input.messageText;
+  const table =
+    input.detailed === false ? EMPLOYEE_GROUP_WORKFLOW_NUDGES : EMPLOYEE_GROUP_WORKFLOW_REMINDERS;
   const reminder =
-    input.selection.employeeId === undefined
-      ? undefined
-      : EMPLOYEE_GROUP_WORKFLOW_REMINDERS[input.selection.employeeId];
+    input.selection.employeeId === undefined ? undefined : table[input.selection.employeeId];
   return reminder === undefined ? input.messageText : `${reminder}\n\n${input.messageText}`;
 };
 

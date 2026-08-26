@@ -1145,9 +1145,16 @@ const make = Effect.gen(function* () {
     const shouldIntroduceEmployee =
       sessionOutcome.contextReset ||
       threadInjectedEmployees.get(input.threadId) !== selectedEmployeeId;
+    // Resolved independently of the gate: whether this employee has already
+    // been introduced cannot depend on whether we are introducing them now.
+    // Clearing the record on a warm turn made the next turn reintroduce them,
+    // so the persona rode every other turn instead of only the first.
+    const resolvedEmployee =
+      settings?.employees === undefined
+        ? undefined
+        : resolveEmployee(settings.employees, selectedEmployeeId);
     const employees = shouldIntroduceEmployee ? settings?.employees : undefined;
-    const employee =
-      employees === undefined ? undefined : resolveEmployee(employees, selectedEmployeeId);
+    const employee = shouldIntroduceEmployee ? resolvedEmployee : undefined;
     // Everyone else who could take this thread. An employee that is never told
     // its colleagues exist cannot hand off to them, so the roster travels with
     // the persona rather than being assumed.
@@ -1165,7 +1172,7 @@ const make = Effect.gen(function* () {
               displayName: mate.displayName,
               role: mate.role,
             }));
-    if (selectedEmployeeId === undefined || employee === undefined) {
+    if (selectedEmployeeId === undefined || resolvedEmployee === undefined) {
       threadInjectedEmployees.delete(input.threadId);
     } else {
       threadInjectedEmployees.set(input.threadId, selectedEmployeeId);
@@ -1177,6 +1184,7 @@ const make = Effect.gen(function* () {
     const routedMessageText = applyEmployeeGroupWorkflowReminder({
       selection: employeeSelection,
       messageText: messageTextForTurn,
+      detailed: shouldIntroduceEmployee,
     });
     const messageTextWithGoal = applyPersistentThreadGoal(routedMessageText, thread.goal);
     const shouldApplyContinuation =
