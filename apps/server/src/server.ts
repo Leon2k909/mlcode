@@ -25,6 +25,7 @@ import * as ExternalLauncher from "./process/externalLauncher.ts";
 import { pullRequestHttpApiLayer } from "./pullRequest/http.ts";
 import * as PullRequestProviderRegistry from "./pullRequest/PullRequestProviderRegistry.ts";
 import * as FriendService from "./friends/FriendService.ts";
+import * as PetGallery from "./pets/PetGallery.ts";
 import * as FriendStore from "./friends/FriendStore.ts";
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
 import { layerConfig as SqlitePersistenceLayerLive } from "./persistence/Layers/Sqlite.ts";
@@ -442,6 +443,8 @@ const commandReadinessLayer = HttpRouter.middleware(
  */
 const FriendServiceLive = FriendService.layer.pipe(Layer.provide(FriendStore.layer));
 
+const PetGalleryLive = PetGallery.layer;
+
 const PullRequestServiceLive = PullRequestService.layer.pipe(
   // One registry entry per supported host; the service only knows the registry.
   Layer.provide(PullRequestProviderRegistry.layer),
@@ -470,6 +473,7 @@ export const makeRoutesLayer = Layer.mergeAll(
   // and mutations observed on WebSocket invalidate patches subsequently read over HTTP.
   Layer.provide(PullRequestServiceLive),
   Layer.provide(FriendServiceLive),
+  Layer.provide(PetGalleryLive),
   Layer.provide(PreviewAutomationBroker.layer),
   Layer.provide(ServerSelfUpdate.layer),
   Layer.provide(commandReadinessLayer),

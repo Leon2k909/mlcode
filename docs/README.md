@@ -7,6 +7,7 @@
 - [Keyboard shortcuts](./user/keybindings.md)
 - [Organizing threads](./user/thread-sidebar.md)
 - [Friends and shared chats](./user/friends.md)
+- [Pets](./user/pets.md)
 - [Review usage](./user/usage.md)
 - [Manage long threads](./user/long-threads.md)
 - [Customize a project icon](./user/project-settings.md)

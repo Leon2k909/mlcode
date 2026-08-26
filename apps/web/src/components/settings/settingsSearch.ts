@@ -201,6 +201,11 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/pets",
   },
   {
+    id: "pet-gallery",
+    title: "Browse Codex Pets",
+    to: "/settings/pets",
+  },
+  {
     id: "providers",
     title: "Providers",
     to: "/settings/providers",

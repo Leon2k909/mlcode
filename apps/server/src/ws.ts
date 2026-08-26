@@ -107,6 +107,7 @@ import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import * as BackgroundPolicy from "./background/BackgroundPolicy.ts";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
 import * as FriendService from "./friends/FriendService.ts";
+import * as PetGallery from "./pets/PetGallery.ts";
 import { requiredScopeForRpcMethod } from "./auth/RpcAuthorization.ts";
 import * as ProcessDiagnostics from "./diagnostics/ProcessDiagnostics.ts";
 import * as ProcessResourceMonitor from "./diagnostics/ProcessResourceMonitor.ts";
@@ -360,6 +361,7 @@ const makeWsRpcLayer = (
   currentSession: EnvironmentAuth.AuthenticatedSession,
   previewAutomationBroker: PreviewAutomationBroker.PreviewAutomationBroker["Service"],
   friends: FriendService.FriendService["Service"],
+  petGallery: PetGallery.PetGallery["Service"],
 ) =>
   WsRpcGroup.toLayer(
     Effect.gen(function* () {
@@ -2413,6 +2415,21 @@ const makeWsRpcLayer = (
             ),
             { "rpc.aggregate": "server" },
           ),
+        [WS_METHODS.petsBrowseGallery]: (input) =>
+          observeRpcEffect(WS_METHODS.petsBrowseGallery, petGallery.browse(input), {
+            "rpc.aggregate": "pets",
+          }),
+        [WS_METHODS.petsInstall]: (input) =>
+          observeRpcEffect(WS_METHODS.petsInstall, petGallery.install(input.id), {
+            "rpc.aggregate": "pets",
+          }),
+        [WS_METHODS.petsUninstall]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.petsUninstall,
+            petGallery.uninstall(input.id).pipe(Effect.as({})),
+            { "rpc.aggregate": "pets" },
+          ),
+
         // Friends — owner surface.
         [WS_METHODS.friendsSubscribe]: (_input) =>
           observeRpcStream(
@@ -2518,6 +2535,7 @@ export const websocketRpcRouteLayer = Layer.unwrap(
     // snapshot PubSub are shared state, and one instance per socket would give
     // each client its own idea of who is online.
     const friends = yield* FriendService.FriendService;
+    const petGallery = yield* PetGallery.PetGallery;
     return HttpRouter.add(
       "GET",
       "/ws",
@@ -2537,7 +2555,7 @@ export const websocketRpcRouteLayer = Layer.unwrap(
           disableTracing: true,
         }).pipe(
           Effect.provide(
-            makeWsRpcLayer(session, previewAutomationBroker, friends).pipe(
+            makeWsRpcLayer(session, previewAutomationBroker, friends, petGallery).pipe(
               Layer.provideMerge(RpcSerialization.layerJson),
               Layer.provide(ProviderMaintenanceRunner.layer),
               Layer.provide(Layer.succeed(ServerSelfUpdate.ServerSelfUpdate, serverSelfUpdate)),

@@ -85,6 +85,11 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.filesystemBrowse]: AuthOrchestrationReadScope,
   [WS_METHODS.assetsCreateUrl]: AuthOrchestrationReadScope,
   [WS_METHODS.petsList]: AuthOrchestrationReadScope,
+  [WS_METHODS.petsBrowseGallery]: AuthOrchestrationReadScope,
+  // Installing writes third-party files into the user's Codex home, so it needs
+  // the same scope as any other change to environment-side state.
+  [WS_METHODS.petsInstall]: AuthOrchestrationOperateScope,
+  [WS_METHODS.petsUninstall]: AuthOrchestrationOperateScope,
   [WS_METHODS.subscribeVcsStatus]: AuthOrchestrationReadScope,
   [WS_METHODS.subscribeResourceTelemetry]: AuthOrchestrationReadScope,
   [WS_METHODS.vcsRefreshStatus]: AuthOrchestrationReadScope,

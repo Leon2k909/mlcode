@@ -19,7 +19,17 @@ import {
   FilesystemBrowseError,
 } from "./filesystem.ts";
 import { AssetAccessError, AssetCreateUrlInput, AssetCreateUrlResult } from "./assets.ts";
-import { PetCatalog, PetListInput } from "./pets.ts";
+import {
+  PetCatalog,
+  PetGalleryError,
+  PetGalleryPage,
+  PetListInput,
+  PetsBrowseGalleryInput,
+  PetsEmptyResult,
+  PetsInstallInput,
+  PetsInstallResult,
+  PetsUninstallInput,
+} from "./pets.ts";
 import {
   GitActionProgressEvent,
   VcsSwitchRefInput,
@@ -246,6 +256,9 @@ export const WS_METHODS = {
   filesystemBrowse: "filesystem.browse",
   assetsCreateUrl: "assets.createUrl",
   petsList: "pets.list",
+  petsBrowseGallery: "pets.browseGallery",
+  petsInstall: "pets.install",
+  petsUninstall: "pets.uninstall",
 
   // VCS methods
   vcsPull: "vcs.pull",
@@ -1092,6 +1105,24 @@ export const WsSubscribeResourceTelemetryRpc = Rpc.make(WS_METHODS.subscribeReso
   stream: true,
 });
 
+export const WsPetsBrowseGalleryRpc = Rpc.make(WS_METHODS.petsBrowseGallery, {
+  payload: PetsBrowseGalleryInput,
+  success: PetGalleryPage,
+  error: Schema.Union([PetGalleryError, EnvironmentAuthorizationError]),
+});
+
+export const WsPetsInstallRpc = Rpc.make(WS_METHODS.petsInstall, {
+  payload: PetsInstallInput,
+  success: PetsInstallResult,
+  error: Schema.Union([PetGalleryError, EnvironmentAuthorizationError]),
+});
+
+export const WsPetsUninstallRpc = Rpc.make(WS_METHODS.petsUninstall, {
+  payload: PetsUninstallInput,
+  success: PetsEmptyResult,
+  error: Schema.Union([PetGalleryError, EnvironmentAuthorizationError]),
+});
+
 export const WsFriendsSubscribeRpc = Rpc.make(WS_METHODS.friendsSubscribe, {
   payload: Schema.Struct({}),
   success: FriendsStreamEvent,
@@ -1225,6 +1256,9 @@ export const WsRpcGroup = RpcGroup.make(
   WsFilesystemBrowseRpc,
   WsAssetsCreateUrlRpc,
   WsPetsListRpc,
+  WsPetsBrowseGalleryRpc,
+  WsPetsInstallRpc,
+  WsPetsUninstallRpc,
   WsSubscribeVcsStatusRpc,
   WsVcsPullRpc,
   WsVcsRefreshStatusRpc,
