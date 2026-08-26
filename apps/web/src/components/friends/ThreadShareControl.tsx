@@ -1,6 +1,7 @@
 import type { EnvironmentId, Friend, ThreadId } from "@t3tools/contracts";
 import { UserPlusIcon } from "lucide-react";
 import { useMemo, useState } from "react";
+import { useNavigate } from "@tanstack/react-router";
 
 import { cn } from "../../lib/utils";
 import { friendsEnvironment } from "../../state/friends";
@@ -107,6 +108,7 @@ export function ThreadShareControl({
 }) {
   const { friends, environmentId: primaryEnvironmentId } = useFriends();
   const audience = useThreadAudience(threadId);
+  const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const shareThread = useAtomCommand(friendsEnvironment.shareThread);
@@ -122,7 +124,13 @@ export function ThreadShareControl({
 
   // Sharing is only meaningful for chats living on the environment that holds
   // the friend links; a thread on another machine is that machine's to share.
-  if (friends.length === 0 || primaryEnvironmentId !== environmentId) {
+  //
+  // Having no friends yet is not a reason to hide this. It used to be, and it
+  // made the feature undiscoverable: the sidebar entry is also gated on having
+  // friends, so somebody who had never added one saw no way into friends from
+  // a chat at all. The button is where you would look to add someone to this
+  // conversation, so it stays and sends you somewhere useful.
+  if (primaryEnvironmentId !== environmentId) {
     return null;
   }
 
@@ -204,17 +212,38 @@ export function ThreadShareControl({
             They see this conversation and nothing else on this machine. You still approve anything
             the agent wants to run.
           </p>
-          <div className="max-h-72 overflow-y-auto">
-            {friends.map((friend) => (
-              <FriendShareRow
-                key={friend.friendId}
-                friend={friend}
-                level={levels.get(friend.friendId) ?? "off"}
-                busy={busy}
-                onChange={(level) => applyLevel(friend.friendId, level)}
-              />
-            ))}
-          </div>
+          {friends.length === 0 ? (
+            <div className="px-1 pb-1">
+              <p className="pb-2 text-[11px] leading-relaxed text-muted-foreground">
+                You have not added anyone yet. Swap friend codes in Settings, then come back and
+                share this chat.
+              </p>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="w-full justify-center"
+                onClick={() => {
+                  setOpen(false);
+                  void navigate({ to: "/settings/friends" });
+                }}
+              >
+                Add a friend
+              </Button>
+            </div>
+          ) : (
+            <div className="max-h-72 overflow-y-auto">
+              {friends.map((friend) => (
+                <FriendShareRow
+                  key={friend.friendId}
+                  friend={friend}
+                  level={levels.get(friend.friendId) ?? "off"}
+                  busy={busy}
+                  onChange={(level) => applyLevel(friend.friendId, level)}
+                />
+              ))}
+            </div>
+          )}
         </div>
       </PopoverPopup>
     </Popover>
