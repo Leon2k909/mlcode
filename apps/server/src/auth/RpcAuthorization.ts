@@ -152,13 +152,14 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.friendsUpdateProfile]: AuthOrchestrationOperateScope,
   [WS_METHODS.friendsShareThread]: AuthOrchestrationOperateScope,
   [WS_METHODS.friendsUnshareThread]: AuthOrchestrationOperateScope,
-  // The guest surface. `friend:participate` unlocks these four and nothing
+  // The guest surface. `friend:participate` unlocks these five and nothing
   // else, and each handler still re-checks the share grant for the thread it
   // was handed. Holding a friend session is not authorization to read a thread.
   [WS_METHODS.friendsGuestAnnounce]: AuthFriendParticipateScope,
   [WS_METHODS.friendsGuestSubscribeThreads]: AuthFriendParticipateScope,
   [WS_METHODS.friendsGuestSubscribeThread]: AuthFriendParticipateScope,
   [WS_METHODS.friendsGuestPostMessage]: AuthFriendParticipateScope,
+  [WS_METHODS.friendsGuestPartyBeacon]: AuthFriendParticipateScope,
 } as const satisfies Readonly<Record<WsRpcMethod, AuthEnvironmentScope>>;
 
 export function requiredScopeForRpcMethod(method: string): AuthEnvironmentScope {

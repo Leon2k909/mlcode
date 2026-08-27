@@ -250,6 +250,12 @@ export const ClientSettingsSchema = Schema.Struct({
   hiddenProjectKeys: Schema.Array(TrimmedNonEmptyString).pipe(
     Schema.withDecodingDefault(Effect.succeed([])),
   ),
+  // Friends this device shares live party activity with. Consent is per
+  // friend and per direction: listing someone here sends them your beacons,
+  // and says nothing about whether they send you theirs.
+  partySharingFriendIds: Schema.Array(TrimmedNonEmptyString).pipe(
+    Schema.withDecodingDefault(Effect.succeed([])),
+  ),
   sidebarProjectSortOrder: SidebarProjectSortOrder.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_PROJECT_SORT_ORDER)),
   ),
@@ -992,6 +998,7 @@ export const ClientSettingsPatch = Schema.Struct({
     Schema.Record(TrimmedNonEmptyString, SidebarProjectGroupingMode),
   ),
   hiddenProjectKeys: Schema.optionalKey(Schema.Array(TrimmedNonEmptyString)),
+  partySharingFriendIds: Schema.optionalKey(Schema.Array(TrimmedNonEmptyString)),
   sidebarProjectSortOrder: Schema.optionalKey(SidebarProjectSortOrder),
   sidebarThreadSortOrder: Schema.optionalKey(SidebarThreadSortOrder),
   sidebarThreadPreviewCount: Schema.optionalKey(SidebarThreadPreviewCount),

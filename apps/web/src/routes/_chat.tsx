@@ -4,6 +4,7 @@ import { useEffect, useMemo } from "react";
 
 import { isCommandPaletteOpen } from "../commandPaletteBus";
 import { useFriendLinkCompletion } from "../components/friends/useFriends";
+import { usePartyBeacon } from "../components/friends/party";
 import { useClientSettings, useLegacySidebarEnabled } from "../hooks/useSettings";
 import { openCommandPalette } from "../commandPaletteBus";
 import { useProjects } from "../state/entities";
@@ -182,6 +183,10 @@ function ChatRouteGlobalShortcuts() {
  */
 function FriendLinkCompletion() {
   useFriendLinkCompletion();
+  // Party beacons ride the same always-mounted spot: live activity should
+  // reach opted-in friends whenever the app is open, not only when the
+  // friends screens happen to be on screen.
+  usePartyBeacon();
   return null;
 }
 

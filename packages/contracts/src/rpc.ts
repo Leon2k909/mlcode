@@ -92,6 +92,7 @@ import {
   FriendsCreateInviteInput,
   FriendsEmptyResult,
   FriendsGuestAnnounceInput,
+  FriendsGuestPartyBeaconInput,
   FriendsGuestPostMessageInput,
   FriendsGuestPostMessageResult,
   FriendsGuestSubscribeThreadInput,
@@ -409,6 +410,7 @@ export const WS_METHODS = {
   friendsGuestSubscribeThreads: "friends.guestSubscribeThreads",
   friendsGuestSubscribeThread: "friends.guestSubscribeThread",
   friendsGuestPostMessage: "friends.guestPostMessage",
+  friendsGuestPartyBeacon: "friends.guestPartyBeacon",
 } as const;
 
 /**
@@ -420,6 +422,7 @@ export const FRIEND_GUEST_WS_METHODS = [
   "friends.guestSubscribeThreads",
   "friends.guestSubscribeThread",
   "friends.guestPostMessage",
+  "friends.guestPartyBeacon",
 ] as const;
 
 export const WsServerUpsertKeybindingRpc = Rpc.make(WS_METHODS.serverUpsertKeybinding, {
@@ -1248,6 +1251,12 @@ export const WsFriendsGuestPostMessageRpc = Rpc.make(WS_METHODS.friendsGuestPost
   error: Schema.Union([FriendOperationError, EnvironmentAuthorizationError]),
 });
 
+export const WsFriendsGuestPartyBeaconRpc = Rpc.make(WS_METHODS.friendsGuestPartyBeacon, {
+  payload: FriendsGuestPartyBeaconInput,
+  success: FriendsEmptyResult,
+  error: Schema.Union([FriendOperationError, EnvironmentAuthorizationError]),
+});
+
 export const WsRpcGroup = RpcGroup.make(
   WsServerProbeRpc,
   WsServerGetConfigRpc,
@@ -1374,4 +1383,5 @@ export const WsRpcGroup = RpcGroup.make(
   WsFriendsGuestSubscribeThreadsRpc,
   WsFriendsGuestSubscribeThreadRpc,
   WsFriendsGuestPostMessageRpc,
+  WsFriendsGuestPartyBeaconRpc,
 );

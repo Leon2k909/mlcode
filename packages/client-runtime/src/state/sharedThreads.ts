@@ -11,6 +11,7 @@ import {
   WS_METHODS,
   type EnvironmentId,
   type FriendId,
+  type FriendPartyActivity,
   type FriendProfile,
   type SharedThreadStreamEvent,
   type SharedThreadSummary,
@@ -171,6 +172,22 @@ export function createSharedThreadAtoms<R, E>(
               profile: input.profile,
               reciprocalCode: input.reciprocalCode,
             }),
+          );
+        }),
+    }),
+    /**
+     * Pushes one party beacon to a friend's environment. Fire-and-forget by
+     * design: a friend who is asleep just misses a heartbeat, and the next
+     * tick carries fresher truth than any retry of this one would.
+     */
+    partyBeacon: createRuntimeCommand(runtime, {
+      label: "friends:party-beacon",
+      execute: (input: SharedThreadTarget & { readonly activity: FriendPartyActivity }) =>
+        Effect.gen(function* () {
+          const pool = yield* FriendLinkPool;
+          const credential = yield* credentialFor(input);
+          return yield* pool.use(credential, (client) =>
+            client[WS_METHODS.friendsGuestPartyBeacon]({ activity: input.activity }),
           );
         }),
     }),

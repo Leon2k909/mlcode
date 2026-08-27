@@ -88,6 +88,37 @@ export type FriendLinkStatus = typeof FriendLinkStatus.Type;
 export const FriendPresence = Schema.Literals(["online", "offline"]);
 export type FriendPresence = typeof FriendPresence.Type;
 
+/** Coarse surface a party member is on. Deliberately not a route. */
+export const FriendPartySurface = Schema.Literals([
+  "chat",
+  "settings",
+  "pull-requests",
+  "usage",
+  "friends",
+  "other",
+]);
+export type FriendPartySurface = typeof FriendPartySurface.Type;
+
+/**
+ * One party member's live activity, as coarse as it can be while still
+ * feeling alive: which kind of surface they are on, a sender-authored label
+ * ("germ \u203a Fix the auth flow"), whether their agent is working, and when
+ * they last touched mouse or keyboard. Timestamps only - never content,
+ * paths, coordinates, or anything the sender did not choose to label.
+ * Freshness is judged by the reader from `updatedAt`, so a sender that
+ * vanishes simply fades instead of needing a goodbye.
+ */
+export const FriendPartyActivity = Schema.Struct({
+  surface: FriendPartySurface,
+  /** Sender-authored focus label. Absent on surfaces with nothing to name. */
+  detail: Schema.optional(TrimmedNonEmptyString),
+  agentBusy: Schema.Boolean,
+  /** Last pointer or keyboard input, coarse. The "they are clicking" pulse. */
+  lastInputAt: IsoDateTime,
+  updatedAt: IsoDateTime,
+});
+export type FriendPartyActivity = typeof FriendPartyActivity.Type;
+
 export const Friend = Schema.Struct({
   friendId: FriendId,
   profile: FriendProfile,
@@ -105,6 +136,12 @@ export const Friend = Schema.Struct({
   presence: FriendPresence,
   /** Thread they currently have open, when it is one of ours. */
   viewingThreadId: Schema.NullOr(ThreadId),
+  /**
+   * Their latest party beacon, when they share live activity with us.
+   * Optional twice over: absent for friends who never opted in, and stale
+   * beacons are the reader's to ignore by `updatedAt`.
+   */
+  partyActivity: Schema.optional(FriendPartyActivity),
   lastSeenAt: Schema.NullOr(IsoDateTime),
   createdAt: IsoDateTime,
 });
@@ -415,6 +452,11 @@ export const FriendsGuestPostMessageResult = Schema.Struct({
   messageId: MessageId,
 });
 export type FriendsGuestPostMessageResult = typeof FriendsGuestPostMessageResult.Type;
+
+export const FriendsGuestPartyBeaconInput = Schema.Struct({
+  activity: FriendPartyActivity,
+});
+export type FriendsGuestPartyBeaconInput = typeof FriendsGuestPartyBeaconInput.Type;
 
 // ---------------------------------------------------------------------------
 // Errors

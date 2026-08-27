@@ -2692,6 +2692,12 @@ const makeWsRpcLayer = (
             friends.guestPostMessage(currentSession.subject, input),
             { "rpc.aggregate": "friends" },
           ),
+        [WS_METHODS.friendsGuestPartyBeacon]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.friendsGuestPartyBeacon,
+            friends.guestPartyBeacon(currentSession.subject, input).pipe(Effect.as({})),
+            { "rpc.aggregate": "friends" },
+          ),
       });
     }),
   );

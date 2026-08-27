@@ -245,3 +245,9 @@ export const postToSharedThread = (
   credential: FriendLinkCredential,
   input: { readonly threadId: ThreadId; readonly text: string },
 ) => pool.use(credential, (client) => client[WS_METHODS.friendsGuestPostMessage](input));
+
+export const partyBeaconToFriend = (
+  pool: FriendLinkPool["Service"],
+  credential: FriendLinkCredential,
+  input: Parameters<WsRpcProtocolClient[typeof WS_METHODS.friendsGuestPartyBeacon]>[0],
+) => pool.use(credential, (client) => client[WS_METHODS.friendsGuestPartyBeacon](input));

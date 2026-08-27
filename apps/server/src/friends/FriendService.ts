@@ -41,7 +41,9 @@ import {
   type FriendProfile,
   type FriendThreadShare,
   type FriendsSnapshot,
+  type FriendPartyActivity,
   type FriendsGuestAnnounceInput,
+  type FriendsGuestPartyBeaconInput,
   type FriendsLinkCredential,
   type FriendsShareThreadInput,
   type FriendsUnshareThreadInput,
@@ -75,6 +77,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as PubSub from "effect/PubSub";
+import * as Ref from "effect/Ref";
 import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http";
@@ -139,6 +142,10 @@ export interface FriendServiceShape {
     subject: string,
     input: { readonly threadId: ThreadId; readonly text: string },
   ) => Effect.Effect<{ readonly messageId: MessageId }, FriendOperationError>;
+  readonly guestPartyBeacon: (
+    subject: string,
+    input: FriendsGuestPartyBeaconInput,
+  ) => Effect.Effect<void, FriendOperationError>;
 }
 
 export class FriendService extends Context.Service<FriendService, FriendServiceShape>()(
@@ -174,6 +181,12 @@ export const make = Effect.gen(function* () {
 
   /** Nudges the owner-facing snapshot stream. */
   const dirty = yield* PubSub.unbounded<void>();
+  /**
+   * Latest party beacon per friend. In-memory like presence: activity from a
+   * process that died was not live activity, and the reader already treats
+   * anything old as stale by its own clock.
+   */
+  const partyBeacons = yield* Ref.make(new Map<FriendId, FriendPartyActivity>());
   const markDirty = PubSub.publish(dirty, undefined).pipe(Effect.asVoid);
 
   const internal = (operation: string) => (cause: unknown) =>
@@ -231,7 +244,12 @@ export const make = Effect.gen(function* () {
   // Snapshot
   // -------------------------------------------------------------------------
 
-  const toFriend = (record: FriendRecord, online: boolean, viewingThreadId: ThreadId | null) =>
+  const toFriend = (
+    record: FriendRecord,
+    online: boolean,
+    viewingThreadId: ThreadId | null,
+    partyActivity: FriendPartyActivity | undefined,
+  ) =>
     ({
       friendId: record.friendId,
       profile: {
@@ -246,6 +264,7 @@ export const make = Effect.gen(function* () {
       announceCode: record.announceCode,
       presence: online ? "online" : "offline",
       viewingThreadId,
+      ...(partyActivity === undefined ? {} : { partyActivity }),
       lastSeenAt: record.lastSeenAt,
       createdAt: record.createdAt,
     }) satisfies Friend;
@@ -271,11 +290,19 @@ export const make = Effect.gen(function* () {
       store.listShares().pipe(Effect.mapError(internal("listShares"))),
       connectedFriendSubjects,
     ]);
+    const beacons = yield* Ref.get(partyBeacons);
     const friends = yield* Effect.forEach(records, (record) =>
       presence
         .threadOf(record.friendId)
         .pipe(
-          Effect.map((viewing) => toFriend(record, connected.has(record.inviteSubject), viewing)),
+          Effect.map((viewing) =>
+            toFriend(
+              record,
+              connected.has(record.inviteSubject),
+              viewing,
+              beacons.get(record.friendId),
+            ),
+          ),
         ),
     );
     const snapshot: FriendsSnapshot = { profile, friends, shares };
@@ -1030,6 +1057,17 @@ export const make = Effect.gen(function* () {
     ),
   );
 
+  const guestPartyBeacon: FriendServiceShape["guestPartyBeacon"] = (subject, input) =>
+    Effect.gen(function* () {
+      const record = yield* requireFriend(subject);
+      yield* Ref.update(partyBeacons, (current) => {
+        const next = new Map(current);
+        next.set(record.friendId, input.activity);
+        return next;
+      });
+      yield* markDirty;
+    });
+
   return {
     getSnapshot,
     snapshots,
@@ -1045,6 +1083,7 @@ export const make = Effect.gen(function* () {
     guestSharedThreads,
     guestSharedThread,
     guestPostMessage,
+    guestPartyBeacon,
   } satisfies FriendServiceShape;
 });
 
