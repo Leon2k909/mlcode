@@ -113,7 +113,7 @@ describe("applyCeoGroupRoutingReminder", () => {
     expect(message).toContain(
       "unusually broad, high-risk, or architecture-changing UI work requires Sol with Ultra reasoning",
     );
-    expect(message).toContain("remain on GPT-5.6 Sol with Ultra reasoning");
+    expect(message).toContain("remain on GPT-5.6 Sol with High reasoning");
     expect(message).toContain("choose cheaper worker settings whenever the task allows");
     expect(message).toContain("that is not a handoff");
     expect(message).toContain("On Claude, the CEO must use Claude Fable 5 or Claude Opus 5");

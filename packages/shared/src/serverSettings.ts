@@ -1,5 +1,6 @@
 import {
   DEFAULT_EMPLOYEES,
+  EMPLOYEE_ROSTER_VERSION,
   isProviderDriverKind,
   isProviderAvailable,
   resolveProviderInstanceEnabled,
@@ -193,9 +194,52 @@ function repairEmployeeMap(employees: ServerSettings["employees"]): ServerSettin
   ) as ServerSettings["employees"];
 }
 
+/**
+ * One-time upgrade for files stamped with an older roster version: a CEO
+ * still on the shipped plumbing (override, Sol, exactly `ultra`) moves to
+ * the current default effort. Only the model plumbing plus the shipped name
+ * and provider identify "never touched" - instructions are deliberately not
+ * compared, because older releases shipped different default text and a user
+ * who only edited the persona text still deserves the latency fix. The
+ * version stamp keeps this from re-running, so deliberately raising the CEO
+ * back to "ultra" afterwards sticks.
+ */
+function upgradeShippedRosterModelDefaults(
+  employees: ServerSettings["employees"],
+): ServerSettings["employees"] {
+  const employeeMap = employees as unknown as Record<string, Employee>;
+  const ceo = employeeMap["ceo"];
+  const shipped = (DEFAULT_EMPLOYEES as unknown as Record<string, Employee>)["ceo"];
+  if (ceo === undefined || shipped === undefined) return employees;
+  const isShippedShape =
+    ceo.displayName === shipped.displayName &&
+    ceo.providerInstanceId === shipped.providerInstanceId &&
+    ceo.modelMode === "override" &&
+    ceo.model === shipped.model &&
+    ceo.modelOptions?.length === 1 &&
+    ceo.modelOptions[0]?.id === "reasoningEffort" &&
+    ceo.modelOptions[0]?.value === "ultra";
+  if (!isShippedShape) return employees;
+  return {
+    ...employees,
+    ceo: {
+      ...ceo,
+      ...(shipped.modelOptions !== undefined ? { modelOptions: [...shipped.modelOptions] } : {}),
+    },
+  } as ServerSettings["employees"];
+}
+
 /** Upgrade only shipped/default-shaped employee records while preserving custom personas. */
 export function normalizeServerSettingsEmployees(settings: ServerSettings): ServerSettings {
-  return { ...settings, employees: repairEmployeeMap(settings.employees) };
+  const employees = repairEmployeeMap(settings.employees);
+  return {
+    ...settings,
+    employees:
+      settings.employeeRosterVersion >= EMPLOYEE_ROSTER_VERSION
+        ? employees
+        : upgradeShippedRosterModelDefaults(employees),
+    employeeRosterVersion: EMPLOYEE_ROSTER_VERSION,
+  };
 }
 
 function repairEmployeePatch(

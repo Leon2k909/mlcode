@@ -145,6 +145,19 @@ const DEFAULT_ROSTER_INSTANCE_ID = "codex";
 /** Model the default decision-maker runs on. */
 const DEFAULT_LEAD_MODEL = "gpt-5.6-sol";
 
+/**
+ * Version of the shipped roster's model plumbing. Bumped when a shipped
+ * default changes in a way existing settings files should pick up;
+ * `normalizeServerSettingsEmployees` upgrades files stamped with an older
+ * version exactly once and re-stamps them, so a user's later edits to the
+ * same fields are never revisited.
+ *
+ * History: 2 moved the CEO's default reasoning effort from "ultra" to
+ * "high" - the CEO routes and reviews rather than doing the work, and
+ * per-handoff tiering already escalates workers to "ultra" when warranted.
+ */
+export const EMPLOYEE_ROSTER_VERSION = 2;
+
 const workerInstructions = (focus: string, workflow: string): string =>
   [
     `You are a worker on a small team. Your focus is ${focus}.`,
@@ -173,7 +186,11 @@ export const DEFAULT_EMPLOYEES: EmployeeMap = Schema.decodeSync(EmployeeMap)({
     providerInstanceId: DEFAULT_ROSTER_INSTANCE_ID,
     modelMode: "override",
     model: DEFAULT_LEAD_MODEL,
-    modelOptions: [{ id: "reasoningEffort", value: "ultra" }],
+    // "high", not "ultra": the CEO's turns are routing gates and evidence
+    // review, and both pay ultra's full thinking time on every exchange while
+    // the actual work happens in the workers. Handoff tiering still assigns
+    // Sol at "ultra" to exceptional tasks.
+    modelOptions: [{ id: "reasoningEffort", value: "high" }],
     enabled: true,
     instructions: [
       "You are the routing CEO of this team. You own the decision, not the typing.",

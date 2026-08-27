@@ -383,7 +383,7 @@ describe("serverSettings helpers", () => {
     });
   });
 
-  it("pins only a legacy default-shaped CEO to Sol Ultra", () => {
+  it("pins only a legacy default-shaped CEO to the shipped Sol default", () => {
     const ceoId = EmployeeId.make("ceo");
     const currentCeo = DEFAULT_SERVER_SETTINGS.employees[ceoId]!;
     const { modelMode: _mode, modelOptions: _options, ...legacyCeo } = currentCeo;
@@ -395,7 +395,7 @@ describe("serverSettings helpers", () => {
     expect(normalizeServerSettingsEmployees(legacySettings).employees[ceoId]).toMatchObject({
       modelMode: "override",
       model: "gpt-5.6-sol",
-      modelOptions: [{ id: "reasoningEffort", value: "ultra" }],
+      modelOptions: [{ id: "reasoningEffort", value: "high" }],
     });
 
     const customized = {
@@ -411,6 +411,73 @@ describe("serverSettings helpers", () => {
     expect(
       normalizeServerSettingsEmployees(customized).employees[ceoId]?.modelOptions,
     ).toBeUndefined();
+  });
+
+  it("upgrades a shipped-shaped CEO from ultra to the current default exactly once", () => {
+    const ceoId = EmployeeId.make("ceo");
+    const currentCeo = DEFAULT_SERVER_SETTINGS.employees[ceoId]!;
+    const v1Settings = {
+      ...DEFAULT_SERVER_SETTINGS,
+      employeeRosterVersion: 1,
+      employees: {
+        ...DEFAULT_SERVER_SETTINGS.employees,
+        [ceoId]: {
+          ...currentCeo,
+          modelOptions: [{ id: "reasoningEffort", value: "ultra" }],
+        },
+      },
+    } as ServerSettings;
+
+    const upgraded = normalizeServerSettingsEmployees(v1Settings);
+    expect(upgraded.employees[ceoId]?.modelOptions).toEqual([
+      { id: "reasoningEffort", value: "high" },
+    ]);
+    expect(upgraded.employeeRosterVersion).toBeGreaterThanOrEqual(2);
+  });
+
+  it("leaves a CEO with customized model plumbing alone while stamping the version", () => {
+    const ceoId = EmployeeId.make("ceo");
+    const currentCeo = DEFAULT_SERVER_SETTINGS.employees[ceoId]!;
+    const customized = {
+      ...DEFAULT_SERVER_SETTINGS,
+      employeeRosterVersion: 1,
+      employees: {
+        ...DEFAULT_SERVER_SETTINGS.employees,
+        [ceoId]: {
+          ...currentCeo,
+          model: "gpt-5.6-terra",
+          modelOptions: [{ id: "reasoningEffort", value: "ultra" }],
+        },
+      },
+    } as ServerSettings;
+
+    const normalized = normalizeServerSettingsEmployees(customized);
+    expect(normalized.employees[ceoId]?.model).toBe("gpt-5.6-terra");
+    expect(normalized.employees[ceoId]?.modelOptions).toEqual([
+      { id: "reasoningEffort", value: "ultra" },
+    ]);
+    expect(normalized.employeeRosterVersion).toBeGreaterThanOrEqual(2);
+  });
+
+  it("never revisits a deliberate ultra choice on an already-upgraded file", () => {
+    // The upgrade is a one-time migration, not a policy: once the file is
+    // stamped, raising the CEO back to ultra must stick across reloads.
+    const ceoId = EmployeeId.make("ceo");
+    const currentCeo = DEFAULT_SERVER_SETTINGS.employees[ceoId]!;
+    const raisedBack = {
+      ...normalizeServerSettingsEmployees(DEFAULT_SERVER_SETTINGS),
+      employees: {
+        ...DEFAULT_SERVER_SETTINGS.employees,
+        [ceoId]: {
+          ...currentCeo,
+          modelOptions: [{ id: "reasoningEffort", value: "ultra" }],
+        },
+      },
+    } as ServerSettings;
+
+    expect(normalizeServerSettingsEmployees(raisedBack).employees[ceoId]?.modelOptions).toEqual([
+      { id: "reasoningEffort", value: "ultra" },
+    ]);
   });
 
   it("stores background activity profiles as a versioned object and syncs legacy aliases", () => {

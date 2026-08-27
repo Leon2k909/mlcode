@@ -243,7 +243,7 @@ describe("DEFAULT_EMPLOYEES", () => {
     expect(DEFAULT_EMPLOYEES[EmployeeId.make("ceo")]).toMatchObject({
       modelMode: "override",
       model: "gpt-5.6-sol",
-      modelOptions: [{ id: "reasoningEffort", value: "ultra" }],
+      modelOptions: [{ id: "reasoningEffort", value: "high" }],
     });
     for (const id of ["worker_alpha", "worker_beta", "worker_gamma"]) {
       expect(DEFAULT_EMPLOYEES[EmployeeId.make(id)]?.modelMode).toBe("auto");

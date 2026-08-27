@@ -737,6 +737,10 @@ export const ServerSettings = Schema.Struct({
   employees: Schema.Record(EmployeeId, Employee).pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_EMPLOYEES)),
   ),
+  // Which shipped-roster model defaults this file has been upgraded to.
+  // Files from before versioning decode as 1; normalization stamps the
+  // current version after running any pending one-time upgrades.
+  employeeRosterVersion: Schema.Number.pipe(Schema.withDecodingDefault(Effect.succeed(1))),
   observability: ObservabilitySettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
 });
 export type ServerSettings = typeof ServerSettings.Type;

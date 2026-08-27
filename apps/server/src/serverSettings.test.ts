@@ -954,6 +954,9 @@ it.layer(NodeServices.layer)("server settings", (it) => {
       // @effect-diagnostics-next-line preferSchemaOverJson:off
       assert.deepEqual(JSON.parse(raw), {
         addProjectBaseDirectory: "~/Development",
+        // Stamped by employee normalization on load so the one-time roster
+        // upgrade never re-runs against a user's later choices.
+        employeeRosterVersion: 2,
         observability: {
           otlpTracesUrl: "http://localhost:4318/v1/traces",
           otlpMetricsUrl: "http://localhost:4318/v1/metrics",
