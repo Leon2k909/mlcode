@@ -32,6 +32,24 @@ If reordering is unavailable for one environment, update the ML Code server runn
 environment. Older servers can still pin and unpin threads, but do not understand synced ordering;
 their pinned threads keep the default newest-first order below the ones you have arranged.
 
+## Copying a thread
+
+Open a thread's context menu and choose **Copy thread** to start a second conversation alongside
+the first. The copy opens in the same project, on the same branch and workspace, with the same
+model, employees, permission mode, and goal — so you can explore a second approach without losing
+the thread you already have.
+
+The copy starts with an empty transcript, but the agent is not starting from nothing: its first
+reply is informed by a summary of the original conversation, so you can pick up where you left off
+instead of re-explaining the task. Nothing is sent until you write your first message.
+
+Checkpoints are not copied. The copy builds its own history from its first turn, and rewinding in
+one thread never affects the other. The option is hidden when the connected environment needs a
+server update.
+
+For the automatic version of the same handover, when a conversation approaches the provider's
+context limit, see [Long threads](long-threads.md).
+
 ## Rewinding a message
 
 Choose **Delete & rewind** below one of your messages to remove that message and everything after

@@ -9,6 +9,7 @@ import type { SnoozePreset } from "@t3tools/client-runtime/state/thread-settled"
 export type ThreadActionMenuId =
   | "open-to-side"
   | "new-thread-on-branch"
+  | "duplicate"
   | "pin"
   | "unpin"
   | "settle"
@@ -44,6 +45,7 @@ export interface ThreadActionMenuState {
     readonly snooze: boolean;
     readonly pinning: boolean;
     readonly titleRegeneration: boolean;
+    readonly copy: boolean;
   };
   readonly snoozePresets: ReadonlyArray<SnoozePreset>;
 }
@@ -74,6 +76,12 @@ export function buildThreadActionMenuItems(
             icon: "message-square-plus",
           },
         ]
+      : []),
+    // Sits with "New thread on <branch>" rather than under Copy, whose items
+    // all put a string on the clipboard. Both entries here start a second
+    // thread on the same checkout; this one brings the conversation along.
+    ...(state.supports.copy
+      ? [{ id: "duplicate" as const, label: "Copy thread", icon: "copy-plus" }]
       : []),
     ...(state.supports.pinning
       ? [

@@ -9,6 +9,7 @@ import {
 } from "./runtime.ts";
 import {
   type ArchiveThreadInput,
+  type CopyThreadInput,
   type CreateThreadInput,
   type DeleteThreadMessageInput,
   type DeleteThreadInput,
@@ -30,6 +31,7 @@ import {
   type UnsnoozeThreadInput,
   type UpdateThreadMetadataInput,
   archiveThread,
+  copyThread,
   createThread,
   deleteThreadMessage,
   deleteThread,
@@ -55,6 +57,7 @@ import type { EnvironmentRegistry } from "../connection/registry.ts";
 
 export type {
   ArchiveThreadInput,
+  CopyThreadInput,
   CreateThreadInput,
   DeleteThreadMessageInput,
   DeleteThreadInput,
@@ -90,6 +93,12 @@ export function createThreadEnvironmentAtoms<R, E>(
     create: createEnvironmentCommand(runtime, {
       label: "environment-data:commands:thread:create",
       execute: (input: CreateThreadInput) => createThread(input),
+      scheduler,
+      concurrency,
+    }),
+    copy: createEnvironmentCommand(runtime, {
+      label: "environment-data:commands:thread:copy",
+      execute: (input: CopyThreadInput) => copyThread(input),
       scheduler,
       concurrency,
     }),

@@ -119,7 +119,8 @@ import {
 } from "../threadRoutes";
 import { formatRelativeTimeLabel, parseTimestampDate } from "../timestampFormat";
 import type { SidebarThreadSummary } from "../types";
-import { cn } from "~/lib/utils";
+import { truncate } from "@t3tools/shared/String";
+import { cn, newThreadId } from "~/lib/utils";
 import { buildThreadActionMenuItems } from "./threadActionMenu.logic";
 import {
   animatePinnedLayoutChanges,
@@ -1916,6 +1917,7 @@ export default function Sidebar() {
   const updateThreadMetadata = useAtomCommand(threadEnvironment.updateMetadata, {
     reportFailure: false,
   });
+  const copyThread = useAtomCommand(threadEnvironment.copy, { reportFailure: false });
   const { copyToClipboard: copyPathToClipboard } = useCopyToClipboard<{ path: string }>({
     onCopy: ({ path }) => {
       toastManager.add({
@@ -3233,6 +3235,8 @@ export default function Sidebar() {
         const supportsTitleRegeneration =
           serverConfigs.get(thread.environmentId)?.environment.capabilities
             .threadTitleRegeneration === true;
+        const supportsCopy =
+          serverConfigs.get(thread.environmentId)?.environment.capabilities.threadCopy === true;
         const isRegeneratingTitle = thread.titleRegeneration != null;
         const isSettled = settledThreadKeysRef.current.has(threadKey);
         const isSnoozed = snoozedThreadKeysRef.current.has(threadKey);
@@ -3259,6 +3263,7 @@ export default function Sidebar() {
                 snooze: supportsSnooze,
                 pinning: supportsPinning,
                 titleRegeneration: supportsTitleRegeneration,
+                copy: supportsCopy,
               },
               snoozePresets,
             }),
@@ -3310,6 +3315,35 @@ export default function Sidebar() {
                 }),
               );
             }
+            return;
+          }
+          case "duplicate": {
+            const copyThreadId = newThreadId();
+            const copied = await copyThread({
+              environmentId: threadRef.environmentId,
+              input: {
+                sourceThreadId: thread.id,
+                threadId: copyThreadId,
+                title: truncate(`Copy of ${thread.title}`),
+              },
+            });
+            if (copied._tag === "Failure") {
+              if (!isAtomCommandInterrupted(copied)) {
+                const error = squashAtomCommandFailure(copied);
+                toastManager.add(
+                  stackedThreadToast({
+                    type: "error",
+                    title: "Failed to copy thread",
+                    description: error instanceof Error ? error.message : "An error occurred.",
+                  }),
+                );
+              }
+              return;
+            }
+            void router.navigate({
+              to: "/$environmentId/$threadId",
+              params: buildThreadRouteParams(scopeThreadRef(threadRef.environmentId, copyThreadId)),
+            });
             return;
           }
           case "settle":

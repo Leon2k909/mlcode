@@ -774,6 +774,27 @@ const ThreadCreateCommand = Schema.Struct({
   createdAt: IsoDateTime,
 });
 
+/**
+ * Forks an existing thread into a fresh sibling in the same project. Only the
+ * new thread's identity comes from the client — the project, model selection
+ * (which carries the employees and reasoning options), permission mode,
+ * branch, workspace, and goal are all read from the source thread server-side,
+ * so a client cannot fork a thread onto a checkout it does not belong to.
+ *
+ * The copy starts with no messages, no checkpoints, and no provider session.
+ * It carries the source conversation as a bounded `ThreadContinuation`, which
+ * the provider reactor injects into the copy's first turn — a fresh native
+ * session seeded with reference context, never a shared resume cursor.
+ */
+const ThreadCopyCommand = Schema.Struct({
+  type: Schema.Literal("thread.copy"),
+  commandId: CommandId,
+  sourceThreadId: ThreadId,
+  threadId: ThreadId,
+  title: TrimmedNonEmptyString,
+  createdAt: IsoDateTime,
+});
+
 const ThreadDeleteCommand = Schema.Struct({
   type: Schema.Literal("thread.delete"),
   commandId: CommandId,
@@ -1031,6 +1052,7 @@ const DispatchableClientOrchestrationCommand = Schema.Union([
   ProjectMetaUpdateCommand,
   ProjectDeleteCommand,
   ThreadCreateCommand,
+  ThreadCopyCommand,
   ThreadDeleteCommand,
   ThreadArchiveCommand,
   ThreadUnarchiveCommand,
@@ -1060,6 +1082,7 @@ export const ClientOrchestrationCommand = Schema.Union([
   ProjectMetaUpdateCommand,
   ProjectDeleteCommand,
   ThreadCreateCommand,
+  ThreadCopyCommand,
   ThreadDeleteCommand,
   ThreadArchiveCommand,
   ThreadUnarchiveCommand,

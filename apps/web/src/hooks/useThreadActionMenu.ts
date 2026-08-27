@@ -1,4 +1,8 @@
-import { scopeProjectRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
+import {
+  scopeProjectRef,
+  scopeThreadRef,
+  scopedThreadKey,
+} from "@t3tools/client-runtime/environment";
 import {
   type AtomCommandResult,
   isAtomCommandInterrupted,
@@ -27,6 +31,7 @@ import {
   readEnvironmentSupportsPinning,
   readEnvironmentSupportsSettlement,
   readEnvironmentSupportsSnooze,
+  readEnvironmentSupportsThreadCopy,
   readEnvironmentSupportsTitleRegeneration,
   readThreadShell,
 } from "../state/entities";
@@ -42,6 +47,8 @@ import {
   useChatWorkspaceStore,
 } from "../chatWorkspaceStore";
 import { buildThreadRouteParams } from "../threadRoutes";
+import { newThreadId } from "../lib/utils";
+import { truncate } from "@t3tools/shared/String";
 
 function failureToast(title: string, error: unknown) {
   toastManager.add(
@@ -86,6 +93,7 @@ export function useThreadActionMenu(input: {
   const updateThreadMetadata = useAtomCommand(threadEnvironment.updateMetadata, {
     reportFailure: false,
   });
+  const copyThread = useAtomCommand(threadEnvironment.copy, { reportFailure: false });
   const handleNewThread = useNewThreadHandler();
   const markThreadUnread = useUiStateStore((s) => s.markThreadUnread);
   const autoSettleAfterDays = useClientSettings((s) => s.sidebarAutoSettleAfterDays);
@@ -129,6 +137,7 @@ export function useThreadActionMenu(input: {
           snooze: readEnvironmentSupportsSnooze(threadRef.environmentId),
           pinning: readEnvironmentSupportsPinning(threadRef.environmentId),
           titleRegeneration: readEnvironmentSupportsTitleRegeneration(threadRef.environmentId),
+          copy: readEnvironmentSupportsThreadCopy(threadRef.environmentId),
         };
         const isRegeneratingTitle = thread.titleRegeneration != null;
         const snoozePresets = resolveSnoozePresets(now, timestampFormat);
@@ -228,6 +237,28 @@ export function useThreadActionMenu(input: {
             if (result._tag === "Failure") {
               failureToast("Could not create thread", squashAtomCommandFailure(result));
             }
+            return;
+          }
+          case "duplicate": {
+            const copyThreadId = newThreadId();
+            const copied = await copyThread({
+              environmentId: threadRef.environmentId,
+              input: {
+                sourceThreadId: thread.id,
+                threadId: copyThreadId,
+                title: truncate(`Copy of ${thread.title}`),
+              },
+            });
+            if (copied._tag === "Failure") {
+              if (!isAtomCommandInterrupted(copied)) {
+                failureToast("Failed to copy thread", squashAtomCommandFailure(copied));
+              }
+              return;
+            }
+            await navigate({
+              to: "/$environmentId/$threadId",
+              params: buildThreadRouteParams(scopeThreadRef(threadRef.environmentId, copyThreadId)),
+            });
             return;
           }
           case "settle":
@@ -344,6 +375,7 @@ export function useThreadActionMenu(input: {
       confirmThreadDelete,
       copyBranchToClipboard,
       copyPathToClipboard,
+      copyThread,
       copyThreadIdToClipboard,
       deleteThread,
       handleNewThread,

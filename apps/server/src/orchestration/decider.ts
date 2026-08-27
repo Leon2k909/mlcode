@@ -9,6 +9,8 @@ import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import type * as PlatformError from "effect/PlatformError";
 
+import { buildContextContinuation } from "@t3tools/shared/contextManagement";
+
 import { OrchestrationCommandInvariantError } from "./Errors.ts";
 import {
   listThreadsByProjectId,
@@ -379,6 +381,64 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           worktreePath: command.worktreePath,
           ...(command.goal !== undefined ? { goal: command.goal } : {}),
           ...(command.continuation !== undefined ? { continuation: command.continuation } : {}),
+          createdAt: command.createdAt,
+          updatedAt: command.createdAt,
+        },
+      };
+    }
+
+    case "thread.copy": {
+      const source = yield* requireThread({
+        readModel,
+        command,
+        threadId: command.sourceThreadId,
+      });
+      yield* requireThreadAbsent({
+        readModel,
+        command,
+        threadId: command.threadId,
+      });
+      // The copy is a fresh conversation, not a clone: it takes the source's
+      // working setup but none of its history. Messages stay behind because
+      // the copy's provider session never produced them; checkpoints stay
+      // behind because they are keyed to the source's turn counts and point
+      // at git refs that would roll the shared worktree back to the source's
+      // state. The conversation travels instead as bounded reference text.
+      const continuation = buildContextContinuation({
+        sourceThreadId: source.id,
+        sourceThreadTitle: source.title,
+        messages: source.messages,
+      });
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "thread",
+          aggregateId: command.threadId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
+        type: "thread.created",
+        payload: {
+          threadId: command.threadId,
+          projectId: source.projectId,
+          title: command.title,
+          modelSelection: source.modelSelection,
+          runtimeMode: source.runtimeMode,
+          interactionMode: source.interactionMode,
+          // Same branch and same checkout as the source. Every other fork
+          // path in the app does this; minting a new worktree here would
+          // silently strip the user's uncommitted work from the copy.
+          branch: source.branch,
+          worktreePath: source.worktreePath,
+          goal: source.goal ?? null,
+          continuation:
+            continuation === null
+              ? null
+              : {
+                  sourceThreadId: source.id,
+                  sourceThreadTitle: source.title,
+                  context: continuation,
+                  createdAt: command.createdAt,
+                },
           createdAt: command.createdAt,
           updatedAt: command.createdAt,
         },

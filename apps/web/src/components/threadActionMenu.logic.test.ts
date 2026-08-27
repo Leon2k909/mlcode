@@ -10,7 +10,7 @@ const baseState: ThreadActionMenuState = {
   canSnoozeNow: true,
   isRegeneratingTitle: false,
   isRunning: false,
-  supports: { settlement: true, snooze: true, pinning: true, titleRegeneration: true },
+  supports: { settlement: true, snooze: true, pinning: true, titleRegeneration: true, copy: true },
   snoozePresets: [
     { id: "hour", label: "In 1 hour", whenLabel: "3:00 PM", snoozedUntil: "2026-08-07T15:00:00Z" },
   ],
@@ -31,7 +31,13 @@ describe("buildThreadActionMenuItems", () => {
     expect(
       ids({
         ...baseState,
-        supports: { settlement: false, snooze: false, pinning: false, titleRegeneration: false },
+        supports: {
+          settlement: false,
+          snooze: false,
+          pinning: false,
+          titleRegeneration: false,
+          copy: false,
+        },
       }),
     ).toEqual(["rename", "mark-unread", "copy", "archive", "delete"]);
   });
@@ -42,6 +48,26 @@ describe("buildThreadActionMenuItems", () => {
     expect(withBranch).toContain("copy-branch");
     expect(allIds(baseState)).not.toContain("new-thread-on-branch");
     expect(allIds(baseState)).not.toContain("copy-branch");
+  });
+
+  it("offers copy thread only when the environment supports it", () => {
+    expect(ids(baseState)).toContain("duplicate");
+    expect(ids({ ...baseState, supports: { ...baseState.supports, copy: false } })).not.toContain(
+      "duplicate",
+    );
+  });
+
+  it("places copy thread directly after the branch thread entry", () => {
+    const withBranch = ids({ ...baseState, branch: "feat/menu" });
+    expect(withBranch.indexOf("duplicate")).toBe(withBranch.indexOf("new-thread-on-branch") + 1);
+    // Distinct from the clipboard submenu, which keeps its own entries.
+    expect(allIds(baseState)).toEqual(
+      expect.arrayContaining(["duplicate", "copy", "copy-path", "copy-thread-id"]),
+    );
+  });
+
+  it("offers copy thread on a branchless thread, which has no branch entry to follow", () => {
+    expect(ids(baseState)[0]).toBe("duplicate");
   });
 
   it("offers open to side only for a thread not already in the workspace", () => {
@@ -102,7 +128,13 @@ describe("buildThreadActionMenuItems", () => {
     expect(
       ids({
         ...baseState,
-        supports: { settlement: false, snooze: false, pinning: false, titleRegeneration: false },
+        supports: {
+          settlement: false,
+          snooze: false,
+          pinning: false,
+          titleRegeneration: false,
+          copy: false,
+        },
       }),
     ).toContain("archive");
   });

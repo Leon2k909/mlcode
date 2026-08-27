@@ -694,6 +694,72 @@ describe("ProviderCommandReactor", () => {
     });
   });
 
+  it("seeds a copied thread's first turn with the source conversation", async () => {
+    const harness = await createHarness();
+    const now = "2026-01-01T00:00:00.000Z";
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-turn-start-source"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-message-source"),
+          role: "user",
+          text: "Rename the sidebar button",
+          attachments: [],
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: now,
+      }),
+    );
+    await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.copy",
+        commandId: CommandId.make("cmd-thread-copy"),
+        sourceThreadId: ThreadId.make("thread-1"),
+        threadId: ThreadId.make("thread-copy"),
+        title: "Copy of Thread",
+        createdAt: now,
+      }),
+    );
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-turn-start-copy"),
+        threadId: ThreadId.make("thread-copy"),
+        message: {
+          messageId: asMessageId("user-message-copy"),
+          role: "user",
+          text: "Now do the same for the header",
+          attachments: [],
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: now,
+      }),
+    );
+
+    await waitFor(() => harness.sendTurn.mock.calls.length === 2);
+    // The copy's own session is fresh, so the source conversation reaches it
+    // as reference text rather than through a shared resume cursor.
+    expect(harness.sendTurn.mock.calls[1]?.[0]).toMatchObject({
+      input: expect.stringContaining("Rename the sidebar button"),
+    });
+    expect(harness.sendTurn.mock.calls[1]?.[0]).toMatchObject({
+      input: expect.stringContaining("Now do the same for the header"),
+    });
+    // Injected exactly once: the copy's continuation clears after the turn.
+    await waitFor(async () => {
+      const snapshot = await harness.readModel();
+      return snapshot.threads.find((thread) => thread.id === "thread-copy")?.continuation === null;
+    });
+  });
+
   it("includes an active persistent goal in the provider input", async () => {
     const harness = await createHarness();
     const now = "2026-08-17T10:00:00.000Z";
