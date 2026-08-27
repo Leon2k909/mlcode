@@ -31,6 +31,34 @@ interface DraftHeroHeadlineProps {
   readonly activeProjectTitle: string | null;
 }
 
+/**
+ * What a project is, and where it lives. Two projects can carry the same
+ * display name, so the path is the part that identifies one.
+ */
+function ProjectLocation({
+  displayName,
+  workspaceRoot,
+  environmentLabel,
+}: {
+  readonly displayName: string;
+  readonly workspaceRoot: string | null;
+  readonly environmentLabel: string | null;
+}) {
+  return (
+    <span className="block text-left">
+      <span className="block">{displayName}</span>
+      {workspaceRoot ? (
+        <span className="mt-0.5 block font-mono text-[11px] text-muted-foreground [overflow-wrap:anywhere]">
+          {workspaceRoot}
+        </span>
+      ) : null}
+      {environmentLabel ? (
+        <span className="mt-0.5 block text-[11px] text-muted-foreground">{environmentLabel}</span>
+      ) : null}
+    </span>
+  );
+}
+
 export function DraftHeroHeadline({
   activeProjectRef,
   activeProjectTitle,
@@ -115,8 +143,12 @@ export function DraftHeroHeadline({
           {activeProjectDisplayName ?? "Choose a project"}
         </TooltipTrigger>
         {activeProjectDisplayName ? (
-          <TooltipPopup side="top" className="max-w-80">
-            {activeProjectDisplayName}
+          <TooltipPopup side="top" className="max-w-96">
+            <ProjectLocation
+              displayName={activeProjectDisplayName}
+              workspaceRoot={activeProjectGroup?.workspaceRoot ?? null}
+              environmentLabel={activeProjectGroup?.remoteEnvironmentLabels[0] ?? null}
+            />
           </TooltipPopup>
         ) : null}
       </Tooltip>
@@ -137,15 +169,21 @@ export function DraftHeroHeadline({
             });
           }}
         >
-          {projectPickerEntries.map(({ group }) => {
+          {projectPickerEntries.map(({ group, targetProject }) => {
             return (
               <MenuRadioItem key={group.projectKey} value={group.projectKey} closeOnClick>
                 <Tooltip>
                   <TooltipTrigger render={<span className="block min-w-0 truncate" />}>
                     {group.displayName}
                   </TooltipTrigger>
-                  <TooltipPopup side="top" className="max-w-80">
-                    {group.displayName}
+                  {/* Beside the row rather than above it, so the popup never
+                      covers the entries the user is comparing against. */}
+                  <TooltipPopup side="right" align="start" className="max-w-96">
+                    <ProjectLocation
+                      displayName={group.displayName}
+                      workspaceRoot={targetProject.workspaceRoot}
+                      environmentLabel={targetProject.environmentLabel}
+                    />
                   </TooltipPopup>
                 </Tooltip>
               </MenuRadioItem>
