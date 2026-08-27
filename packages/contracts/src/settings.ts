@@ -243,6 +243,13 @@ export const ClientSettingsSchema = Schema.Struct({
     TrimmedNonEmptyString,
     SidebarProjectGroupingMode,
   ).pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+  // Logical project keys the user has put away. They are only filtered out of
+  // the project picker, which is the surface for choosing where new work goes;
+  // the sidebar still lists them so existing threads never disappear with the
+  // entry. Nothing about the project itself changes, so this is reversible.
+  hiddenProjectKeys: Schema.Array(TrimmedNonEmptyString).pipe(
+    Schema.withDecodingDefault(Effect.succeed([])),
+  ),
   sidebarProjectSortOrder: SidebarProjectSortOrder.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_PROJECT_SORT_ORDER)),
   ),
@@ -980,6 +987,7 @@ export const ClientSettingsPatch = Schema.Struct({
   sidebarProjectGroupingOverrides: Schema.optionalKey(
     Schema.Record(TrimmedNonEmptyString, SidebarProjectGroupingMode),
   ),
+  hiddenProjectKeys: Schema.optionalKey(Schema.Array(TrimmedNonEmptyString)),
   sidebarProjectSortOrder: Schema.optionalKey(SidebarProjectSortOrder),
   sidebarThreadSortOrder: Schema.optionalKey(SidebarThreadSortOrder),
   sidebarThreadPreviewCount: Schema.optionalKey(SidebarThreadPreviewCount),

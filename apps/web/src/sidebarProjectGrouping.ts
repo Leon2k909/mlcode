@@ -119,6 +119,29 @@ export function buildSidebarProjectSnapshots(input: {
   });
 }
 
+/**
+ * Drops the projects the user has put away, keeping `alwaysVisibleProjectKey`
+ * whatever its state: the picker is a radio group, and a checked row missing
+ * from its own list reads as no project selected at all.
+ */
+export function selectVisibleProjectPickerEntries<
+  Entry extends { readonly group: { readonly projectKey: string } },
+>(input: {
+  entries: ReadonlyArray<Entry>;
+  hiddenProjectKeys: ReadonlyArray<string>;
+  alwaysVisibleProjectKey: string;
+}): ReadonlyArray<Entry> {
+  if (input.hiddenProjectKeys.length === 0) {
+    return input.entries;
+  }
+  const hidden = new Set(input.hiddenProjectKeys);
+  return input.entries.filter(
+    (entry) =>
+      !hidden.has(entry.group.projectKey) ||
+      entry.group.projectKey === input.alwaysVisibleProjectKey,
+  );
+}
+
 export function buildSidebarProjectPickerEntries(input: {
   groups: ReadonlyArray<SidebarProjectSnapshot>;
   preferredProjectRef: ScopedProjectRef | null;

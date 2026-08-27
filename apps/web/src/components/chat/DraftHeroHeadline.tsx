@@ -1,16 +1,21 @@
 import type { ScopedProjectRef } from "@t3tools/contracts";
 import { displayMlCodeProjectName } from "@t3tools/shared/productBranding";
 import { scopedProjectKey, scopeProjectRef } from "@t3tools/client-runtime/environment";
-import { FolderPlusIcon } from "lucide-react";
+import { EyeIcon, FolderPlusIcon, XIcon } from "lucide-react";
 import { useCallback, useMemo } from "react";
 
 import { openCommandPalette } from "~/commandPaletteBus";
 import { useNewThreadHandler } from "~/hooks/useHandleNewThread";
-import { useClientSettings } from "~/hooks/useSettings";
+import {
+  useClientSettings,
+  useSetProjectHidden,
+  useUpdateClientSettings,
+} from "~/hooks/useSettings";
 import { selectProjectGroupingSettings } from "~/logicalProject";
 import {
   buildSidebarProjectPickerEntries,
   buildSidebarProjectSnapshots,
+  selectVisibleProjectPickerEntries,
 } from "~/sidebarProjectGrouping";
 import { useProjects, useThreadShells } from "~/state/entities";
 import { useEnvironments, usePrimaryEnvironmentId } from "~/state/environments";
@@ -24,6 +29,7 @@ import {
   MenuSeparator,
   MenuTrigger,
 } from "../ui/menu";
+import { toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
 interface DraftHeroHeadlineProps {
@@ -69,6 +75,9 @@ export function DraftHeroHeadline({
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
   const projectSortOrder = useClientSettings((settings) => settings.sidebarProjectSortOrder);
+  const hiddenProjectKeys = useClientSettings((settings) => settings.hiddenProjectKeys);
+  const updateClientSettings = useUpdateClientSettings();
+  const setProjectHidden = useSetProjectHidden();
   const handleNewThread = useNewThreadHandler();
   const openAddProject = useCallback(() => openCommandPalette({ open: "add-project" }), []);
 
@@ -125,6 +134,38 @@ export function DraftHeroHeadline({
   const activeProjectName = activeProjectGroup?.displayName ?? activeProjectTitle;
   const activeProjectDisplayName =
     activeProjectName === null ? null : displayMlCodeProjectName(activeProjectName);
+  const visibleProjectEntries = useMemo(
+    () =>
+      selectVisibleProjectPickerEntries({
+        entries: projectPickerEntries,
+        hiddenProjectKeys,
+        alwaysVisibleProjectKey: activeProjectKey,
+      }),
+    [activeProjectKey, hiddenProjectKeys, projectPickerEntries],
+  );
+  const hiddenProjectCount = projectPickerEntries.length - visibleProjectEntries.length;
+
+  const hideProject = useCallback(
+    (projectKey: string, displayName: string) => {
+      setProjectHidden(projectKey, true);
+      toastManager.add({
+        type: "success",
+        title: `${displayName} hidden`,
+        description: "Its threads stay in the sidebar. Nothing was deleted.",
+        actionProps: {
+          children: "Undo",
+          onClick: () => {
+            setProjectHidden(projectKey, false);
+          },
+        },
+      });
+    },
+    [setProjectHidden],
+  );
+  const showHiddenProjects = useCallback(() => {
+    updateClientSettings({ hiddenProjectKeys: [] });
+  }, [updateClientSettings]);
+
   const hasResolvedProject = activeProjectTitle !== null;
   const canChooseProject = projectPickerEntries.length > 0;
   const shouldShowProjectMenu = canChooseProject;
@@ -169,28 +210,73 @@ export function DraftHeroHeadline({
             });
           }}
         >
-          {projectPickerEntries.map(({ group, targetProject }) => {
+          {visibleProjectEntries.map(({ group, targetProject }) => {
             return (
-              <MenuRadioItem key={group.projectKey} value={group.projectKey} closeOnClick>
-                <Tooltip>
-                  <TooltipTrigger render={<span className="block min-w-0 truncate" />}>
-                    {group.displayName}
-                  </TooltipTrigger>
-                  {/* Beside the row rather than above it, so the popup never
+              <MenuRadioItem
+                key={group.projectKey}
+                value={group.projectKey}
+                closeOnClick
+                className="group/project-row"
+                onKeyDown={(event) => {
+                  // Delete on Windows, the key Mac labels delete on Mac.
+                  if (event.key !== "Delete" && event.key !== "Backspace") {
+                    return;
+                  }
+                  event.preventDefault();
+                  event.stopPropagation();
+                  hideProject(group.projectKey, group.displayName);
+                }}
+              >
+                <span className="flex min-w-0 items-center gap-1">
+                  <Tooltip>
+                    <TooltipTrigger render={<span className="block min-w-0 flex-1 truncate" />}>
+                      {group.displayName}
+                    </TooltipTrigger>
+                    {/* Beside the row rather than above it, so the popup never
                       covers the entries the user is comparing against. */}
-                  <TooltipPopup side="right" align="start" className="max-w-96">
-                    <ProjectLocation
-                      displayName={group.displayName}
-                      workspaceRoot={targetProject.workspaceRoot}
-                      environmentLabel={targetProject.environmentLabel}
-                    />
-                  </TooltipPopup>
-                </Tooltip>
+                    <TooltipPopup side="right" align="start" className="max-w-96">
+                      <ProjectLocation
+                        displayName={group.displayName}
+                        workspaceRoot={targetProject.workspaceRoot}
+                        environmentLabel={targetProject.environmentLabel}
+                      />
+                    </TooltipPopup>
+                  </Tooltip>
+                  <button
+                    type="button"
+                    aria-label={`Hide ${group.displayName} from this list`}
+                    // Keyboard and touch never hover, so the highlighted row
+                    // reveals it too rather than leaving it unreachable.
+                    className="-mr-1 grid size-5 shrink-0 place-items-center rounded-sm text-muted-foreground opacity-0 transition-opacity in-data-highlighted:opacity-100 hover:bg-foreground/10 hover:text-foreground focus-visible:opacity-100 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring group-hover/project-row:opacity-100"
+                    // The row it sits in switches project and closes the
+                    // menu. Neither should happen from this control, and menu
+                    // activation can start at either end of the click.
+                    onPointerDown={(event) => {
+                      event.stopPropagation();
+                    }}
+                    onMouseDown={(event) => {
+                      event.stopPropagation();
+                    }}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      hideProject(group.projectKey, group.displayName);
+                    }}
+                  >
+                    <XIcon className="size-3.5" />
+                  </button>
+                </span>
               </MenuRadioItem>
             );
           })}
         </MenuRadioGroup>
         <MenuSeparator />
+        {hiddenProjectCount > 0 ? (
+          <MenuItem onClick={showHiddenProjects}>
+            <EyeIcon />
+            Show {hiddenProjectCount} hidden {hiddenProjectCount === 1 ? "project" : "projects"}
+          </MenuItem>
+        ) : null}
         <MenuItem onClick={openAddProject}>
           <FolderPlusIcon />
           New project

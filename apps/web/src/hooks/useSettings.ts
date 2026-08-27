@@ -385,6 +385,26 @@ export function useUpdateClientSettings() {
   }, []);
 }
 
+/**
+ * Put a project away from the project picker, or bring it back. Only that list
+ * changes: the project, its threads and its settings are untouched, which is
+ * what makes this safe to offer as a one-click action with an undo.
+ */
+export function useSetProjectHidden() {
+  return useCallback((projectKey: string, hidden: boolean) => {
+    const settings = getClientSettingsSnapshot();
+    const without = settings.hiddenProjectKeys.filter((key) => key !== projectKey);
+    const alreadyHidden = without.length !== settings.hiddenProjectKeys.length;
+    if (hidden === alreadyHidden) {
+      return;
+    }
+    persistClientSettings({
+      ...settings,
+      hiddenProjectKeys: hidden ? [...without, projectKey] : without,
+    });
+  }, []);
+}
+
 export function __resetClientSettingsPersistenceForTests(): void {
   clientSettingsHydrationGeneration += 1;
   clientSettingsSnapshot = DEFAULT_CLIENT_SETTINGS;
