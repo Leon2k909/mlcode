@@ -76,7 +76,7 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
               <button
                 type="button"
                 className={cn(
-                  "relative z-10 ml-[var(--workspace-titlebar-content-left)] flex size-7 shrink-0 items-center justify-center rounded-md outline-hidden hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-ring",
+                  "relative z-10 ml-[var(--workspace-controls-left)] flex size-7 shrink-0 items-center justify-center rounded-md outline-hidden hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-ring",
                   backdropVariant !== null && "text-white hover:bg-white/15",
                 )}
                 aria-label="Back to chats"
@@ -116,7 +116,9 @@ function SidebarBrand({
       aria-label="Go to threads"
       className={cn(
         "relative z-10 hidden h-7 w-fit min-w-0 shrink-0 items-center gap-1 overflow-hidden rounded-md outline-hidden ring-ring focus-visible:ring-2 md:flex",
-        hasLeadingAction ? "ml-1" : "ml-[var(--workspace-titlebar-content-left)]",
+        // The floating sidebar toggle no longer renders while the sidebar is
+        // open, so the brand clears only the window-controls offset.
+        hasLeadingAction ? "ml-1" : "ml-[var(--workspace-controls-left)]",
         onBackdrop ? "text-white" : "text-foreground",
       )}
       to="/"
