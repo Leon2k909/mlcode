@@ -3107,7 +3107,10 @@ describe("ProviderCommandReactor", () => {
       },
     });
     // The Codex-only reasoningEffort override must not leak onto Claude.
-    expect(harness.sendTurn.mock.calls[0]?.[0]?.modelSelection?.options).toBeUndefined();
+    const sentSelection = (
+      harness.sendTurn.mock.calls[0]?.[0] as { modelSelection?: { options?: unknown } } | undefined
+    )?.modelSelection;
+    expect(sentSelection?.options).toBeUndefined();
   });
 
   it("returns each human-authored group task to the CEO before worker routing", async () => {
