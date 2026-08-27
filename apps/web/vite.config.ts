@@ -156,7 +156,10 @@ export default defineConfig(() => {
     assetsInclude: ["**/*.wasm"],
     plugins: [
       devCompressionPlugin(),
-      tanstackRouter(),
+      // Split every route component out of the entry chunk: the app boots
+      // into one chat view, and the settings/pull-request/usage surfaces
+      // should not be parsed before first paint.
+      tanstackRouter({ autoCodeSplitting: true }),
       react(),
       babel({
         // We need to be explicit about the parser options after moving to @vitejs/plugin-react v6.0.0
