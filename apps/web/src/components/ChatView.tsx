@@ -5726,13 +5726,25 @@ function ChatViewContent(props: ChatViewProps) {
         }),
       );
     };
+    // Queueing appends to the local outbox without racing the in-flight
+    // dispatch, so a busy send state must not block it. Between employee
+    // handoffs the phase briefly leaves "running", which used to make a
+    // second queued message impossible to add; messages queued behind an
+    // existing queue keep queueing regardless of the instantaneous phase.
+    const wantsQueue =
+      requestedDispatchMode !== "steer" &&
+      (phase === "running" ||
+        queuedMessages.some(
+          (message) =>
+            message.threadId === activeThread?.id &&
+            message.environmentId === activeThread?.environmentId,
+        ));
     if (
       !activeThread ||
-      isSendBusy ||
       isConnecting ||
       threadDetailLoading ||
-      sendInFlightRef.current ||
-      feedbackUploadsInFlightRef.current.has(routeThreadKey)
+      feedbackUploadsInFlightRef.current.has(routeThreadKey) ||
+      ((isSendBusy || sendInFlightRef.current) && !wantsQueue)
     ) {
       notifyDirectAnnotationAttached();
       return;
@@ -5773,8 +5785,8 @@ function ChatViewContent(props: ChatViewProps) {
       selectedModelSelection: ctxSelectedModelSelection,
     } = sendCtx;
     const dispatchMode: ThreadTurnDispatchMode | undefined =
-      phase === "running" ? (requestedDispatchMode ?? "queue") : undefined;
-    const queueLocally = dispatchMode === "queue" && phase === "running";
+      phase === "running" ? (requestedDispatchMode ?? "queue") : wantsQueue ? "queue" : undefined;
+    const queueLocally = dispatchMode === "queue" && (phase === "running" || wantsQueue);
     const composerImages =
       directAnnotation?.image &&
       !sendContextImages.some((image) => image.id === directAnnotation.image?.id)

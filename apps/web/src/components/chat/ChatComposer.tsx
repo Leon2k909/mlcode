@@ -2382,7 +2382,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       shouldSubmitComposerOnEnter({ isMobileViewport, shiftKey: event.shiftKey })
     ) {
       const runningDispatchMode: ThreadTurnDispatchMode | undefined =
-        phase === "running" ? (event.ctrlKey || event.metaKey ? "steer" : "queue") : undefined;
+        phase === "running"
+          ? event.ctrlKey || event.metaKey
+            ? "steer"
+            : "queue"
+          : queuedMessages.length > 0
+            ? "queue"
+            : undefined;
       submitComposer(undefined, runningDispatchMode);
       return true;
     }
