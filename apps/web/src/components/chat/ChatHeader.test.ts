@@ -1,7 +1,50 @@
 import { EnvironmentId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { resolveRenameCommit, shouldShowOpenInPicker } from "./ChatHeader";
+import {
+  chatHeaderActionsReserveClass,
+  resolveRenameCommit,
+  shouldShowOpenInPicker,
+} from "./ChatHeader";
+
+/**
+ * The floating panel-layout toggles overlay the header's right end while the
+ * right panel is closed. The actions row must reserve their footprint - the
+ * old pr-16 was this reservation, and removing it put the toggles on top of
+ * the Sync/Push control.
+ */
+describe("chatHeaderActionsReserveClass", () => {
+  it("reserves nothing while the toggles live in the right panel instead", () => {
+    expect(
+      chatHeaderActionsReserveClass({
+        panelControlsFloating: false,
+        nativeControlsReserved: true,
+      }),
+    ).toBeUndefined();
+  });
+
+  it("reserves the cluster footprint beyond the controls offset", () => {
+    expect(
+      chatHeaderActionsReserveClass({
+        panelControlsFloating: true,
+        nativeControlsReserved: false,
+      }),
+    ).toBe("pr-[calc(var(--workspace-controls-right)+var(--workspace-panel-controls-reserve))]");
+  });
+
+  it("subtracts the native gutter the outer header already reserved", () => {
+    // In overlay mode --workspace-controls-right contains the native
+    // window-control area; padding it again would double the gutter.
+    expect(
+      chatHeaderActionsReserveClass({
+        panelControlsFloating: true,
+        nativeControlsReserved: true,
+      }),
+    ).toBe(
+      "pr-[calc(var(--workspace-controls-right)+var(--workspace-panel-controls-reserve)-var(--workspace-native-controls-inset))]",
+    );
+  });
+});
 
 describe("shouldShowOpenInPicker", () => {
   const primaryEnvironmentId = EnvironmentId.make("environment-primary");

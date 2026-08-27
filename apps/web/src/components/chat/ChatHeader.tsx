@@ -47,6 +47,24 @@ import {
 } from "../WorkspaceBreadcrumb";
 import { cn } from "~/lib/utils";
 
+/**
+ * Right padding for the actions row while the floating panel-layout controls
+ * sit over this header (right panel closed). The cluster is absolutely
+ * positioned at `--workspace-controls-right`, so the row must end before it.
+ * When the surrounding WorkspacePageHeader already reserved the native
+ * window-control gutter, that share is subtracted - in overlay mode
+ * `--workspace-controls-right` contains it, and the two paddings nest.
+ */
+export const chatHeaderActionsReserveClass = (input: {
+  panelControlsFloating: boolean;
+  nativeControlsReserved: boolean;
+}): string | undefined =>
+  !input.panelControlsFloating
+    ? undefined
+    : input.nativeControlsReserved
+      ? "pr-[calc(var(--workspace-controls-right)+var(--workspace-panel-controls-reserve)-var(--workspace-native-controls-inset))]"
+      : "pr-[calc(var(--workspace-controls-right)+var(--workspace-panel-controls-reserve))]";
+
 interface ChatHeaderProps {
   activeThreadEnvironmentId: EnvironmentId;
   activeThreadId: ThreadId;
@@ -74,6 +92,10 @@ interface ChatHeaderProps {
     input: NewProjectScriptInput,
   ) => Promise<ProjectScriptActionResult>;
   onDeleteProjectScript: (scriptId: string) => Promise<ProjectScriptActionResult>;
+  /** The floating panel-layout toggles are rendered over this header. */
+  panelControlsFloating?: boolean;
+  /** WorkspacePageHeader already reserved the native window-control gutter. */
+  nativeControlsReserved?: boolean;
 }
 
 /**
@@ -118,6 +140,8 @@ export function shouldShowOpenInPicker(input: {
 }
 
 export const ChatHeader = memo(function ChatHeader({
+  panelControlsFloating = false,
+  nativeControlsReserved = false,
   activeThreadEnvironmentId,
   activeThreadId,
   draftId,
@@ -374,7 +398,10 @@ export const ChatHeader = memo(function ChatHeader({
       </WorkspaceBreadcrumb>
       <div
         data-chat-header-actions
-        className="flex shrink-0 items-center justify-end gap-2 @3xl/header-actions:gap-3"
+        className={cn(
+          "flex shrink-0 items-center justify-end gap-2 @3xl/header-actions:gap-3",
+          chatHeaderActionsReserveClass({ panelControlsFloating, nativeControlsReserved }),
+        )}
       >
         {isServerThread ? (
           <ThreadShareControl environmentId={activeThreadEnvironmentId} threadId={activeThreadId} />

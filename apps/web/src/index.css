@@ -109,6 +109,10 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --workspace-controls-left: calc(env(safe-area-inset-left) + 0.75rem);
   --workspace-controls-right: calc(env(safe-area-inset-right) + 0.75rem);
   --workspace-native-controls-inset: 0px;
+  /* Footprint of the floating panel-layout toggles (two sm toggles plus
+     gap and breathing room). Headers they float over reserve this much
+     beyond --workspace-controls-right so content never runs under them. */
+  --workspace-panel-controls-reserve: 4.5rem;
   --workspace-titlebar-control-size: 1.75rem;
   --workspace-titlebar-control-gap: 0.75rem;
 

@@ -7730,6 +7730,8 @@ function ChatViewContent(props: ChatViewProps) {
             {...(!supportsPullRequests || activeProjectRepository === null
               ? {}
               : { onOpenPullRequest: openProjectPullRequest })}
+            panelControlsFloating={workspaceActive && !visibleRightPanelOpen}
+            nativeControlsReserved={reserveTitleBarControlInset && !inlineRightPanelOwnsTitleBar}
             activeThreadEnvironmentId={activeThread.environmentId}
             activeThreadId={activeThread.id}
             {...(routeKind === "draft" && draftId ? { draftId } : {})}
