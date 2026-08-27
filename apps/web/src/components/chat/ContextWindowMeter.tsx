@@ -83,6 +83,9 @@ export function ContextWindowMeter(props: {
   const pruneMessageIds = useMemo(() => selectOldestMessageIdsForPruning(messages), [messages]);
   const showPrunePrompt =
     usage !== null &&
+    // Pruning acts on the number; a pre-session estimate is not a number to
+    // act on. The next provider report un-flags it.
+    !usage.stale &&
     props.onPruneOlderMessages !== undefined &&
     shouldOfferContextPrune({
       usedPercentage: usage.usedPercentage,
@@ -118,7 +121,7 @@ export function ContextWindowMeter(props: {
         />
         <PopoverPopup tooltipStyle side="top" align="end" className="w-64 max-w-none">
           <div className="p-[var(--floating-content-inset)] text-secondary-label text-xs">
-            Context usage is not available yet. Try again when the thread finishes loading.
+            Context usage appears after the first message in this thread.
           </div>
         </PopoverPopup>
       </Popover>
@@ -412,6 +415,11 @@ function ContextWindowMeterContent(props: {
               </div>
             )}
           </div>
+          {usage.stale ? (
+            <p className="text-[11px] leading-4 text-secondary-label">
+              From your last session — refreshes with the next message.
+            </p>
+          ) : null}
           {usage.maxTokens !== null ? (
             <div
               className="h-1.5 w-full overflow-hidden rounded-full bg-muted/60"

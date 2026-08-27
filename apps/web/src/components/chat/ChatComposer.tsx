@@ -1318,7 +1318,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       activeThreadActivities ?? [],
       activeThreadModelSelection,
       {
-        ignoredActivityIds: contextWindowFreshness.ignoredActivityIds,
+        hydratedActivityIds: contextWindowFreshness.ignoredActivityIds,
       },
     );
   }, [

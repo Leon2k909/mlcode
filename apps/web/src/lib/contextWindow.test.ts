@@ -142,7 +142,10 @@ describe("contextWindow", () => {
     expect(otherModel).toBeNull();
   });
 
-  it("waits for a usage report received after composer hydration", () => {
+  it("shows a hydrated sample immediately, flagged stale until a fresh report lands", () => {
+    // Hiding hydrated samples left the meter dead on every thread open until
+    // the user sent a message. The sample still measures this conversation,
+    // so it renders right away as an estimate and the next live report wins.
     const activeSelection = {
       instanceId: ProviderInstanceId.make("codex"),
       model: "gpt-5.6-terra",
@@ -159,16 +162,17 @@ describe("contextWindow", () => {
       modelSelection: activeSelection,
     });
 
-    expect(
-      deriveLatestContextWindowSnapshot([historical], activeSelection, {
-        ignoredActivityIds: new Set([historical.id]),
-      }),
-    ).toBeNull();
-    expect(
-      deriveLatestContextWindowSnapshot([historical, fresh], activeSelection, {
-        ignoredActivityIds: new Set([historical.id]),
-      })?.usedTokens,
-    ).toBe(25_000);
+    const hydrated = deriveLatestContextWindowSnapshot([historical], activeSelection, {
+      hydratedActivityIds: new Set([historical.id]),
+    });
+    expect(hydrated?.usedTokens).toBe(159_000);
+    expect(hydrated?.stale).toBe(true);
+
+    const live = deriveLatestContextWindowSnapshot([historical, fresh], activeSelection, {
+      hydratedActivityIds: new Set([historical.id]),
+    });
+    expect(live?.usedTokens).toBe(25_000);
+    expect(live?.stale).toBe(false);
   });
 
   it("does not show a matching model's usage for a different employee", () => {

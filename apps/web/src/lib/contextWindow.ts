@@ -27,15 +27,23 @@ export type ContextWindowSnapshot = NullableContextWindowUsage & {
   readonly usedPercentage: number | null;
   readonly remainingPercentage: number | null;
   readonly updatedAt: string;
+  /**
+   * The sample predates this composer session. Close enough to show - the
+   * conversation it measured has not changed - but the provider's next report
+   * replaces it and interactions that act on the number should wait for one.
+   */
+  readonly stale: boolean;
 };
 
 export type ContextWindowSnapshotOptions = {
   /**
    * Usage activities that were already present when this composer session
-   * hydrated. They describe an earlier provider context, so wait for a new
-   * provider report instead of restoring them as live usage.
+   * hydrated. They still describe this conversation, so they render right
+   * away - but flagged `stale`, and the provider's next report wins. Hiding
+   * them entirely left the meter dead on every thread open until the user
+   * sent a message.
    */
-  readonly ignoredActivityIds?: ReadonlySet<string>;
+  readonly hydratedActivityIds?: ReadonlySet<string>;
 };
 
 /** Map a provider driver kind to a user-facing display name. */
@@ -76,9 +84,7 @@ export function deriveLatestContextWindowSnapshot(
     if (!activity || activity.kind !== "context-window.updated") {
       continue;
     }
-    if (options?.ignoredActivityIds?.has(activity.id)) {
-      continue;
-    }
+    const stale = options?.hydratedActivityIds?.has(activity.id) ?? false;
 
     const payload = asRecord(activity.payload);
     const usedTokens = asFiniteNumber(payload?.usedTokens);
@@ -128,6 +134,7 @@ export function deriveLatestContextWindowSnapshot(
       compactsAutomatically: asBoolean(payload?.compactsAutomatically) ?? false,
       autoCompactThreshold: asFiniteNumber(payload?.autoCompactThreshold),
       updatedAt: activity.createdAt,
+      stale,
     };
   }
 
