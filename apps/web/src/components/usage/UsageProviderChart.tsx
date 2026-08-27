@@ -19,6 +19,8 @@ const PLOT_TOP = 8;
 export type UsageChartMetric = "tokens" | "cost";
 
 interface UsageProviderChartProps {
+  /** Renders a USD amount for axis and tooltips; defaults to plain USD. */
+  readonly costFormatter?: (usd: number) => string;
   readonly providers: readonly UsageProviderKind[];
   readonly days: readonly string[];
   readonly daily: readonly DailyTotals[];
@@ -197,6 +199,7 @@ export function UsageProviderChart({
   referenceTime,
   resolution,
   timeZone,
+  costFormatter = formatUsd,
 }: UsageProviderChartProps) {
   const periods = resolution === "hour" ? hours : days;
   const byPeriod = useMemo(
@@ -265,7 +268,7 @@ export function UsageProviderChart({
     };
   }, [byPeriod, metric, periods, providers]);
 
-  const format = metric === "tokens" ? formatTokens : formatUsd;
+  const format = metric === "tokens" ? formatTokens : costFormatter;
 
   const positionTooltip = useCallback(() => {
     const plot = plotRef.current;

@@ -7,6 +7,7 @@ import type { DailyTotals, HourlyTotals } from "@t3tools/shared/usageMerge";
 import { isElectron } from "../../env";
 import { cn } from "../../lib/utils";
 import { useUsage, type EnvironmentUsageStatus } from "../../state/usage";
+import { useUsdCostDisplay } from "./displayCurrency";
 import {
   enumerateDays,
   enumerateHourStarts,
@@ -42,6 +43,7 @@ const WINDOW_OPTIONS = [
 ] as const;
 
 export function UsagePage({ embedded = false }: { readonly embedded?: boolean }) {
+  const costDisplay = useUsdCostDisplay();
   const [windowSelection, setWindowSelection] = useState(() => ({
     days: 30,
     window: makeWindow(30),
@@ -241,12 +243,18 @@ export function UsagePage({ embedded = false }: { readonly embedded?: boolean })
                   <div className="flex flex-col gap-1">
                     <span className="text-4xl font-semibold text-foreground tabular-nums">
                       {metric === "cost"
-                        ? formatUsd(merged.costUsd)
+                        ? costDisplay.format(merged.costUsd)
                         : formatTokens(merged.totalTokens)}
                     </span>
                     <span className="text-xs text-muted-foreground">
                       {metric === "cost"
-                        ? `${formatCount(merged.sessions)} sessions · API estimate`
+                        ? buildCostSubtitle({
+                            sessionsLabel: `${formatCount(merged.sessions)} sessions`,
+                            usdLabel: costDisplay.converted ? formatUsd(merged.costUsd) : null,
+                            coveredBySubscription: limits.some(
+                              (snapshot) => snapshot.plan !== undefined,
+                            ),
+                          })
                         : `${formatCount(merged.sessions)} sessions`}
                     </span>
                   </div>
@@ -282,14 +290,14 @@ export function UsagePage({ embedded = false }: { readonly embedded?: boolean })
                           </span>
                           <span className="shrink-0 text-sm font-medium text-foreground tabular-nums">
                             {metric === "cost"
-                              ? formatUsd(totals?.costUsd ?? 0)
+                              ? costDisplay.format(totals?.costUsd ?? 0)
                               : formatTokens(totals?.totalTokens ?? 0)}
                           </span>
                         </div>
                         <span className="text-xs text-muted-foreground">
                           {metric === "cost"
                             ? `${formatPercent(share)} of cost · ${formatTokens(totals?.totalTokens ?? 0)} tokens`
-                            : `${formatPercent(share)} of tokens · ${formatUsd(totals?.costUsd ?? 0)}`}
+                            : `${formatPercent(share)} of tokens · ${costDisplay.format(totals?.costUsd ?? 0)}`}
                         </span>
                       </div>
                     );
@@ -302,6 +310,7 @@ export function UsagePage({ embedded = false }: { readonly embedded?: boolean })
                     {metric === "tokens" ? "processed tokens" : "cost"}
                   </h2>
                   <UsageProviderChart
+                    costFormatter={costDisplay.format}
                     providers={activeProviders}
                     days={days}
                     daily={merged.daily}
@@ -324,7 +333,7 @@ export function UsagePage({ embedded = false }: { readonly embedded?: boolean })
                   <Metric label="Output" value={formatTokens(merged.outputTokens)} />
                   <Metric
                     label="Cache savings"
-                    value={formatUsd(merged.costQuality.cacheSavingsUsd)}
+                    value={costDisplay.format(merged.costQuality.cacheSavingsUsd)}
                   />
                 </div>
               </section>
@@ -390,7 +399,7 @@ export function UsagePage({ embedded = false }: { readonly embedded?: boolean })
                               </span>
                             </td>
                             <td className="py-2 text-right text-foreground tabular-nums">
-                              {formatUsd(model.costUsd)}
+                              {costDisplay.format(model.costUsd)}
                             </td>
                             <td className="py-2 text-right text-muted-foreground tabular-nums">
                               {formatPercent(model.costShare)}
@@ -451,11 +460,11 @@ export function UsagePage({ embedded = false }: { readonly embedded?: boolean })
                                 key={provider}
                                 className="py-2 text-right text-muted-foreground tabular-nums"
                               >
-                                {formatUsd(period.byProvider.get(provider)?.costUsd ?? 0)}
+                                {costDisplay.format(period.byProvider.get(provider)?.costUsd ?? 0)}
                               </td>
                             ))}
                             <td className="py-2 text-right text-foreground tabular-nums">
-                              {formatUsd(period.costUsd)}
+                              {costDisplay.format(period.costUsd)}
                             </td>
                             <td className="py-2 text-right text-muted-foreground tabular-nums">
                               {formatTokens(period.totalTokens)}
@@ -484,6 +493,28 @@ export function UsagePage({ embedded = false }: { readonly embedded?: boolean })
 }
 
 /** Brand mark for the harness a row belongs to. */
+/**
+ * What the cost hero actually shows. The figure is an estimate at API list
+ * prices - with subscription quotas on file it was never billed, and saying
+ * only "API estimate" left it reading as an invoice.
+ */
+export function buildCostSubtitle(input: {
+  readonly sessionsLabel: string;
+  /** USD figure to show alongside a converted display; null when already USD. */
+  readonly usdLabel: string | null;
+  readonly coveredBySubscription: boolean;
+}): string {
+  return [
+    input.sessionsLabel,
+    input.usdLabel === null
+      ? "estimated at API list prices"
+      : `${input.usdLabel} at API list prices`,
+    input.coveredBySubscription ? "covered by your plans, not billed" : null,
+  ]
+    .filter((part): part is string => part !== null)
+    .join(" · ");
+}
+
 function ProviderMark({
   provider,
   className,

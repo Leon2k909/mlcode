@@ -57,6 +57,18 @@ vi.mock("../WorkspaceBreadcrumb", () => ({
 vi.mock("../WorkspacePageContainer", () => ({ WorkspacePageContainer: "main" }));
 vi.mock("../WorkspacePageHeader", () => ({ WorkspacePageHeader: "header" }));
 vi.mock("./UsageProviderChart", () => ({ UsageProviderChart: "div" }));
+vi.mock("./displayCurrency", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./displayCurrency")>();
+  return {
+    ...actual,
+    // The file-wide useState mock above replaces every function initializer
+    // with the window fixture, which would become this hook's cached FX rate.
+    useUsdCostDisplay: () => ({
+      format: actual.buildCostFormatter("en-US", "USD", 1),
+      converted: false,
+    }),
+  };
+});
 vi.mock("./usageProviders", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./usageProviders")>();
   return {
@@ -68,7 +80,7 @@ vi.mock("./usageProviders", async (importOriginal) => {
   };
 });
 
-import { UsagePage } from "./UsagePage";
+import { UsagePage, buildCostSubtitle } from "./UsagePage";
 
 const providerTotals = (codex: number, claude: number) =>
   new Map([
@@ -152,6 +164,38 @@ describe("UsagePage hourly breakdown", () => {
     const body = markup.match(/<tbody>(.*?)<\/tbody>/)?.[1] ?? "";
 
     expect(body).toMatch(/\$11\.00.*\$13\.00/);
+  });
+});
+
+describe("buildCostSubtitle", () => {
+  it("marks a plain USD estimate as API-list pricing", () => {
+    expect(
+      buildCostSubtitle({
+        sessionsLabel: "62 sessions",
+        usdLabel: null,
+        coveredBySubscription: false,
+      }),
+    ).toBe("62 sessions · estimated at API list prices");
+  });
+
+  it("keeps the canonical USD figure beside a converted display", () => {
+    expect(
+      buildCostSubtitle({
+        sessionsLabel: "62 sessions",
+        usdLabel: "$8,624.82",
+        coveredBySubscription: false,
+      }),
+    ).toBe("62 sessions · $8,624.82 at API list prices");
+  });
+
+  it("says the estimate was never billed when subscription quotas are on file", () => {
+    expect(
+      buildCostSubtitle({
+        sessionsLabel: "62 sessions",
+        usdLabel: "$8,624.82",
+        coveredBySubscription: true,
+      }),
+    ).toBe("62 sessions · $8,624.82 at API list prices · covered by your plans, not billed");
   });
 });
 

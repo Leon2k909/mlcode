@@ -25,6 +25,27 @@ describe("normalizeUsageLimits", () => {
     });
   });
 
+  it("labels the session window with its duration when the payload reports one", () => {
+    expect(
+      normalizeUsageLimits(
+        ProviderDriverKind.make("codex"),
+        {
+          rateLimits: {
+            planType: "plus",
+            primary: { usedPercent: 7, windowMinutes: 300, resetsAt: 1_800_000_000 },
+          },
+        },
+        "2026-08-14T08:00:00.000Z",
+      ),
+    ).toEqual({
+      provider: "codex",
+      readAt: "2026-08-14T08:00:00.000Z",
+      status: null,
+      plan: "Plus",
+      windows: [{ label: "Session (5h)", usedPercent: 7, resetsAt: 1_800_000_000 }],
+    });
+  });
+
   it("canonicalizes legacy persisted Pro Lite labels", () => {
     const legacySnapshot: UsageLimitSnapshot = {
       provider: "codex",

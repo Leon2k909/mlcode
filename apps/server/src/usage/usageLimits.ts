@@ -56,12 +56,25 @@ function displayPlan(value: unknown): string | undefined {
   );
 }
 
+function formatWindowDuration(minutes: number): string {
+  if (minutes % 1440 === 0) return `${minutes / 1440}d`;
+  if (minutes % 60 === 0) return `${minutes / 60}h`;
+  return `${minutes}m`;
+}
+
 function codexWindow(label: string, value: unknown) {
   const window = record(value);
   const usedPercent = finite(window?.usedPercent);
   if (usedPercent === null) return null;
+  // "Session" alone does not say how long the window is. The payload does,
+  // so fold it in ("Session (5h)"); labels that already name their duration
+  // (Weekly) stay as they are.
+  const windowMinutes = finite(window?.windowMinutes);
   return {
-    label,
+    label:
+      label === "Session" && windowMinutes !== null && windowMinutes > 0
+        ? `${label} (${formatWindowDuration(windowMinutes)})`
+        : label,
     usedPercent: Math.max(0, Math.min(100, usedPercent)),
     resetsAt: finite(window?.resetsAt),
   };
