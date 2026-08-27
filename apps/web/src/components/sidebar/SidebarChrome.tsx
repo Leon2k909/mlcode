@@ -1,4 +1,4 @@
-import { ArrowLeftIcon, GitPullRequestIcon, SettingsIcon, UsersRoundIcon } from "lucide-react";
+import { ArrowLeftIcon, SettingsIcon, UsersRoundIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { memo, useCallback } from "react";
 import { Link, useCanGoBack, useLocation, useNavigate } from "@tanstack/react-router";
@@ -178,20 +178,11 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
   // unused feature does not permanently occupy sidebar space.
   const { friends } = useFriends();
   const hasFriends = friends.length > 0;
-  // The page reads every connected server, so one of them offering pull requests is enough for
-  // the link to lead somewhere.
-  const pullRequestsSupported = environments.some(
-    (environment) => environment.serverConfig?.environment.capabilities.pullRequests === true,
-  );
   const closeMobileSidebar = useCallback(() => {
     if (isMobile) {
       setOpenMobile(false);
     }
   }, [isMobile, setOpenMobile]);
-  const handlePullRequestsClick = useCallback(() => {
-    closeMobileSidebar();
-    void navigate({ to: "/pull-requests", search: { involvement: "all", state: "open" } });
-  }, [closeMobileSidebar, navigate]);
   const handleSettingsClick = useCallback(() => {
     closeMobileSidebar();
     void navigate({ to: "/settings" });
@@ -230,13 +221,6 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
               icon={<UsersRoundIcon />}
               label="Shared with me"
               onClick={handleSharedChatsClick}
-            />
-          ) : null}
-          {pullRequestsSupported ? (
-            <SidebarUtilityItem
-              icon={<GitPullRequestIcon />}
-              label="Pull Requests"
-              onClick={handlePullRequestsClick}
             />
           ) : null}
         </>

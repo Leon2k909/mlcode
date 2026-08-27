@@ -14,6 +14,7 @@ import {
   BotIcon,
   ChartNoAxesColumnIcon,
   GitBranchIcon,
+  GitPullRequestIcon,
   KeyboardIcon,
   Link2Icon,
   PaletteIcon,
@@ -25,6 +26,8 @@ import {
   XIcon,
 } from "lucide-react";
 import { useCanGoBack, useLocation, useNavigate } from "@tanstack/react-router";
+
+import { useEnvironments } from "../../state/environments";
 
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
@@ -84,6 +87,12 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
   const currentHash = useLocation({ select: (location) => location.hash });
   const { isMobile, setOpenMobile, open, setOpen } = useSidebar();
   const canGoBack = useCanGoBack();
+  // One connected server offering pull requests is enough for the entry to
+  // lead somewhere; with none it would be a dead link.
+  const { environments } = useEnvironments();
+  const pullRequestsSupported = environments.some(
+    (environment) => environment.serverConfig?.environment.capabilities.pullRequests === true,
+  );
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
   const [activeResultIndex, setActiveResultIndex] = useState(0);
@@ -307,6 +316,25 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                     </SidebarMenuItem>
                   );
                 })}
+            {pullRequestsSupported ? (
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={pathname === "/pull-requests"}
+                  onClick={() => {
+                    if (isMobile) {
+                      setOpenMobile(false);
+                    }
+                    void navigate({
+                      to: "/pull-requests",
+                      search: { involvement: "all", state: "open" },
+                    });
+                  }}
+                >
+                  <GitPullRequestIcon />
+                  <span className="truncate">Pull Requests</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            ) : null}
             <SidebarMenuItem>
               <SidebarMenuButton
                 isActive={pathname === "/settings/usage"}
