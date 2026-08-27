@@ -42,6 +42,11 @@ type SidebarContextProps = {
 type SidebarResizableOptions = {
   maxWidth?: number;
   minWidth?: number;
+  /**
+   * Dragging the rail below this width closes the sidebar instead of clamping
+   * at `minWidth`. Omit to keep clamping.
+   */
+  collapseBelowWidth?: number;
   onResize?: (width: number) => void;
   shouldAcceptWidth?: (context: {
     currentWidth: number;
@@ -57,6 +62,7 @@ type SidebarResizableOptions = {
 type SidebarResolvedResizableOptions = {
   maxWidth: number;
   minWidth: number;
+  collapseBelowWidth?: number;
   onResize?: (width: number) => void;
   shouldAcceptWidth?: (context: {
     currentWidth: number;
@@ -203,6 +209,9 @@ function Sidebar({
     return {
       maxWidth: options.maxWidth ?? Number.POSITIVE_INFINITY,
       minWidth: options.minWidth ?? SIDEBAR_RESIZE_DEFAULT_MIN_WIDTH,
+      ...(options.collapseBelowWidth === undefined
+        ? {}
+        : { collapseBelowWidth: options.collapseBelowWidth }),
       storageKey: options.storageKey ?? null,
       ...(options.onResize ? { onResize: options.onResize } : {}),
       ...(options.shouldAcceptWidth ? { shouldAcceptWidth: options.shouldAcceptWidth } : {}),
@@ -475,10 +484,19 @@ function SidebarRail({
       if (Math.abs(delta) > 2) {
         resizeState.moved = true;
       }
-      resizeState.pendingWidth = clampSidebarWidth(
-        resizeState.startWidth + delta,
-        resolvedResizable,
-      );
+      // Measured before clamping: past the clamp every drag reports the
+      // minimum, so intent has to be read from where the pointer actually is.
+      const desiredWidth = resizeState.startWidth + delta;
+      if (
+        resolvedResizable.collapseBelowWidth !== undefined &&
+        desiredWidth < resolvedResizable.collapseBelowWidth
+      ) {
+        stopResize(event.pointerId);
+        suppressClickRef.current = true;
+        toggleSidebar();
+        return;
+      }
+      resizeState.pendingWidth = clampSidebarWidth(desiredWidth, resolvedResizable);
       if (resizeState.rafId !== null) {
         return;
       }

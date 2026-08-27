@@ -31,6 +31,7 @@ import {
   resolveInitialThreadSidebarWidth,
   resolveThreadSidebarMaximumWidth,
   THREAD_MAIN_CONTENT_MIN_WIDTH,
+  THREAD_SIDEBAR_COLLAPSE_OVERSHOOT,
   THREAD_SIDEBAR_MIN_WIDTH,
   THREAD_SIDEBAR_WIDTH_STORAGE_KEY,
 } from "./threadSidebarWidth";
@@ -99,6 +100,10 @@ function SidebarControl() {
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);
   }, [keybindings, toggleSidebar]);
+
+  if (isSidebarVisible) {
+    return null;
+  }
 
   return (
     // The right-side layout controls carry mr-px (border compensation inside
@@ -226,6 +231,7 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
           resizable={{
             maxWidth: sidebarMaximumWidth,
             minWidth: THREAD_SIDEBAR_MIN_WIDTH,
+            collapseBelowWidth: THREAD_SIDEBAR_MIN_WIDTH - THREAD_SIDEBAR_COLLAPSE_OVERSHOOT,
             shouldAcceptWidth: ({ currentWidth, nextWidth, wrapper }) =>
               nextWidth <= currentWidth ||
               wrapper.clientWidth - nextWidth >= THREAD_MAIN_CONTENT_MIN_WIDTH,

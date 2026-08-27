@@ -1,6 +1,12 @@
 export const THREAD_SIDEBAR_WIDTH_STORAGE_KEY = "chat_thread_sidebar_width";
 export const THREAD_SIDEBAR_DEFAULT_WIDTH = 16 * 16;
 export const THREAD_SIDEBAR_MIN_WIDTH = 13 * 16;
+/**
+ * How far past the minimum the rail must be dragged before the sidebar closes
+ * rather than sticking. Wide enough that settling on the minimum width never
+ * closes it by accident, narrow enough that dragging it away just works.
+ */
+export const THREAD_SIDEBAR_COLLAPSE_OVERSHOOT = 48;
 export const THREAD_MAIN_CONTENT_MIN_WIDTH = 40 * 16;
 
 export function resolveThreadSidebarMaximumWidth(viewportWidth: number): number {
