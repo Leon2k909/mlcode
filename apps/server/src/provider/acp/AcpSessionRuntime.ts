@@ -12,6 +12,8 @@ import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Scope from "effect/Scope";
 import * as Semaphore from "effect/Semaphore";
+
+import { deprioritizeAgentProcess } from "../../process/agentPriority.ts";
 import * as Stream from "effect/Stream";
 import * as ChildProcess from "effect/unstable/process/ChildProcess";
 import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
@@ -360,6 +362,8 @@ export const make = (
               cause,
             }),
         ),
+        // Agent work is throughput; the person's foreground apps are latency.
+        Effect.tap((spawned) => deprioritizeAgentProcess(spawned.pid)),
       );
 
     const acpContext = yield* Layer.build(

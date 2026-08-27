@@ -46,6 +46,7 @@ import * as EffectCodexSchema from "effect-codex-app-server/schema";
 import { buildCodexInitializeParams } from "./CodexProvider.ts";
 import { codexSessionAppServerArgs } from "./codexLaunchArgs.ts";
 import { expandHomePath } from "../../pathExpansion.ts";
+import { deprioritizeAgentProcess } from "../../process/agentPriority.ts";
 import { buildCodexDeveloperInstructions } from "../CodexDeveloperInstructions.ts";
 const decodeV2TurnStartResponse = Schema.decodeUnknownEffect(EffectCodexSchema.V2TurnStartResponse);
 const decodeV2TurnSteerResponse = Schema.decodeUnknownEffect(EffectCodexSchema.V2TurnSteerResponse);
@@ -1227,6 +1228,8 @@ export const makeCodexSessionRuntime = (
             }),
         ),
       );
+    // Agent work is throughput; the person's foreground apps are latency.
+    yield* deprioritizeAgentProcess(child.pid);
 
     const clientContext = yield* CodexClient.layerChildProcess(child).pipe(
       Layer.build,
