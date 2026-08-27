@@ -39,6 +39,7 @@ import {
   applyEmployeeGroupWorkflowReminder,
   applyEmployeePreamble,
 } from "../../employee/EmployeeInstructions.ts";
+import { resolveClaudeLeadModel } from "../../employee/EmployeeHandoff.ts";
 import { applyPersistentThreadGoal } from "../goal.ts";
 import { checkWorkspacePath, describeMissingWorkspace } from "../../project/WorkspaceRelocation.ts";
 import { increment, orchestrationEventsProcessedTotal } from "../../observability/Metrics.ts";
@@ -1054,13 +1055,25 @@ const make = Effect.gen(function* () {
         ? requestedTargetInfo.value
         : yield* providerService.getInstanceInfo(targetInstanceId);
       const usesEmployeeModelOverride = employeeUsesModelOverride(selectedEmployee);
-      const targetModel = usesRequestedProvider
+      const unliftedTargetModel = usesRequestedProvider
         ? usesEmployeeModelOverride && targetInstanceId === selectedEmployee.providerInstanceId
           ? (selectedEmployee.model ?? requestedModelSelection.model)
           : requestedModelSelection.model
         : usesEmployeeModelOverride
           ? (selectedEmployee.model ?? DEFAULT_MODEL_BY_PROVIDER[targetInfo.driverKind])
           : DEFAULT_MODEL_BY_PROVIDER[targetInfo.driverKind];
+      // The shipped roster pins the CEO's override on Codex. On a Claude
+      // instance that override cannot apply, which would hand the routing
+      // and review turns to whatever the composer picked - the exact
+      // "stale composer selection lowers the lead" problem the options
+      // pinning below guards against. Lift those turns to a lead model.
+      const targetModel =
+        selectedEmployeeId === ROUTING_CEO_EMPLOYEE_ID &&
+        usesEmployeeModelOverride &&
+        targetInstanceId !== selectedEmployee.providerInstanceId &&
+        targetInfo.driverKind === "claudeAgent"
+          ? resolveClaudeLeadModel(unliftedTargetModel)
+          : unliftedTargetModel;
       if (!targetModel) {
         return yield* new ProviderAdapterRequestError({
           provider: targetInfo.driverKind,

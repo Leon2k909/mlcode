@@ -7,6 +7,7 @@ import {
   describeHandoffRejection,
   MAX_CONSECUTIVE_HANDOFFS,
   parseEmployeeHandoff,
+  resolveClaudeLeadModel,
   resolveAutomaticEmployeeHandoffTarget,
 } from "./EmployeeHandoff.ts";
 
@@ -228,5 +229,21 @@ describe("resolveAutomaticEmployeeHandoffTarget", () => {
         allowedEmployeeIds: ["ceo"],
       }),
     ).toBeUndefined();
+  });
+});
+
+describe("resolveClaudeLeadModel", () => {
+  it("keeps a chat that is already on a lead model where it is", () => {
+    expect(resolveClaudeLeadModel("claude-fable-5")).toBe("claude-fable-5");
+    expect(resolveClaudeLeadModel("claude-opus-5")).toBe("claude-opus-5");
+    // A deliberately selected older Opus is still a lead.
+    expect(resolveClaudeLeadModel("claude-opus-4-6")).toBe("claude-opus-4-6");
+  });
+
+  it("lifts anything below the lead tier to Opus", () => {
+    expect(resolveClaudeLeadModel("claude-sonnet-5")).toBe("claude-opus-5");
+    expect(resolveClaudeLeadModel("claude-haiku-4-5")).toBe("claude-opus-5");
+    expect(resolveClaudeLeadModel("gpt-5.6-sol")).toBe("claude-opus-5");
+    expect(resolveClaudeLeadModel(undefined)).toBe("claude-opus-5");
   });
 });

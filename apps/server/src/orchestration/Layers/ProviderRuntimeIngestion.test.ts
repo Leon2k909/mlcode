@@ -851,6 +851,287 @@ describe("ProviderRuntimeIngestion", () => {
     });
   });
 
+  it("honors a Claude CEO assignment even when the chat model is not lead-tier", async () => {
+    // The shipped roster pins the CEO on Codex, so on a Claude chat the CEO
+    // turn ran at the composer's model. Tier assignments must survive that -
+    // the old lead-model gate silently discarded them on a Sonnet chat.
+    const ceoId = EmployeeId.make("ceo");
+    const workerId = EmployeeId.make("worker_alpha");
+    const harness = await createHarness({
+      serverSettings: {
+        employees: {
+          [ceoId]: {
+            displayName: "Ceo",
+            role: "Chief executive",
+            providerInstanceId: ProviderInstanceId.make("codex"),
+            modelMode: "override",
+            model: "gpt-5.6-sol",
+            modelOptions: [{ id: "reasoningEffort", value: "high" }],
+            instructions: "Route the request.",
+            enabled: true,
+          },
+          [workerId]: {
+            displayName: "Alpha",
+            role: "Implementation",
+            providerInstanceId: ProviderInstanceId.make("codex"),
+            modelMode: "auto",
+            instructions: "Implement the request.",
+            enabled: true,
+          },
+        },
+      },
+      threadModelSelection: {
+        instanceId: ProviderInstanceId.make("claudeAgent"),
+        model: "claude-sonnet-5",
+        employeeId: ceoId,
+        employeeIds: [ceoId, workerId],
+      },
+    });
+    const now = "2026-08-18T15:00:00.000Z";
+    const turnId = asTurnId("turn-claude-sonnet-ceo-handoff");
+
+    harness.emit({
+      type: "turn.started",
+      eventId: asEventId("evt-claude-sonnet-handoff-started"),
+      provider: ProviderDriverKind.make("claudeAgent"),
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId,
+    });
+    await waitForThread(harness.readModel, (thread) => thread.session?.activeTurnId === turnId);
+    harness.emit({
+      type: "content.delta",
+      eventId: asEventId("evt-claude-sonnet-handoff-delta"),
+      provider: ProviderDriverKind.make("claudeAgent"),
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId,
+      itemId: asItemId("item-claude-sonnet-handoff"),
+      payload: {
+        streamKind: "assistant_text",
+        delta:
+          'Delegate the small fix.\n\n<handoff to="worker_alpha" model="claude-haiku-4-5">Implement it.</handoff>',
+      },
+    });
+    harness.emit({
+      type: "item.completed",
+      eventId: asEventId("evt-claude-sonnet-handoff-item-complete"),
+      provider: ProviderDriverKind.make("claudeAgent"),
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId,
+      itemId: asItemId("item-claude-sonnet-handoff"),
+      payload: { itemType: "assistant_message", status: "completed" },
+    });
+    harness.emit({
+      type: "turn.completed",
+      eventId: asEventId("evt-claude-sonnet-handoff-turn-complete"),
+      provider: ProviderDriverKind.make("claudeAgent"),
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId,
+      payload: { state: "completed" },
+    });
+
+    const thread = await waitForThread(
+      harness.readModel,
+      (entry) => entry.modelSelection.employeeId === workerId,
+    );
+    expect(thread.modelSelection).toEqual({
+      instanceId: ProviderInstanceId.make("claudeAgent"),
+      model: "claude-haiku-4-5",
+      employeeId: workerId,
+      employeeIds: [ceoId, workerId],
+    });
+  });
+
+  it("starts an unassigned Claude handoff on the routine tier instead of the lead model", async () => {
+    // Codex handoffs without an assignment fall back to Luna low. The Claude
+    // side inherited the lead model instead - forgetting the attribute must
+    // fail cheap in both worlds.
+    const ceoId = EmployeeId.make("ceo");
+    const workerId = EmployeeId.make("worker_alpha");
+    const harness = await createHarness({
+      serverSettings: {
+        employees: {
+          [ceoId]: {
+            displayName: "Ceo",
+            role: "Chief executive",
+            providerInstanceId: ProviderInstanceId.make("codex"),
+            modelMode: "override",
+            model: "gpt-5.6-sol",
+            modelOptions: [{ id: "reasoningEffort", value: "high" }],
+            instructions: "Route the request.",
+            enabled: true,
+          },
+          [workerId]: {
+            displayName: "Alpha",
+            role: "Implementation",
+            providerInstanceId: ProviderInstanceId.make("codex"),
+            modelMode: "auto",
+            instructions: "Implement the request.",
+            enabled: true,
+          },
+        },
+      },
+      threadModelSelection: {
+        instanceId: ProviderInstanceId.make("claudeAgent"),
+        model: "claude-fable-5",
+        employeeId: ceoId,
+        employeeIds: [ceoId, workerId],
+      },
+    });
+    const now = "2026-08-18T15:00:00.000Z";
+    const turnId = asTurnId("turn-claude-unassigned-handoff");
+
+    harness.emit({
+      type: "turn.started",
+      eventId: asEventId("evt-claude-unassigned-started"),
+      provider: ProviderDriverKind.make("claudeAgent"),
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId,
+    });
+    await waitForThread(harness.readModel, (thread) => thread.session?.activeTurnId === turnId);
+    harness.emit({
+      type: "content.delta",
+      eventId: asEventId("evt-claude-unassigned-delta"),
+      provider: ProviderDriverKind.make("claudeAgent"),
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId,
+      itemId: asItemId("item-claude-unassigned"),
+      payload: {
+        streamKind: "assistant_text",
+        delta: 'Delegate it.\n\n<handoff to="worker_alpha">Implement it.</handoff>',
+      },
+    });
+    harness.emit({
+      type: "item.completed",
+      eventId: asEventId("evt-claude-unassigned-item-complete"),
+      provider: ProviderDriverKind.make("claudeAgent"),
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId,
+      itemId: asItemId("item-claude-unassigned"),
+      payload: { itemType: "assistant_message", status: "completed" },
+    });
+    harness.emit({
+      type: "turn.completed",
+      eventId: asEventId("evt-claude-unassigned-turn-complete"),
+      provider: ProviderDriverKind.make("claudeAgent"),
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId,
+      payload: { state: "completed" },
+    });
+
+    const thread = await waitForThread(
+      harness.readModel,
+      (entry) => entry.modelSelection.employeeId === workerId,
+    );
+    expect(thread.modelSelection).toEqual({
+      instanceId: ProviderInstanceId.make("claudeAgent"),
+      model: "claude-haiku-4-5",
+      employeeId: workerId,
+      employeeIds: [ceoId, workerId],
+    });
+  });
+
+  it("routes a Claude handback to the CEO onto a lead model, not the worker's", async () => {
+    // The CEO's saved override binds to Codex, so on Claude a handback would
+    // otherwise run the review turn at whatever the worker just used - Haiku
+    // judging implementation evidence.
+    const ceoId = EmployeeId.make("ceo");
+    const workerId = EmployeeId.make("worker_alpha");
+    const harness = await createHarness({
+      serverSettings: {
+        employees: {
+          [ceoId]: {
+            displayName: "Ceo",
+            role: "Chief executive",
+            providerInstanceId: ProviderInstanceId.make("codex"),
+            modelMode: "override",
+            model: "gpt-5.6-sol",
+            modelOptions: [{ id: "reasoningEffort", value: "high" }],
+            instructions: "Route the request.",
+            enabled: true,
+          },
+          [workerId]: {
+            displayName: "Alpha",
+            role: "Implementation",
+            providerInstanceId: ProviderInstanceId.make("codex"),
+            modelMode: "auto",
+            instructions: "Implement the request.",
+            enabled: true,
+          },
+        },
+      },
+      threadModelSelection: {
+        instanceId: ProviderInstanceId.make("claudeAgent"),
+        model: "claude-haiku-4-5",
+        employeeId: workerId,
+        employeeIds: [ceoId, workerId],
+      },
+    });
+    const now = "2026-08-18T15:00:00.000Z";
+    const turnId = asTurnId("turn-claude-handback");
+
+    harness.emit({
+      type: "turn.started",
+      eventId: asEventId("evt-claude-handback-started"),
+      provider: ProviderDriverKind.make("claudeAgent"),
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId,
+    });
+    await waitForThread(harness.readModel, (thread) => thread.session?.activeTurnId === turnId);
+    harness.emit({
+      type: "content.delta",
+      eventId: asEventId("evt-claude-handback-delta"),
+      provider: ProviderDriverKind.make("claudeAgent"),
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId,
+      itemId: asItemId("item-claude-handback"),
+      payload: {
+        streamKind: "assistant_text",
+        delta: 'Done and verified.\n\n<handoff to="ceo">Checks pass; no remaining risks.</handoff>',
+      },
+    });
+    harness.emit({
+      type: "item.completed",
+      eventId: asEventId("evt-claude-handback-item-complete"),
+      provider: ProviderDriverKind.make("claudeAgent"),
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId,
+      itemId: asItemId("item-claude-handback"),
+      payload: { itemType: "assistant_message", status: "completed" },
+    });
+    harness.emit({
+      type: "turn.completed",
+      eventId: asEventId("evt-claude-handback-turn-complete"),
+      provider: ProviderDriverKind.make("claudeAgent"),
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId,
+      payload: { state: "completed" },
+    });
+
+    const thread = await waitForThread(
+      harness.readModel,
+      (entry) => entry.modelSelection.employeeId === ceoId,
+    );
+    expect(thread.modelSelection).toEqual({
+      instanceId: ProviderInstanceId.make("claudeAgent"),
+      model: "claude-opus-5",
+      options: [{ id: "effort", value: "high" }],
+      employeeId: ceoId,
+      employeeIds: [ceoId, workerId],
+    });
+  });
+
   it("continues the built-in workflow when an employee omits the handoff tag", async () => {
     const ceoId = EmployeeId.make("ceo");
     const betaId = EmployeeId.make("worker_beta");
@@ -960,7 +1241,7 @@ describe("ProviderRuntimeIngestion", () => {
     });
   });
 
-  it("returns the shipped CEO to Sol Ultra after a worker handoff", async () => {
+  it("returns the shipped CEO to its pinned Sol override after a worker handoff", async () => {
     const ceoId = EmployeeId.make("ceo");
     const gammaId = EmployeeId.make("worker_gamma");
     const harness = await createHarness({
@@ -1023,7 +1304,7 @@ describe("ProviderRuntimeIngestion", () => {
     );
     expect(thread.modelSelection).toMatchObject({
       model: "gpt-5.6-sol",
-      options: [{ id: "reasoningEffort", value: "ultra" }],
+      options: [{ id: "reasoningEffort", value: "high" }],
       employeeId: ceoId,
     });
   });

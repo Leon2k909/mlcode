@@ -69,12 +69,23 @@ import {
   type CodexHandoffAssignment,
   describeHandoffRejection,
   parseEmployeeHandoff,
+  resolveClaudeLeadModel,
   resolveAutomaticEmployeeHandoffTarget,
 } from "../../employee/EmployeeHandoff.ts";
 
 const DEFAULT_CODEX_HANDOFF_ASSIGNMENT: CodexHandoffAssignment = {
   model: "gpt-5.6-luna",
   reasoning: "low",
+};
+
+/**
+ * Claude counterpart of the Codex fallback above: a CEO handoff that omits
+ * the model attribute starts the worker on the routine tier instead of
+ * inheriting the lead model it was written from. Forgetting the attribute
+ * should fail cheap, the same direction it fails on Codex.
+ */
+const DEFAULT_CLAUDE_HANDOFF_ASSIGNMENT: ClaudeHandoffAssignment = {
+  model: "claude-haiku-4-5",
 };
 
 const applyCodexHandoffReasoning = (
@@ -1866,23 +1877,39 @@ const make = Effect.gen(function* () {
       fromEmployeeId === "ceo" && !usesEmployeeModelOverride && targetInfo.driverKind === "codex"
         ? (input.codexAssignment ?? DEFAULT_CODEX_HANDOFF_ASSIGNMENT)
         : undefined;
+    // Mirrors the Codex branch above: assignments are honored no matter what
+    // the CEO itself ran on, and an omitted attribute falls back to the
+    // routine tier. The old lead-model gate here silently discarded every
+    // tier decision whenever the chat ran on Sonnet.
     const ceoClaudeAssignment =
       fromEmployeeId === "ceo" &&
       !usesEmployeeModelOverride &&
-      targetInfo.driverKind === "claudeAgent" &&
-      (selection.model === "claude-fable-5" || selection.model === "claude-opus-5")
-        ? input.claudeAssignment
+      targetInfo.driverKind === "claudeAgent"
+        ? (input.claudeAssignment ?? DEFAULT_CLAUDE_HANDOFF_ASSIGNMENT)
+        : undefined;
+    // The shipped roster pins the CEO's override on Codex, so on a Claude
+    // chat the override cannot apply and a handback would run the CEO's
+    // review at whatever model the worker just used - Haiku judging
+    // implementation evidence. Route CEO turns onto a lead model instead.
+    const ceoClaudeLeadModel =
+      input.toEmployeeId === "ceo" &&
+      usesEmployeeModelOverride &&
+      !appliesEmployeeModelOverride &&
+      targetInfo.driverKind === "claudeAgent"
+        ? resolveClaudeLeadModel(selection.model)
         : undefined;
     const targetModel = appliesEmployeeModelOverride
       ? (targetEmployee.model ??
         (usesSelectedProvider ? selection.model : DEFAULT_MODEL_BY_PROVIDER[targetInfo.driverKind]))
-      : ceoCodexAssignment !== undefined
-        ? ceoCodexAssignment.model
-        : ceoClaudeAssignment !== undefined
-          ? ceoClaudeAssignment.model
-          : usesSelectedProvider
-            ? selection.model
-            : DEFAULT_MODEL_BY_PROVIDER[targetInfo.driverKind];
+      : ceoClaudeLeadModel !== undefined
+        ? ceoClaudeLeadModel
+        : ceoCodexAssignment !== undefined
+          ? ceoCodexAssignment.model
+          : ceoClaudeAssignment !== undefined
+            ? ceoClaudeAssignment.model
+            : usesSelectedProvider
+              ? selection.model
+              : DEFAULT_MODEL_BY_PROVIDER[targetInfo.driverKind];
     if (!targetModel) {
       consecutiveEmployeeHandoffs.delete(input.thread.id);
       yield* appendEmployeeHandoffActivity({
@@ -1900,11 +1927,13 @@ const make = Effect.gen(function* () {
       selection.instanceId === targetInstanceId ? selection.options : undefined;
     const targetOptions = appliesEmployeeModelOverride
       ? targetEmployee.modelOptions
-      : ceoCodexAssignment !== undefined
-        ? applyCodexHandoffReasoning(inheritedOptions, ceoCodexAssignment.reasoning)
-        : ceoClaudeAssignment !== undefined
-          ? claudeHandoffDefaultEffortOptions(targetModel)
-          : inheritedOptions;
+      : ceoClaudeLeadModel !== undefined
+        ? claudeHandoffDefaultEffortOptions(ceoClaudeLeadModel)
+        : ceoCodexAssignment !== undefined
+          ? applyCodexHandoffReasoning(inheritedOptions, ceoCodexAssignment.reasoning)
+          : ceoClaudeAssignment !== undefined
+            ? claudeHandoffDefaultEffortOptions(targetModel)
+            : inheritedOptions;
     const nextModelSelection: ModelSelection = {
       instanceId: targetInstanceId,
       model: targetModel,

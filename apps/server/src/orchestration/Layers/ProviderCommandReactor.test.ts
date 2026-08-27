@@ -3044,6 +3044,72 @@ describe("ProviderCommandReactor", () => {
     });
   });
 
+  it("lifts the routing CEO onto a lead Claude model when its Codex override cannot apply", async () => {
+    // The shipped CEO pins Sol on Codex. On a Claude chat that override is
+    // inert, and without the lift the routing and review turns would run at
+    // whatever the composer picked - here Sonnet.
+    const ceoId = EmployeeId.make("ceo");
+    const workerId = EmployeeId.make("worker_alpha");
+    const harness = await createHarness({
+      serverSettings: {
+        employees: {
+          [ceoId]: {
+            displayName: "Ceo",
+            role: "Chief executive",
+            providerInstanceId: ProviderInstanceId.make("codex"),
+            modelMode: "override",
+            model: "gpt-5.6-sol",
+            modelOptions: [{ id: "reasoningEffort", value: "high" }],
+            instructions: "Route the request.",
+            enabled: true,
+          },
+          [workerId]: {
+            displayName: "Alpha",
+            role: "Implementation",
+            providerInstanceId: ProviderInstanceId.make("codex"),
+            modelMode: "auto",
+            instructions: "Implement the request.",
+            enabled: true,
+          },
+        },
+      },
+    });
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-ceo-claude-lift"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-ceo-claude-lift"),
+          role: "user",
+          text: "Route this task.",
+          attachments: [],
+        },
+        modelSelection: {
+          instanceId: ProviderInstanceId.make("claudeAgent"),
+          model: "claude-sonnet-5",
+          employeeId: ceoId,
+          employeeIds: [ceoId, workerId],
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: "2026-08-17T15:00:00.000Z",
+      }),
+    );
+
+    await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+    expect(harness.sendTurn.mock.calls[0]?.[0]).toMatchObject({
+      modelSelection: {
+        instanceId: ProviderInstanceId.make("claudeAgent"),
+        model: "claude-opus-5",
+        employeeId: ceoId,
+      },
+    });
+    // The Codex-only reasoningEffort override must not leak onto Claude.
+    expect(harness.sendTurn.mock.calls[0]?.[0]?.modelSelection?.options).toBeUndefined();
+  });
+
   it("returns each human-authored group task to the CEO before worker routing", async () => {
     const ceoId = EmployeeId.make("ceo");
     const workerId = EmployeeId.make("worker_alpha");

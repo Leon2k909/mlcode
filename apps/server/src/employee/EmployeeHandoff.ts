@@ -53,6 +53,23 @@ export interface ClaudeHandoffAssignment {
   readonly model: ClaudeHandoffModel;
 }
 
+/**
+ * Whether a Claude model is lead-tier: the Opus family and Fable. Matched by
+ * family rather than an enumerated list so a deliberately selected older
+ * Opus - or a future one - is respected as a lead.
+ */
+export const isClaudeLeadModel = (model: string | undefined): boolean =>
+  model !== undefined && /^claude-(opus|fable)/.test(model);
+
+/**
+ * Where a routing-CEO turn lands on Claude when its saved override cannot
+ * apply (the shipped roster pins the CEO on Codex). The chat's model is kept
+ * when it is already lead-tier; anything lower is lifted to Opus - the same
+ * rule that keeps a composer selection from lowering the lead on Codex.
+ */
+export const resolveClaudeLeadModel = (model: string | undefined): string =>
+  isClaudeLeadModel(model) && model !== undefined ? model : "claude-opus-5";
+
 const VALID_CODEX_HANDOFF_ASSIGNMENTS: ReadonlySet<string> = new Set([
   "gpt-5.6-luna:low",
   "gpt-5.6-terra:medium",
