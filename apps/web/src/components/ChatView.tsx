@@ -588,6 +588,7 @@ type ChatViewProps =
       threadId: ThreadId;
       onDiffPanelOpen?: () => void;
       reserveTitleBarControlInset?: boolean;
+      reserveSidebarToggleInset?: boolean;
       forceExpandedMobileComposer?: boolean;
       workspaceActive?: boolean;
       workspaceMultiPane?: boolean;
@@ -601,6 +602,7 @@ type ChatViewProps =
       threadId: ThreadId;
       onDiffPanelOpen?: () => void;
       reserveTitleBarControlInset?: boolean;
+      reserveSidebarToggleInset?: boolean;
       forceExpandedMobileComposer?: boolean;
       workspaceActive?: boolean;
       workspaceMultiPane?: boolean;
@@ -1294,6 +1296,7 @@ function ChatViewContent(props: ChatViewProps) {
     routeKind,
     onDiffPanelOpen,
     reserveTitleBarControlInset = true,
+    reserveSidebarToggleInset = true,
     forceExpandedMobileComposer = false,
     workspaceActive = true,
     workspaceMultiPane = false,
@@ -7719,6 +7722,7 @@ function ChatViewContent(props: ChatViewProps) {
           data-chat-header
           electron={isElectron}
           reserveNativeControls={reserveTitleBarControlInset && !inlineRightPanelOwnsTitleBar}
+          reserveSidebarToggle={reserveSidebarToggleInset}
           className="relative bg-background"
         >
           {workspaceActive && !visibleRightPanelOpen ? panelLayoutControls : null}
@@ -7744,7 +7748,6 @@ function ChatViewContent(props: ChatViewProps) {
             }
             keybindings={keybindings}
             availableEditors={availableEditors}
-            rightPanelOpen={visibleRightPanelOpen}
             gitCwd={gitCwd}
             onNewThreadInProject={handleNewThreadInActiveProject}
             onRunProjectScript={runProjectScript}

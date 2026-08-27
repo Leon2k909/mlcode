@@ -159,6 +159,7 @@ function ChatThreadPane(props: {
   readonly active: boolean;
   readonly multiPane: boolean;
   readonly reserveTitleBarControlInset: boolean;
+  readonly reserveSidebarToggleInset: boolean;
   readonly headerControls: ReactNode;
 }) {
   const shell = useThreadShell(props.pane.threadRef);
@@ -185,6 +186,7 @@ function ChatThreadPane(props: {
       routeKind="server"
       threadSyncPhase={threadSyncPhase}
       reserveTitleBarControlInset={props.reserveTitleBarControlInset}
+      reserveSidebarToggleInset={props.reserveSidebarToggleInset}
       workspaceActive={props.active}
       workspaceMultiPane={props.multiPane}
       workspaceHeaderControls={props.headerControls}
@@ -197,6 +199,7 @@ function SortableChatPane(props: {
   readonly active: boolean;
   readonly multiPane: boolean;
   readonly reserveTitleBarControlInset: boolean;
+  readonly reserveSidebarToggleInset: boolean;
   readonly canReorder: boolean;
   readonly onActivate: (threadRef: ScopedThreadRef) => void;
   readonly onOpenThreadToSide: () => void;
@@ -253,6 +256,7 @@ function SortableChatPane(props: {
         active={props.active}
         multiPane={props.multiPane}
         reserveTitleBarControlInset={props.reserveTitleBarControlInset}
+        reserveSidebarToggleInset={props.reserveSidebarToggleInset}
         headerControls={
           <ChatPaneHeaderControls
             paneId={props.pane.id}
@@ -580,6 +584,7 @@ export function ChatWorkspace({ activeThreadRef }: ChatWorkspaceProps) {
                 active={pane.id === activePaneId}
                 multiPane={renderedPanes.length > 1}
                 reserveTitleBarControlInset={index === visiblePanes.length - 1}
+                reserveSidebarToggleInset={index === 0}
                 canReorder={!hasCollapsedPanes && visiblePanes.length > 1}
                 onActivate={activateThread}
                 onOpenThreadToSide={openThreadToSide}

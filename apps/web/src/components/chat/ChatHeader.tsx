@@ -64,7 +64,6 @@ interface ChatHeaderProps {
   preferredScriptId: string | null;
   keybindings: ResolvedKeybindingsConfig;
   availableEditors: ReadonlyArray<EditorId>;
-  rightPanelOpen: boolean;
   gitCwd: string | null;
   readonly onOpenPullRequest?: ((number: number) => void) | undefined;
   onNewThreadInProject: () => void;
@@ -133,7 +132,6 @@ export const ChatHeader = memo(function ChatHeader({
   preferredScriptId,
   keybindings,
   availableEditors,
-  rightPanelOpen,
   gitCwd,
   onOpenPullRequest,
   onNewThreadInProject,
@@ -376,10 +374,7 @@ export const ChatHeader = memo(function ChatHeader({
       </WorkspaceBreadcrumb>
       <div
         data-chat-header-actions
-        className={cn(
-          "flex shrink-0 items-center justify-end gap-2 @3xl/header-actions:gap-3",
-          rightPanelOpen ? "pr-0" : "pr-16",
-        )}
+        className="flex shrink-0 items-center justify-end gap-2 @3xl/header-actions:gap-3"
       >
         {isServerThread ? (
           <ThreadShareControl environmentId={activeThreadEnvironmentId} threadId={activeThreadId} />
