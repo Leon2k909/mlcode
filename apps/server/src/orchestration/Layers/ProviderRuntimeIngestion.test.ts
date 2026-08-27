@@ -1132,6 +1132,100 @@ describe("ProviderRuntimeIngestion", () => {
     });
   });
 
+  it("stops the chain when an employee hands the thread back to the user", async () => {
+    // Beta asking the user a question used to keep the chain alive anyway:
+    // auto-handoff pushed Alpha into an empty turn and Gamma declared
+    // "nothing to verify" until the budget ran out. to="user" is the exit.
+    const ceoId = EmployeeId.make("ceo");
+    const betaId = EmployeeId.make("worker_beta");
+    const harness = await createHarness({
+      serverSettings: {
+        employees: {
+          [ceoId]: {
+            displayName: "Casey",
+            role: "CEO",
+            providerInstanceId: ProviderInstanceId.make("claudeAgent"),
+            modelMode: "auto",
+            instructions: "Route the request.",
+            enabled: true,
+          },
+          [betaId]: {
+            displayName: "Blair",
+            role: "Research",
+            providerInstanceId: ProviderInstanceId.make("claudeAgent"),
+            modelMode: "auto",
+            instructions: "Research the request.",
+            enabled: true,
+          },
+        },
+      },
+      threadModelSelection: {
+        instanceId: ProviderInstanceId.make("claudeAgent"),
+        model: "claude-sonnet-5",
+        employeeId: betaId,
+        employeeIds: [ceoId, betaId],
+      },
+    });
+    const now = "2026-08-27T20:00:00.000Z";
+    const turnId = asTurnId("turn-await-user");
+
+    harness.emit({
+      type: "turn.started",
+      eventId: asEventId("evt-await-user-started"),
+      provider: ProviderDriverKind.make("claudeAgent"),
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId,
+    });
+    await waitForThread(harness.readModel, (thread) => thread.session?.activeTurnId === turnId);
+    harness.emit({
+      type: "content.delta",
+      eventId: asEventId("evt-await-user-delta"),
+      provider: ProviderDriverKind.make("claudeAgent"),
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId,
+      itemId: asItemId("item-await-user"),
+      payload: {
+        streamKind: "assistant_text",
+        delta:
+          'Two questions before I can continue.\n\n<handoff to="user">Menu placement: top-level or submenu?</handoff>',
+      },
+    });
+    harness.emit({
+      type: "item.completed",
+      eventId: asEventId("evt-await-user-item-complete"),
+      provider: ProviderDriverKind.make("claudeAgent"),
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId,
+      itemId: asItemId("item-await-user"),
+      payload: { itemType: "assistant_message", status: "completed" },
+    });
+    harness.emit({
+      type: "turn.completed",
+      eventId: asEventId("evt-await-user-turn-complete"),
+      provider: ProviderDriverKind.make("claudeAgent"),
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId,
+      payload: { state: "completed" },
+    });
+
+    const thread = await waitForThread(harness.readModel, (entry) =>
+      entry.activities.some((activity) => activity.summary === "Waiting for you"),
+    );
+    // No employee turn was started: the thread still belongs to Beta, and the
+    // wait marker names what the user owes.
+    expect(thread.modelSelection.employeeId).toBe(betaId);
+    const waitActivity = thread.activities.find(
+      (activity) => activity.summary === "Waiting for you",
+    );
+    expect((waitActivity?.payload as { detail?: string } | undefined)?.detail).toContain(
+      "Blair needs your answer to continue: Menu placement",
+    );
+  });
+
   it("continues the built-in workflow when an employee omits the handoff tag", async () => {
     const ceoId = EmployeeId.make("ceo");
     const betaId = EmployeeId.make("worker_beta");

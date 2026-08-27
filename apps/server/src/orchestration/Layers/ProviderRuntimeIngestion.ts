@@ -2043,6 +2043,26 @@ const make = Effect.gen(function* () {
       }
       return;
     }
+    if (result.kind === "await-user") {
+      // The thread is the user's again. Clearing the counter means the next
+      // user message starts a fresh handoff budget rather than inheriting
+      // whatever this chain had spent.
+      consecutiveEmployeeHandoffs.delete(input.thread.id);
+      const waitingEmployee = resolveEmployee(settings.employees, fromEmployeeId);
+      const waitingName = waitingEmployee?.displayName ?? String(fromEmployeeId);
+      yield* appendEmployeeHandoffActivity({
+        event: input.event,
+        threadId: input.thread.id,
+        turnId: input.turnId,
+        tone: "info",
+        summary: "Waiting for you",
+        detail:
+          result.message.length > 0
+            ? `${waitingName} needs your answer to continue: ${result.message}`
+            : `${waitingName} is waiting for your answer before the team continues.`,
+      });
+      return;
+    }
     if (result.kind === "rejected") {
       consecutiveEmployeeHandoffs.delete(input.thread.id);
       yield* appendEmployeeHandoffActivity({

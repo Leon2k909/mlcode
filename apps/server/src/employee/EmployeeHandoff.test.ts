@@ -232,6 +232,41 @@ describe("resolveAutomaticEmployeeHandoffTarget", () => {
   });
 });
 
+describe("await-user handoffs", () => {
+  it("hands the thread back to the person and stops the chain", () => {
+    const result = parse(
+      'Which menu should this live in?\n\n<handoff to="user">Menu placement: top-level or submenu?</handoff>',
+      "worker_beta",
+    );
+    expect(result).toEqual({
+      kind: "await-user",
+      message: "Menu placement: top-level or submenu?",
+      remainingText: "Which menu should this live in?",
+    });
+  });
+
+  it("accepts an empty-bodied stop marker - the question can live in prose", () => {
+    const result = parse('I need your answer above.\n\n<handoff to="user"></handoff>', "ceo");
+    expect(result).toMatchObject({ kind: "await-user", message: "" });
+  });
+
+  it("keeps a configured employee literally named user reachable", () => {
+    const withUserEmployee = Schema.decodeUnknownSync(EmployeeMap)({
+      ceo: { displayName: "Ada", providerInstanceId: "claudeAgent" },
+      user: { displayName: "User Research", providerInstanceId: "claudeAgent" },
+    });
+    const result = parseEmployeeHandoff({
+      text: '<handoff to="user">Run the interviews.</handoff>',
+      employees: withUserEmployee,
+      fromEmployeeId: EmployeeId.make("ceo"),
+    });
+    expect(result).toMatchObject({
+      kind: "handoff",
+      handoff: { toEmployeeId: "user" },
+    });
+  });
+});
+
 describe("resolveClaudeLeadModel", () => {
   it("keeps a chat that is already on a lead model where it is", () => {
     expect(resolveClaudeLeadModel("claude-fable-5")).toBe("claude-fable-5");

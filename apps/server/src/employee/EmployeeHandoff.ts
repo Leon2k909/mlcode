@@ -149,6 +149,12 @@ export type EmployeeHandoffRejection =
 
 export type EmployeeHandoffResult =
   | { readonly kind: "handoff"; readonly handoff: EmployeeHandoff }
+  /**
+   * The employee handed the thread back to the person. No further employee
+   * turn may run until the user speaks; `message` is what they are waiting
+   * on, when the employee said so inside the tag.
+   */
+  | { readonly kind: "await-user"; readonly message: string; readonly remainingText: string }
   | { readonly kind: "rejected"; readonly rejection: EmployeeHandoffRejection }
   | { readonly kind: "none" };
 
@@ -216,6 +222,14 @@ export const parseEmployeeHandoff = (input: {
   const requestedId = attributes.get("to") ?? "";
   if (!EMPLOYEE_ID_PATTERN.test(requestedId)) return { kind: "none" };
   const message = (match[2] ?? "").trim();
+
+  // Reserved target: hand the thread back to the person. An employee that
+  // needs an answer stops the chain instead of lobbing the blockage around
+  // the roster until the handoff budget runs out. A configured employee
+  // literally named "user" keeps its meaning, so no existing roster changes.
+  if (requestedId === "user" && !Object.hasOwn(input.employees, "user")) {
+    return { kind: "await-user", message, remainingText: stripHandoffBlock(input.text) };
+  }
 
   if (input.fromEmployeeId !== undefined && requestedId === input.fromEmployeeId) {
     return { kind: "rejected", rejection: { reason: "self-handoff", requestedId } };
