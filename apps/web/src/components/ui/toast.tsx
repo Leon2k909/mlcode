@@ -587,7 +587,13 @@ function Toasts({ position }: { position: ToastPosition }) {
           return (
             <Toast.Root
               className={cn(
-                "dropdown-glass absolute z-[calc(9999-var(--toast-index))] w-full overflow-visible select-none rounded-lg text-popover-foreground shadow-xl shadow-black/25 [transition:transform_.5s_cubic-bezier(.22,1,.36,1),opacity_.5s,height_.15s]",
+                // `min-w-[min(100%,18rem)]` is a width floor: it sits below the
+                // normal toast width (max-w-90 / full container) so it never
+                // changes ordinary appearance, but it stops the body from ever
+                // reflowing into a one-character sliver during an enter/height
+                // transition or a degenerate measure pass. On narrow viewports
+                // the `min(100%,…)` caps at the container so it cannot overflow.
+                "dropdown-glass absolute z-[calc(9999-var(--toast-index))] w-full min-w-[min(100%,18rem)] overflow-visible select-none rounded-lg text-popover-foreground shadow-xl shadow-black/25 [transition:transform_.5s_cubic-bezier(.22,1,.36,1),opacity_.5s,height_.15s]",
                 // Base positioning using data-position
                 "data-[position*=right]:right-0 data-[position*=right]:left-auto",
                 "data-[position*=left]:right-auto data-[position*=left]:left-0",
