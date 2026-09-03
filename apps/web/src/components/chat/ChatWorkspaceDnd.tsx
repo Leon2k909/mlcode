@@ -25,7 +25,7 @@ import {
   type ReactNode,
 } from "react";
 
-import { MAX_CHAT_WORKSPACE_PANES, useChatWorkspaceStore } from "~/chatWorkspaceStore";
+import { MAX_CHAT_WORKSPACE_TABS, useChatWorkspaceStore } from "~/chatWorkspaceStore";
 import { buildThreadRouteParams } from "~/threadRoutes";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { useSidebar } from "../ui/sidebar";
@@ -164,7 +164,7 @@ function paneDropFromEvent(event: DragOverEvent | DragEndEvent): WorkspacePaneDr
     }),
     allowed:
       state.panes.some((pane) => pane.id === activeData.threadKey) ||
-      state.panes.length < MAX_CHAT_WORKSPACE_PANES,
+      state.panes.length < MAX_CHAT_WORKSPACE_TABS,
   };
 }
 
@@ -224,7 +224,7 @@ export function ChatWorkspaceDndProvider({ children }: { readonly children: Reac
             stackedThreadToast({
               type: "info",
               title: "Close a chat pane first",
-              description: `You can keep up to ${MAX_CHAT_WORKSPACE_PANES} chats open at once.`,
+              description: `You can keep up to ${MAX_CHAT_WORKSPACE_TABS} chats open at once.`,
             }),
           );
           return;

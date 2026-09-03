@@ -3,7 +3,7 @@ import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { beforeEach, describe, expect, it } from "vite-plus/test";
 
 import {
-  MAX_CHAT_WORKSPACE_PANES,
+  MAX_CHAT_WORKSPACE_TABS,
   normalizePaneSizes,
   sanitizeChatWorkspaceSnapshot,
   useChatWorkspaceStore,
@@ -24,16 +24,29 @@ beforeEach(() => {
 });
 
 describe("chatWorkspaceStore", () => {
-  it("sanitizes, deduplicates, caps, and normalizes persisted panes", () => {
+  it("sanitizes, deduplicates, and normalizes persisted panes", () => {
     const snapshot = sanitizeChatWorkspaceSnapshot({
       panes: [pane("a", 2), pane("a", 4), pane("b", 1), pane("c", 1), pane("d", 1)],
       activePaneId: "missing",
     });
 
-    expect(snapshot.panes.map((entry) => entry.id)).toEqual(["env-1:a", "env-1:b", "env-1:c"]);
-    expect(snapshot.panes).toHaveLength(MAX_CHAT_WORKSPACE_PANES);
+    // Duplicates collapse; all four unique open chats are kept as tabs.
+    expect(snapshot.panes.map((entry) => entry.id)).toEqual([
+      "env-1:a",
+      "env-1:b",
+      "env-1:c",
+      "env-1:d",
+    ]);
     expect(snapshot.panes.reduce((sum, entry) => sum + entry.size, 0)).toBeCloseTo(1);
     expect(snapshot.activePaneId).toBe("env-1:a");
+  });
+
+  it("caps persisted tabs at the tab limit", () => {
+    const many = Array.from({ length: MAX_CHAT_WORKSPACE_TABS + 4 }, (_unused, index) =>
+      pane(`t${index}`, 1),
+    );
+    const snapshot = sanitizeChatWorkspaceSnapshot({ panes: many, activePaneId: "missing" });
+    expect(snapshot.panes).toHaveLength(MAX_CHAT_WORKSPACE_TABS);
   });
 
   it("replaces only the active pane during normal navigation", () => {
@@ -51,19 +64,17 @@ describe("chatWorkspaceStore", () => {
     expect(useChatWorkspaceStore.getState().activePaneId).toBe("env-1:c");
   });
 
-  it("opens unique threads to the side and enforces the pane limit", () => {
-    expect(useChatWorkspaceStore.getState().openThreadToSide(ref("a"))).toBe(true);
-    expect(useChatWorkspaceStore.getState().openThreadToSide(ref("b"))).toBe(true);
-    expect(useChatWorkspaceStore.getState().openThreadToSide(ref("c"))).toBe(true);
-    expect(useChatWorkspaceStore.getState().openThreadToSide(ref("d"))).toBe(false);
-    expect(useChatWorkspaceStore.getState().openThreadToSide(ref("a"))).toBe(true);
+  it("opens unique threads as tabs up to the tab limit", () => {
+    for (let index = 0; index < MAX_CHAT_WORKSPACE_TABS; index += 1) {
+      expect(useChatWorkspaceStore.getState().openThreadToSide(ref(`t${index}`))).toBe(true);
+    }
+    // One past the limit is refused...
+    expect(useChatWorkspaceStore.getState().openThreadToSide(ref("overflow"))).toBe(false);
+    // ...but re-opening an already-open tab just activates it.
+    expect(useChatWorkspaceStore.getState().openThreadToSide(ref("t0"))).toBe(true);
 
-    expect(useChatWorkspaceStore.getState().panes.map((entry) => entry.id)).toEqual([
-      "env-1:a",
-      "env-1:b",
-      "env-1:c",
-    ]);
-    expect(useChatWorkspaceStore.getState().activePaneId).toBe("env-1:a");
+    expect(useChatWorkspaceStore.getState().panes).toHaveLength(MAX_CHAT_WORKSPACE_TABS);
+    expect(useChatWorkspaceStore.getState().activePaneId).toBe("env-1:t0");
   });
 
   it("inserts a dragged thread on either side of a target pane", () => {
@@ -96,22 +107,25 @@ describe("chatWorkspaceStore", () => {
     ]);
   });
 
-  it("deduplicates adjacent opens and rejects unique threads at the pane cap", () => {
+  it("deduplicates adjacent opens and keeps a fourth unique thread as a tab", () => {
     useChatWorkspaceStore.setState({
       panes: normalizePaneSizes([pane("a"), pane("b"), pane("c")]),
       activePaneId: "env-1:a",
     });
 
+    // Re-opening an already-open thread just activates it, not a duplicate tab.
     expect(useChatWorkspaceStore.getState().openThreadAdjacent(ref("c"), "env-1:a", "before")).toBe(
       true,
     );
     expect(useChatWorkspaceStore.getState().activePaneId).toBe("env-1:c");
+    // A fourth unique thread is now a new tab, no longer rejected at three.
     expect(useChatWorkspaceStore.getState().openThreadAdjacent(ref("d"), "env-1:b", "after")).toBe(
-      false,
+      true,
     );
     expect(useChatWorkspaceStore.getState().panes.map((entry) => entry.id)).toEqual([
       "env-1:a",
       "env-1:b",
+      "env-1:d",
       "env-1:c",
     ]);
   });

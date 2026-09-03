@@ -3,7 +3,19 @@ import type { ScopedThreadRef } from "@t3tools/contracts";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
+/**
+ * How many chats may be shown side by side at once. This is the split-view
+ * capacity, not the tab count: beyond it, extra open chats stay open as tabs
+ * and only the active one renders (see `visibleWorkspacePaneIds`).
+ */
 export const MAX_CHAT_WORKSPACE_PANES = 3;
+/**
+ * How many chats may be open at once as tabs. Larger than the split capacity:
+ * the workspace keeps every open chat as a switchable tab, showing up to
+ * `MAX_CHAT_WORKSPACE_PANES` of them side by side when the window is wide
+ * enough and just the active one otherwise.
+ */
+export const MAX_CHAT_WORKSPACE_TABS = 12;
 export const MIN_CHAT_WORKSPACE_PANE_WIDTH = 460;
 
 export interface ChatWorkspacePane {
@@ -68,7 +80,7 @@ export function sanitizeChatWorkspaceSnapshot(value: unknown): ChatWorkspaceSnap
         );
         if (!threadRef) return [];
         const id = scopedThreadKey(threadRef);
-        if (seen.has(id) || seen.size >= MAX_CHAT_WORKSPACE_PANES) return [];
+        if (seen.has(id) || seen.size >= MAX_CHAT_WORKSPACE_TABS) return [];
         seen.add(id);
         const rawSize = (entry as { size?: unknown }).size;
         return [
@@ -152,7 +164,7 @@ export const useChatWorkspaceStore = create<ChatWorkspaceStore>()(
           set({ activePaneId: id });
           return true;
         }
-        if (state.panes.length >= MAX_CHAT_WORKSPACE_PANES) return false;
+        if (state.panes.length >= MAX_CHAT_WORKSPACE_TABS) return false;
         set({
           panes: equalSizePanes([...state.panes, paneFromRef(threadRef)]),
           activePaneId: id,
@@ -166,7 +178,7 @@ export const useChatWorkspaceStore = create<ChatWorkspaceStore>()(
           set({ activePaneId: id });
           return true;
         }
-        if (state.panes.length >= MAX_CHAT_WORKSPACE_PANES) return false;
+        if (state.panes.length >= MAX_CHAT_WORKSPACE_TABS) return false;
         const targetIndex = state.panes.findIndex((pane) => pane.id === targetPaneId);
         const insertIndex =
           targetIndex < 0
@@ -257,6 +269,6 @@ export function canOpenThreadToSide(threadRef: ScopedThreadRef): boolean {
   const state = useChatWorkspaceStore.getState();
   return (
     state.panes.some((pane) => pane.id === scopedThreadKey(threadRef)) ||
-    state.panes.length < MAX_CHAT_WORKSPACE_PANES
+    state.panes.length < MAX_CHAT_WORKSPACE_TABS
   );
 }

@@ -3,7 +3,7 @@ import type { ScopedThreadRef } from "@t3tools/contracts";
 import { SortableContext, horizontalListSortingStrategy, useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { useNavigate } from "@tanstack/react-router";
-import { GripVerticalIcon, PanelRightOpenIcon, XIcon } from "lucide-react";
+import { GripVerticalIcon, PanelRightOpenIcon, PlusIcon, XIcon } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -18,7 +18,7 @@ import {
 } from "react";
 
 import {
-  MAX_CHAT_WORKSPACE_PANES,
+  MAX_CHAT_WORKSPACE_TABS,
   MIN_CHAT_WORKSPACE_PANE_WIDTH,
   normalizePaneSizes,
   useChatWorkspaceStore,
@@ -111,7 +111,7 @@ function ChatPaneHeaderControls(props: {
   readonly onOpenThreadToSide: () => void;
   readonly onClose: (paneId: string) => void;
 }) {
-  const atLimit = props.paneCount >= MAX_CHAT_WORKSPACE_PANES;
+  const atLimit = props.paneCount >= MAX_CHAT_WORKSPACE_TABS;
   return (
     <div className="flex shrink-0 items-center gap-0.5 [-webkit-app-region:no-drag]">
       {props.canReorder ? (
@@ -138,7 +138,7 @@ function ChatPaneHeaderControls(props: {
       ) : null}
       {props.active ? (
         <WorkspaceIconButton
-          label={atLimit ? "Maximum of 3 chat panes" : "Open another chat to the side"}
+          label={atLimit ? "Maximum of 12 open chats" : "Open another chat to the side"}
           disabled={atLimit}
           onClick={props.onOpenThreadToSide}
         >
@@ -278,6 +278,7 @@ function SortableChatPane(props: {
 function WorkspacePaneTab(props: {
   readonly pane: ChatWorkspacePane;
   readonly active: boolean;
+  readonly showClose: boolean;
   readonly onActivate: (threadRef: ScopedThreadRef) => void;
   readonly onClose: (paneId: string) => void;
 }) {
@@ -286,26 +287,39 @@ function WorkspacePaneTab(props: {
   return (
     <div
       className={cn(
-        "flex min-w-0 items-center border-r border-border",
-        props.active ? "bg-background text-foreground" : "bg-muted/35 text-muted-foreground",
+        // Tabs read as tabs: a bottom seam under inactive ones, none under the
+        // active one so it joins the pane below.
+        "group/tab flex min-w-0 max-w-56 items-center border-r border-border",
+        props.active
+          ? "bg-background text-foreground"
+          : "bg-muted/35 text-muted-foreground hover:bg-muted/60 hover:text-foreground",
       )}
     >
       <button
         type="button"
-        className="min-w-0 flex-1 truncate px-3 py-1.5 text-left text-xs font-medium focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+        className="min-w-0 flex-1 truncate py-1.5 pl-3 pr-1 text-left text-xs font-medium focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring [-webkit-app-region:no-drag]"
         aria-current={props.active ? "page" : undefined}
         onClick={() => props.onActivate(props.pane.threadRef)}
       >
         {title}
       </button>
-      <button
-        type="button"
-        aria-label={`Close ${title}`}
-        className="mr-1 inline-flex size-6 items-center justify-center rounded-[var(--control-radius)] hover:bg-accent focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
-        onClick={() => props.onClose(props.pane.id)}
-      >
-        <XIcon className="size-3.5" />
-      </button>
+      {props.showClose ? (
+        <button
+          type="button"
+          aria-label={`Close ${title}`}
+          className={cn(
+            "mr-1 inline-flex size-6 shrink-0 items-center justify-center rounded-[var(--control-radius)] text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:opacity-100 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring group-hover/tab:opacity-100 [-webkit-app-region:no-drag]",
+            // Always reachable on the active tab; a hover-reveal on the rest so
+            // a wall of tabs is not a wall of close buttons.
+            props.active ? "opacity-100" : "opacity-0",
+          )}
+          onClick={() => props.onClose(props.pane.id)}
+        >
+          <XIcon className="size-3.5" />
+        </button>
+      ) : (
+        <span className="mr-1 inline-block size-6 shrink-0" aria-hidden />
+      )}
     </div>
   );
 }
@@ -540,6 +554,11 @@ export function ChatWorkspace({ activeThreadRef }: ChatWorkspaceProps) {
     [navigate],
   );
   const openThreadToSide = useCallback(() => openCommandPalette({ open: "thread-to-side" }), []);
+  // The tab strip's "+": start a fresh chat. It lands on the new-thread view;
+  // once that chat is real it joins the strip as its own tab.
+  const openNewChatTab = useCallback(() => {
+    void navigate({ to: "/" });
+  }, [navigate]);
   const commitSizes = useCallback((sizes: Readonly<Record<string, number>>) => {
     useChatWorkspaceStore.getState().setPaneSizes(sizes);
   }, []);
@@ -548,22 +567,34 @@ export function ChatWorkspace({ activeThreadRef }: ChatWorkspaceProps) {
 
   return (
     <div ref={containerRef} className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-      {hasCollapsedPanes ? (
-        <nav
-          aria-label="Open chat panes"
-          className="flex h-9 shrink-0 overflow-x-auto border-b border-border bg-muted/20"
+      <nav
+        aria-label="Open chats"
+        // The strip is the topmost row, so on the frameless desktop build it
+        // shares the titlebar band: reserve the OS window-control gutter on the
+        // right so the "+" never hides under the min/close buttons, and let the
+        // empty track drag the window (its buttons opt back out with no-drag).
+        className="flex h-9 shrink-0 items-stretch overflow-x-auto border-b border-border bg-muted/20 [-webkit-app-region:drag] wco:pr-[var(--workspace-native-controls-inset)]"
+      >
+        {renderedPanes.map((pane) => (
+          <WorkspacePaneTab
+            key={pane.id}
+            pane={pane}
+            active={pane.id === activePaneId}
+            showClose={renderedPanes.length > 1}
+            onActivate={activateThread}
+            onClose={closePane}
+          />
+        ))}
+        <button
+          type="button"
+          aria-label="New chat"
+          title="New chat"
+          className="flex shrink-0 items-center justify-center px-2.5 text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring [-webkit-app-region:no-drag]"
+          onClick={openNewChatTab}
         >
-          {renderedPanes.map((pane) => (
-            <WorkspacePaneTab
-              key={pane.id}
-              pane={pane}
-              active={pane.id === activePaneId}
-              onActivate={activateThread}
-              onClose={closePane}
-            />
-          ))}
-        </nav>
-      ) : null}
+          <PlusIcon className="size-4" />
+        </button>
+      </nav>
       <SortableContext
         items={visiblePanes.map((pane) => workspacePaneDragId(pane.id))}
         strategy={horizontalListSortingStrategy}
