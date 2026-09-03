@@ -10,7 +10,6 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
-import type { ChangeRequestSettleSource } from "@t3tools/client-runtime/state/thread-settled";
 import { ChevronDownIcon } from "lucide-react";
 import {
   memo,
@@ -39,6 +38,7 @@ import { useThreadActionMenu } from "~/hooks/useThreadActionMenu";
 import { threadEnvironment } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { ThreadShareControl } from "../friends/ThreadShareControl";
+import { observeResponsiveBreakpointFade, usePanelAnimationSettings } from "../../panelAnimations";
 import { ProjectFavicon } from "../ProjectFavicon";
 import {
   WorkspaceBreadcrumb,
@@ -72,11 +72,10 @@ interface ChatHeaderProps {
   activeThreadTitle: string;
   /** Drafts have no server thread yet, so the title carries no action menu. */
   isServerThread: boolean;
-  /** PR feeding the settled classification, resolved by ChatView. */
-  changeRequest: ChangeRequestSettleSource | null;
   activeProjectName: string | undefined;
   activeProjectCwd: string | null;
   activeProjectFaviconPath: string | null;
+  activeProjectIcon: import("@t3tools/contracts").ProjectIconOverride | null;
   openInCwd: string | null;
   activeProjectScripts: ReadonlyArray<ProjectScript> | undefined;
   preferredScriptId: string | null;
@@ -119,6 +118,8 @@ export function resolveRenameCommit(input: {
 // events (the second click dismisses it and dblclick still fires), so it
 // opens immediately.
 const TITLE_MENU_OPEN_DELAY_MS = 500;
+// Matches the @3xl/header-actions container breakpoint owned by this header.
+const HEADER_ACTIONS_EXPANDED_BREAKPOINT_REM = 48;
 
 export function shouldShowOpenInPicker(input: {
   readonly activeProjectName: string | undefined;
@@ -147,10 +148,10 @@ export const ChatHeader = memo(function ChatHeader({
   draftId,
   activeThreadTitle,
   isServerThread,
-  changeRequest,
   activeProjectName,
   activeProjectCwd,
   activeProjectFaviconPath,
+  activeProjectIcon,
   openInCwd,
   activeProjectScripts,
   preferredScriptId,
@@ -164,6 +165,21 @@ export const ChatHeader = memo(function ChatHeader({
   onUpdateProjectScript,
   onDeleteProjectScript,
 }: ChatHeaderProps) {
+  const { active: panelAnimationsActive, durationMs: panelAnimationDurationMs } =
+    usePanelAnimationSettings();
+  const headerActionsRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const actions = headerActionsRef.current;
+    const container = actions?.parentElement;
+    if (!actions || !container) return;
+    return observeResponsiveBreakpointFade({
+      target: actions,
+      container,
+      active: panelAnimationsActive,
+      durationMs: panelAnimationDurationMs,
+      breakpoint: { value: HEADER_ACTIONS_EXPANDED_BREAKPOINT_REM, unit: "rem" },
+    });
+  }, [panelAnimationDurationMs, panelAnimationsActive]);
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const fileScripts = useT3ProjectFileScripts(
     activeThreadEnvironmentId,
@@ -224,7 +240,6 @@ export const ChatHeader = memo(function ChatHeader({
   const { openMenu, closeMenu } = useThreadActionMenu({
     threadRef: isServerThread ? activeThreadRef : null,
     projectCwd: activeProjectCwd,
-    changeRequest,
     onStartRename: startRename,
   });
   const titleButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -311,13 +326,16 @@ export const ChatHeader = memo(function ChatHeader({
       className="@container/header-actions flex min-w-0 flex-1 items-center gap-2 sm:gap-3"
       onContextMenu={handleHeaderContextMenu}
     >
-      <WorkspaceBreadcrumb ariaLabel="Thread breadcrumb" className="flex-1">
+      <WorkspaceBreadcrumb
+        ariaLabel="Thread breadcrumb"
+        className="flex-1 overflow-clip [overflow-clip-margin:2px]"
+      >
         {/* The project always leads the header: knowing which project a
             thread lives in is priority zero, and the thread title alone
             doesn't answer it. */}
         {activeProjectName ? (
           <>
-            <WorkspaceBreadcrumbItem>
+            <WorkspaceBreadcrumbItem className="shrink">
               <Tooltip>
                 <TooltipTrigger
                   render={
@@ -325,14 +343,16 @@ export const ChatHeader = memo(function ChatHeader({
                       type="button"
                       aria-label={`New thread in ${activeProjectName}`}
                       onClick={onNewThreadInProject}
-                      className="inline-flex min-w-0 cursor-pointer items-center gap-1.5 rounded-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+                      className="inline-flex min-w-0 max-w-full cursor-pointer items-center gap-1.5 rounded-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
                     />
                   }
                 >
                   <ProjectFavicon
                     environmentId={activeThreadEnvironmentId}
                     cwd={activeProjectCwd ?? ""}
+                    projectName={activeProjectName}
                     faviconPath={activeProjectFaviconPath}
+                    projectIcon={activeProjectIcon}
                     className="size-3.5"
                   />
                   <span className="max-w-40 truncate">{activeProjectName}</span>
@@ -343,7 +363,7 @@ export const ChatHeader = memo(function ChatHeader({
             <WorkspaceBreadcrumbSeparator />
           </>
         ) : null}
-        <WorkspaceBreadcrumbItem current className="flex-1">
+        <WorkspaceBreadcrumbItem current className="min-w-10 flex-1">
           {renamingTitle !== null ? (
             <input
               autoFocus
@@ -397,10 +417,14 @@ export const ChatHeader = memo(function ChatHeader({
         </WorkspaceBreadcrumbItem>
       </WorkspaceBreadcrumb>
       <div
+        ref={headerActionsRef}
         data-chat-header-actions
         className={cn(
           "flex shrink-0 items-center justify-end gap-2 @3xl/header-actions:gap-3",
+          // Our measured reserve (fixes the Sync/Push overlap) rather than
+          // upstream's pr-16, but keep upstream's animated padding transition.
           chatHeaderActionsReserveClass({ panelControlsFloating, nativeControlsReserved }),
+          "[[data-panel-animations=true]_&]:motion-safe:transition-[padding-right] [[data-panel-animations=true]_&]:motion-safe:[transition-duration:var(--panel-animation-duration)] [[data-panel-animations=true]_&]:motion-safe:ease-out",
         )}
       >
         {isServerThread ? (

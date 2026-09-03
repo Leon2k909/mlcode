@@ -35,7 +35,7 @@ type ConnectionLayerSource =
 // Guest links sit beside the connection layer, not inside it: a friend's server
 // is somebody else's environment and must never be registered as one of ours.
 const providedClientConnectionLayer = Layer.mergeAll(
-  Connection.layer,
+  Connection.layerWithOptions({ environmentThemes: true }),
   snapshotLoaderLayer,
   friendLinkLayer,
 ).pipe(

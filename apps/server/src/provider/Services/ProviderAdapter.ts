@@ -45,6 +45,11 @@ export interface ProviderAdapterCapabilities {
    * activity is accepted. `unsupported` cannot enforce either boundary.
    */
   readonly routingOnlyToolPolicy: ProviderRoutingOnlyToolPolicy;
+  /** Starts a resumed turn with no synthetic user prompt. Omitted means the
+      adapter needs an explicit continuation instruction. */
+  readonly promptlessTurnContinuation?: boolean;
+  /** False when native conversation history cannot be rewound. */
+  readonly supportsConversationRollback?: boolean;
 }
 
 export interface ProviderThreadTurnSnapshot {

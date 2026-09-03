@@ -2,7 +2,7 @@
 
 <img src="./apps/web/public/ml-code-logo.png" alt="ML Code logo" width="96" />
 
-ML Code is a Windows-first desktop workspace for Codex, Claude Code, Cursor, Grok Build, and OpenCode. It is based on the open-source [T3 Code](https://github.com/pingdotgg/t3code) project and adds persistent employees, employee group chats, clearer employee/sub-agent identity, and Micheon/Codex pets.
+ML Code is a Windows-first desktop workspace for Codex, Claude Code, Cursor, Grok Build, OpenCode, and Google Antigravity. It is based on the open-source [T3 Code](https://github.com/pingdotgg/t3code) project and adds persistent employees, employee group chats, clearer employee/sub-agent identity, and Micheon/Codex pets.
 
 Employees can work in their own chats or collaborate in shared conversations with roles such as CEO, implementer, and reviewer. ML Code uses the provider CLIs and subscriptions already installed on your computer.
 
@@ -35,13 +35,14 @@ ML Code supports computer-use-style automation inside its collaborative browser 
 This capability is limited to the embedded preview browser. It does not control arbitrary Windows applications, the global mouse or keyboard, or the entire desktop. ML Code does not currently provide a general OS-level `computer_use` bridge like a full desktop automation host.
 
 > [!WARNING]
-> Install and authenticate at least one provider before use:
+> ML Code currently supports Codex, Claude, Cursor, Grok Build, OpenCode, and Antigravity. Install and authenticate at least one provider before use:
 >
 > - Codex: install [Codex CLI](https://developers.openai.com/codex/cli) and run `codex login`
 > - Claude: install [Claude Code](https://claude.com/product/claude-code) and run `claude auth login`
 > - Cursor: install [Cursor CLI](https://cursor.com/cli) and run `agent login`
 > - Grok Build: install [Grok Build CLI](https://x.ai/cli) and run `grok login`
 > - OpenCode: install [OpenCode](https://opencode.ai) and run `opencode auth login`
+> - Antigravity: enable it in Settings, then use **Install Antigravity** and **Sign in with Google**. No CLI is required.
 
 ## Build from source on Windows
 

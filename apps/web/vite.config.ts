@@ -156,9 +156,9 @@ export default defineConfig(() => {
     assetsInclude: ["**/*.wasm"],
     plugins: [
       devCompressionPlugin(),
-      // Split every route component out of the entry chunk: the app boots
-      // into one chat view, and the settings/pull-request/usage surfaces
-      // should not be parsed before first paint.
+      // Route components load as split chunks so settings, pull-request, and
+      // usage code stay out of the cold-start payload; the router prefetches
+      // them on navigation intent (see getRouter's defaultPreload).
       tanstackRouter({ autoCodeSplitting: true }),
       react(),
       babel({
@@ -259,6 +259,11 @@ export default defineConfig(() => {
             },
           }
         : {}),
+    },
+    // @tailwindcss/vite only emits a CSS sourcemap when devSourcemap is on; without it
+    // rolldown flags the transform as SOURCEMAP_BROKEN on every sourcemapped build.
+    css: {
+      devSourcemap: buildSourcemap !== false,
     },
     build: {
       outDir: "dist",

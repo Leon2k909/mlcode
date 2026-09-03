@@ -1,3 +1,15 @@
+// NOTE: Merge resolution (upstream/main into ML Code fork). Upstream reworked
+// this sheet into a React Navigation native-stack picker (session provider +
+// route screens). That architecture is NOT wired into the fork's navigation —
+// nothing mounts ExistingThreadSettingsRouteProvider or registers the route
+// screens — so adopting it would crash ThreadComposer at runtime and break
+// NewTaskDraftScreen, which renders the modal <ThreadSettingsSheet>. The fork's
+// modal is the surface actually mounted in this app and carries the employee
+// composer, so we keep it. Adopted upstream's low-risk refinements that fit the
+// modal: Antigravity in the primary provider set, and ModelRow accessibility +
+// unavailable-model handling. The stale fork import `useThemeColor` no longer
+// exists in the merged tree, so switches use the shared ThemedSwitch and icon
+// tints use uniwind classNames.
 import type {
   EmployeeId,
   EmployeeMap,
@@ -14,25 +26,17 @@ import {
 } from "@t3tools/shared/model";
 import * as Haptics from "expo-haptics";
 import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  Modal,
-  Platform,
-  Pressable,
-  ScrollView,
-  Switch,
-  useWindowDimensions,
-  View,
-} from "react-native";
+import { Modal, Platform, Pressable, ScrollView, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { SymbolView } from "../../components/AppSymbol";
 import { AppText as Text } from "../../components/AppText";
 import { ProviderIcon } from "../../components/ProviderIcon";
+import { ThemedSwitch } from "../../components/ThemedSwitch";
 import { cn } from "../../lib/cn";
 import { deriveMobileEmployeeEntries, employeeSelectionLabel } from "../../lib/employees";
 import type { ModelOption, ProviderGroup } from "../../lib/modelOptions";
 import { applyProviderOptionSelection, providerOptionValueLabels } from "../../lib/providerOptions";
-import { useThemeColor } from "../../lib/useThemeColor";
 import { RUNTIME_MODE_CHOICES, selectableChoices } from "./thread-settings-menu";
 import { pendingModelAfterPress } from "./thread-settings-sheet-state";
 import type { ThreadSettingsSheetCloseReason } from "./use-thread-settings-sheet-presentation";
@@ -40,9 +44,13 @@ import type { ThreadSettingsSheetCloseReason } from "./use-thread-settings-sheet
 /**
  * The everyday harnesses stay expanded; every other provider (OpenRouter
  * catalogs and friends) folds behind its header so a 300-model catalog can't
- * bury the list.
+ * bury the list. Antigravity joins the primary set on the upstream sync.
  */
-const PRIMARY_PROVIDER_DRIVERS: ReadonlySet<string> = new Set(["claudeAgent", "codex"]);
+const PRIMARY_PROVIDER_DRIVERS: ReadonlySet<string> = new Set([
+  "claudeAgent",
+  "codex",
+  "antigravity",
+]);
 
 /**
  * Compact "Fable 5 · Max · Auto" style summary for the composer trigger pill,
@@ -70,11 +78,15 @@ function ModelRow(props: {
   readonly selected: boolean;
   readonly onPress: () => void;
 }) {
-  const primaryFg = useThemeColor("--color-primary-foreground");
   return (
     <Pressable
-      accessibilityRole="button"
-      accessibilityState={{ selected: props.selected }}
+      accessibilityLabel={[props.option.label, props.option.subtitle].filter(Boolean).join(", ")}
+      accessibilityRole="radio"
+      accessibilityState={{
+        checked: props.selected,
+        disabled: props.option.isUnavailable === true,
+      }}
+      disabled={props.option.isUnavailable}
       onPress={props.onPress}
       // Selected rows get the same primary treatment as the submenu rows.
       // Subtle backgrounds (bg-subtle-strong) get overridden by the OS
@@ -83,30 +95,47 @@ function ModelRow(props: {
       className={cn(
         "mx-2.5 flex-row items-center gap-2 rounded-xl px-3 py-3.5 active:opacity-70",
         props.selected ? "bg-primary" : "bg-transparent",
+        props.option.isUnavailable ? "opacity-50" : undefined,
       )}
     >
-      <Text
-        className={cn(
-          "shrink text-sm font-t3-medium",
-          props.selected ? "text-primary-foreground" : "text-foreground",
-        )}
-        numberOfLines={1}
-      >
-        {props.option.label}
-      </Text>
-      {props.option.isDefault ? (
-        <View className="rounded-md bg-subtle-strong px-1.5 py-0.5">
-          <Text className="text-3xs font-t3-bold text-foreground-muted">Default</Text>
+      <View className="min-w-0 flex-1">
+        <View className="flex-row items-center gap-2">
+          <Text
+            className={cn(
+              "min-w-0 shrink text-sm font-t3-medium",
+              props.selected ? "text-primary-foreground" : "text-foreground",
+            )}
+            numberOfLines={1}
+          >
+            {props.option.label}
+          </Text>
+          {props.option.isDefault ? (
+            <View className="rounded-md bg-subtle-strong px-1.5 py-0.5">
+              <Text className="text-3xs font-t3-bold text-foreground-muted">Default</Text>
+            </View>
+          ) : null}
+          {props.option.isLegacy ? (
+            <View className="rounded-md bg-subtle px-1.5 py-0.5">
+              <Text className="text-3xs font-t3-bold text-foreground-muted">Legacy</Text>
+            </View>
+          ) : null}
+          {props.option.isUnavailable ? (
+            <Text className="text-xs text-foreground-muted">Unavailable</Text>
+          ) : null}
         </View>
-      ) : null}
-      {props.option.isLegacy ? (
-        <View className="rounded-md bg-subtle px-1.5 py-0.5">
-          <Text className="text-3xs font-t3-bold text-foreground-muted">Legacy</Text>
-        </View>
-      ) : null}
-      <View className="flex-1" />
+        {props.option.subtitle ? (
+          <Text className="text-xs text-foreground-muted" numberOfLines={1}>
+            {props.option.subtitle}
+          </Text>
+        ) : null}
+      </View>
       {props.selected ? (
-        <SymbolView name="checkmark" size={14} tintColor={primaryFg} type="monochrome" />
+        <SymbolView
+          name="checkmark"
+          size={14}
+          tintColorClassName="accent-primary-foreground"
+          type="monochrome"
+        />
       ) : null}
     </Pressable>
   );
@@ -125,7 +154,6 @@ function ProviderHeader(props: {
   readonly modelCount: number;
   readonly onToggle: () => void;
 }) {
-  const iconSubtle = useThemeColor("--color-icon-subtle");
   return (
     <Pressable
       accessibilityRole={props.collapsible ? "button" : "header"}
@@ -155,7 +183,7 @@ function ProviderHeader(props: {
           <SymbolView
             name={props.collapsed ? "chevron.down" : "chevron.up"}
             size={11}
-            tintColor={iconSubtle}
+            tintColorClassName="accent-icon-subtle"
             type="monochrome"
           />
         </>
@@ -171,7 +199,6 @@ function DisclosureRow(props: {
   readonly disabled?: boolean;
   readonly onPress: () => void;
 }) {
-  const iconSubtle = useThemeColor("--color-icon-subtle");
   return (
     <Pressable
       accessibilityRole="button"
@@ -189,7 +216,12 @@ function DisclosureRow(props: {
           {props.value}
         </Text>
       ) : null}
-      <SymbolView name="chevron.right" size={12} tintColor={iconSubtle} type="monochrome" />
+      <SymbolView
+        name="chevron.right"
+        size={12}
+        tintColorClassName="accent-icon-subtle"
+        type="monochrome"
+      />
     </Pressable>
   );
 }
@@ -200,7 +232,6 @@ function ChoiceRow(props: {
   readonly selected: boolean;
   readonly onPress: () => void;
 }) {
-  const primaryFg = useThemeColor("--color-primary-foreground");
   return (
     <Pressable
       accessibilityRole="button"
@@ -221,7 +252,12 @@ function ChoiceRow(props: {
       </Text>
       <View className="flex-1" />
       {props.selected ? (
-        <SymbolView name="checkmark" size={14} tintColor={primaryFg} type="monochrome" />
+        <SymbolView
+          name="checkmark"
+          size={14}
+          tintColorClassName="accent-primary-foreground"
+          type="monochrome"
+        />
       ) : null}
     </Pressable>
   );
@@ -233,8 +269,6 @@ function SwitchRow(props: {
   readonly disabled?: boolean;
   readonly onValueChange: (value: boolean) => void;
 }) {
-  const activeTrack = String(useThemeColor("--color-switch-active"));
-  const track = String(useThemeColor("--color-secondary-border"));
   return (
     <View
       className={cn(
@@ -243,11 +277,9 @@ function SwitchRow(props: {
       )}
     >
       <Text className="text-sm font-t3-medium text-foreground">{props.label}</Text>
-      <Switch
+      <ThemedSwitch
         disabled={props.disabled}
-        ios_backgroundColor={track}
         onValueChange={props.onValueChange}
-        trackColor={{ false: track, true: activeTrack }}
         value={props.value}
       />
     </View>

@@ -8,7 +8,7 @@ import type {
   ProviderInteractionMode,
   ProviderOptionSelection,
   RuntimeMode,
-  ServerProviderSkill,
+  ServerProvider,
 } from "@t3tools/contracts";
 import {
   CommandId,
@@ -29,7 +29,7 @@ import { pipe } from "effect/Function";
 
 import { useEnvironmentServerConfig, useProjects, useThreadShells } from "../../state/entities";
 import type { TurnCommandMetadata } from "../../lib/commandMetadata";
-import type { DraftComposerImageAttachment } from "../../lib/composerImages";
+import type { DraftComposerAttachment } from "../../lib/composerImages";
 import {
   preserveEmployeeRoutingForProvider,
   resolveEmployeeModelSelection,
@@ -39,6 +39,7 @@ import {
   buildModelOptions,
   groupByProvider,
   resolveDefaultableModelSelection,
+  resolveNewTaskModelSelection,
   resolveSelectableModelSelection,
 } from "../../lib/modelOptions";
 import { scopedProjectKey } from "../../lib/scopedEntities";
@@ -52,16 +53,22 @@ import {
   isComposerDraftEmpty,
   removeComposerDraftAttachment,
   replaceComposerDraftAttachments,
+  scheduleUnusedComposerAttachmentCleanup,
   setComposerDraftText,
+  setStickyComposerModelSelection,
   updateComposerDraftSettings,
   useComposerDraft,
+  useStickyComposerModelSelection,
 } from "../../state/use-composer-drafts";
 import { useBranches } from "../../state/queries";
+import {
+  capturePendingTaskEditorWriteBaseline,
+  flushPendingTaskEditorWrite,
+} from "../../state/pending-task-editor-writes";
 import { vcsEnvironment } from "../../state/vcs";
 import {
   flattenQueuedThreadMessages,
   threadOutboxManager,
-  updateThreadOutboxMessage,
   type QueuedThreadMessage,
 } from "../../state/thread-outbox";
 import {
@@ -88,6 +95,20 @@ const EMPTY_BRANCH_REFS: ReadonlyArray<VcsRef> = [];
 
 function pendingTaskDraftKey(messageId: string): string {
   return `pending-task:${messageId}`;
+}
+
+// NOTE: resolveProviderInteractionMode previously lived in the fork-deleted
+// legacy-plan-mode module. Reconstructed locally (gate the interaction mode by
+// the provider's showInteractionModeToggle) so setInteractionMode keeps
+// compiling without reintroducing legacy plan mode.
+function resolveProviderInteractionMode(
+  provider: { readonly showInteractionModeToggle?: boolean } | null | undefined,
+  mode: ProviderInteractionMode | null | undefined,
+): ProviderInteractionMode {
+  if (provider?.showInteractionModeToggle === false) {
+    return DEFAULT_PROVIDER_INTERACTION_MODE;
+  }
+  return mode ?? DEFAULT_PROVIDER_INTERACTION_MODE;
 }
 
 // The message id owned by the currently active editing session, tracked
@@ -142,7 +163,7 @@ type NewTaskFlowContextValue = {
   readonly draftKey: string | null;
   readonly editingPendingTask: QueuedThreadMessage | null;
   readonly prompt: string;
-  readonly attachments: ReadonlyArray<DraftComposerImageAttachment>;
+  readonly attachments: ReadonlyArray<DraftComposerAttachment>;
   readonly submitting: boolean;
   readonly branchQuery: string;
   readonly branchesLoading: boolean;
@@ -159,7 +180,7 @@ type NewTaskFlowContextValue = {
   readonly modelOptions: ReadonlyArray<ModelOption>;
   readonly selectedModel: ModelSelection | null;
   readonly selectedModelOption: ModelOption | null;
-  readonly selectedProviderSkills: ReadonlyArray<ServerProviderSkill>;
+  readonly selectedProviderStatus: ServerProvider | null;
   readonly providerGroups: ReadonlyArray<ProviderGroup>;
   readonly filteredBranches: ReadonlyArray<VcsRef>;
   readonly reset: () => void;
@@ -177,8 +198,9 @@ type NewTaskFlowContextValue = {
   readonly cancelEditingPendingTask: () => void;
   readonly buildPendingTaskMessage: (metadata: TurnCommandMetadata) => QueuedThreadMessage | null;
   readonly setPrompt: (value: string) => void;
-  readonly replaceAttachments: (attachments: ReadonlyArray<DraftComposerImageAttachment>) => void;
-  readonly appendAttachments: (attachments: ReadonlyArray<DraftComposerImageAttachment>) => void;
+  readonly replaceAttachments: (attachments: ReadonlyArray<DraftComposerAttachment>) => void;
+  /** Appends draft attachments; returns how many the live cap rejected. */
+  readonly appendAttachments: (attachments: ReadonlyArray<DraftComposerAttachment>) => number;
   readonly removeAttachment: (imageId: string) => void;
   readonly clearAttachments: () => void;
   readonly setSubmitting: (value: boolean) => void;
@@ -234,6 +256,9 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
   // Mirrors `editingPendingTask` synchronously so the unmount flush cannot act
   // on a task whose editing session already ended this render.
   const editingPendingTaskRef = useRef<QueuedThreadMessage | null>(null);
+  // Outbox revision this editor session may write after its predecessor save.
+  // Unrelated accepted writes still beat the dismissed session's CAS.
+  const editingRevisionRef = useRef(Promise.resolve(0));
 
   const reset = useCallback(() => {
     setSelectedEnvironmentId(null);
@@ -424,11 +449,9 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
   const runtimeMode = selectedProjectDraft.runtimeMode ?? DEFAULT_RUNTIME_MODE;
   const interactionMode = selectedProjectDraft.interactionMode ?? DEFAULT_PROVIDER_INTERACTION_MODE;
 
-  // Stored selections only count while their provider is usable on the
-  // server; otherwise the server's default model wins instead of silently
-  // targeting a disabled provider. The draft selection is an explicit pick
-  // and passes through as-is; the project default (last used, possibly from
-  // desktop) is implicit and additionally never resolves to a legacy model.
+  // Antigravity keeps unavailable selections so sign-out or a catalog change
+  // cannot switch the user's model. Other providers retain their fallback
+  // rules. Implicit defaults also exclude legacy models for those providers.
   const draftModelSelection = resolveSelectableModelSelection(
     selectedEnvironmentServerConfig,
     selectedProjectDraft.modelSelection ?? null,
@@ -437,21 +460,33 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
     selectedEnvironmentServerConfig,
     selectedProject?.defaultModelSelection ?? null,
   );
+  const storedStickyModelSelection = useStickyComposerModelSelection();
+  const stickyModelSelection = resolveDefaultableModelSelection(
+    selectedEnvironmentServerConfig,
+    storedStickyModelSelection,
+  );
   const modelOptions = useMemo(
     () =>
       buildModelOptions(
         selectedEnvironmentServerConfig,
-        draftModelSelection ?? projectDefaultModelSelection,
+        draftModelSelection ?? projectDefaultModelSelection ?? stickyModelSelection,
       ),
-    [selectedEnvironmentServerConfig, draftModelSelection, projectDefaultModelSelection],
+    [
+      selectedEnvironmentServerConfig,
+      draftModelSelection,
+      projectDefaultModelSelection,
+      stickyModelSelection,
+    ],
   );
 
-  const selectedModel =
-    draftModelSelection ??
-    projectDefaultModelSelection ??
-    modelOptions.find((option) => option.isDefault)?.selection ??
-    modelOptions[0]?.selection ??
-    null;
+  // An unsent draft keeps its explicit pick. Fresh drafts resolve the project
+  // default before the last manual app-wide selection and provider default.
+  const selectedModel = resolveNewTaskModelSelection({
+    draftSelection: draftModelSelection,
+    projectDefaultSelection: projectDefaultModelSelection,
+    stickySelection: stickyModelSelection,
+    modelOptions,
+  });
   const selectedModelKey = selectedModel
     ? `${selectedModel.instanceId}:${selectedModel.model}`
     : null;
@@ -463,11 +498,11 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
         option.selection.instanceId === selectedModel.instanceId &&
         option.selection.model === selectedModel.model,
     ) ?? null;
-  const selectedProviderSkills = useMemo(
+  const selectedProviderStatus = useMemo(
     () =>
       selectedEnvironmentServerConfig?.providers.find(
         (provider) => provider.instanceId === selectedModel?.instanceId,
-      )?.skills ?? [],
+      ) ?? null,
     [selectedEnvironmentServerConfig, selectedModel?.instanceId],
   );
   const setSelectedModelKey = useCallback(
@@ -481,16 +516,17 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       if (!option) {
         return;
       }
-      const nextSelection = options ? { ...option.selection, options } : option.selection;
+      const selection = options ? { ...option.selection, options } : option.selection;
       updateComposerDraftSettings(selectedProjectDraftKey, {
         modelSelection: selectedModel
           ? preserveEmployeeRoutingForProvider({
               currentSelection: selectedModel,
-              nextSelection,
+              nextSelection: selection,
               employees: selectedEnvironmentServerConfig?.settings.employees,
             })
-          : nextSelection,
+          : selection,
       });
+      setStickyComposerModelSelection(selection);
     },
     [
       modelOptions,
@@ -512,6 +548,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       updateComposerDraftSettings(selectedProjectDraftKey, {
         modelSelection: nextSelection,
       });
+      setStickyComposerModelSelection(nextSelection);
     },
     [selectedModel, selectedProjectDraftKey],
   );
@@ -543,7 +580,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
     [selectedProjectDraftKey],
   );
   const replaceAttachments = useCallback(
-    (nextAttachments: ReadonlyArray<DraftComposerImageAttachment>) => {
+    (nextAttachments: ReadonlyArray<DraftComposerAttachment>) => {
       if (!selectedProjectDraftKey) {
         return;
       }
@@ -551,12 +588,14 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
     },
     [selectedProjectDraftKey],
   );
+  // Returns how many attachments the live cap rejected so the caller can
+  // tell the user (a concurrent add can fill the draft mid-pick).
   const appendAttachments = useCallback(
-    (nextAttachments: ReadonlyArray<DraftComposerImageAttachment>) => {
+    (nextAttachments: ReadonlyArray<DraftComposerAttachment>): number => {
       if (!selectedProjectDraftKey) {
-        return;
+        return 0;
       }
-      appendComposerDraftAttachments(selectedProjectDraftKey, nextAttachments);
+      return appendComposerDraftAttachments(selectedProjectDraftKey, nextAttachments);
     },
     [selectedProjectDraftKey],
   );
@@ -758,10 +797,12 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
   const setInteractionMode = useCallback(
     (value: ProviderInteractionMode) => {
       if (selectedProjectDraftKey) {
-        updateComposerDraftSettings(selectedProjectDraftKey, { interactionMode: value });
+        updateComposerDraftSettings(selectedProjectDraftKey, {
+          interactionMode: resolveProviderInteractionMode(selectedProviderStatus, value),
+        });
       }
     },
-    [selectedProjectDraftKey],
+    [selectedProjectDraftKey, selectedProviderStatus],
   );
 
   const beginEditingPendingTask = useCallback((messageId: string): boolean => {
@@ -790,6 +831,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
     setSelectedProjectKey(scopedProjectKey(message.environmentId, message.creation.projectId));
     activeEditingMessageId = message.messageId;
     editingPendingTaskRef.current = message;
+    editingRevisionRef.current = capturePendingTaskEditorWriteBaseline(message.messageId);
     setEditingPendingTask(message);
     // Hold the outbox drain off this task while it is open in the editor.
     holdEditingQueuedMessage(message.messageId);
@@ -803,8 +845,8 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       }
       const draft = getComposerDraftSnapshot(selectedProjectDraftKey);
       const text = draft.text.trim();
-      // Same availability gate the composer display applies: a stored
-      // selection targeting a disabled provider must not ride into the queue.
+      // Use the displayed selection rules without substituting an unavailable
+      // Antigravity model while the task is queued.
       const draftModelSelection =
         resolveSelectableModelSelection(
           selectedEnvironmentServerConfig,
@@ -880,6 +922,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       }
       clearComposerDraft(pendingTaskDraftKey(editing.messageId));
       releaseEditingQueuedMessage(editing.messageId);
+      scheduleUnusedComposerAttachmentCleanup(editing.attachments);
     }
     setEditingPendingTask(null);
   }, []);
@@ -932,17 +975,28 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
         return;
       }
 
-      // update() rewrites the task only if it is still queued — a concurrent
-      // delete or delivery wins, so the flush cannot resurrect it.
-      void updateThreadOutboxMessage(message)
-        .then(() => {
+      // The write handoff lets a reopened editor follow this editor's pending
+      // save. Its CAS still rejects unrelated queue edits, deletes, and
+      // deliveries, so the flush cannot resurrect or overwrite them.
+      void flushPendingTaskEditorWrite({
+        message,
+        baseline: editingRevisionRef.current,
+        draftKey: pendingTaskDraftKey(editing.messageId),
+      })
+        .then((savedDraftStillCurrent) => {
           // If this task was reopened (possibly in a fresh provider) while
           // the save was in flight, that session owns the draft and the lock.
           if (activeEditingMessageId === editing.messageId) {
             return;
           }
+          if (!savedDraftStillCurrent) {
+            // A newer queue write won the CAS, or a newer editor changed this
+            // draft. Keep the draft and drain lock so reopening can retry it.
+            return;
+          }
           clearComposerDraft(pendingTaskDraftKey(editing.messageId));
           releaseEditingQueuedMessage(editing.messageId);
+          scheduleUnusedComposerAttachmentCleanup(editing.attachments);
         })
         .catch((error) => {
           // Keep the drain lock and the draft: delivering the stale payload
@@ -988,7 +1042,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       modelOptions,
       selectedModel,
       selectedModelOption,
-      selectedProviderSkills,
+      selectedProviderStatus,
       providerGroups,
       filteredBranches,
       reset,
@@ -1045,7 +1099,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       selectedModelKey,
       selectedModelOption,
       selectedProjectDraftKey,
-      selectedProviderSkills,
+      selectedProviderStatus,
       setSelectedModelOptions,
       setEmployeeSelection,
       selectedProject,

@@ -25,6 +25,12 @@ import {
   type UnifiedSettings,
 } from "@t3tools/contracts/settings";
 import { safeErrorLogAttributes } from "@t3tools/client-runtime/errors";
+import {
+  findSharedSettingsMismatches,
+  pickSharedServerSettings,
+  splitSharedServerPatch,
+  supportsSharedSettingsSync,
+} from "@t3tools/client-runtime/state/shared-settings";
 import { ensureLocalApi } from "~/localApi";
 import {
   getThemeDefinition,
@@ -34,8 +40,10 @@ import {
   themeAllowsSidebarArtwork,
 } from "~/themePalette";
 import * as Struct from "effect/Struct";
+import { toastManager } from "~/components/ui/toast";
+import { isHostedStaticApp } from "~/hostedPairing";
 import { primaryServerSettingsAtom, serverEnvironment } from "~/state/server";
-import { usePrimaryEnvironment } from "~/state/environments";
+import { useEnvironments, usePrimaryEnvironment } from "~/state/environments";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { useTheme } from "./useTheme";
 
@@ -232,7 +240,9 @@ export function mergeEnvironmentSettings(
   serverSettings: ServerSettings,
   clientSettings: ClientSettings,
 ): UnifiedSettings {
-  return { ...serverSettings, ...clientSettings };
+  // Decode drops retired client keys, but older untyped persistence adapters
+  // can still return them. Server-owned values must always win.
+  return { ...clientSettings, ...serverSettings };
 }
 
 function useMergedSettings<T>(
@@ -321,37 +331,97 @@ export function usePrimarySettings<T = UnifiedSettings>(
   return useMergedSettings(useAtomValue(primaryServerSettingsAtom), selector);
 }
 
+export const PRIMARY_SETTINGS_UNAVAILABLE_MESSAGE =
+  "This setting is saved on a server, and the hosted app is not anchored to one. Change it from the desktop app or from the server's own address.";
+
+/**
+ * Whether primary-scoped server settings have a server to live on. The
+ * hosted app connects to every environment as a remote, so it has no primary:
+ * `usePrimarySettings` reads schema defaults there and writes have nowhere
+ * to go. Desktop and server-served web always have one.
+ */
+export function usePrimarySettingsAvailable(): boolean {
+  const primaryEnvironment = usePrimaryEnvironment();
+  return primaryEnvironment !== null || !isHostedStaticApp();
+}
+
+/** Environments that can receive a shared settings write right now. */
+function useSharedSettingsSyncTargetIds(): ReadonlyArray<EnvironmentId> {
+  const { environments } = useEnvironments();
+  return useMemo(
+    () =>
+      environments
+        .filter(supportsSharedSettingsSync)
+        .map((environment) => environment.environmentId),
+    [environments],
+  );
+}
+
 /**
  * Returns an updater that routes each key to the correct backing store.
  *
  * Server keys are optimistically patched in atom-backed server state, then
- * persisted via RPC. Client keys go through client persistence.
+ * persisted via RPC. Shared server keys (see `SHARED_SERVER_SETTING_KEYS`)
+ * are written to every eligible sync target, not only the selected target, so
+ * a user preference does not silently drift between machines. Client keys go
+ * through client persistence.
  */
 function useUpdateSettingsTarget(environmentId: EnvironmentId | null) {
   const persistServerSettings = useAtomCommand(
     serverEnvironment.updateSettings,
     "server settings update",
   );
+  const sharedSettingsSyncTargetIds = useSharedSettingsSyncTargetIds();
   const updateSettings = useCallback(
     async (patch: UnifiedSettingsPatch): Promise<SettingsUpdateResult> => {
       const { serverPatch, clientPatch } = splitPatch(patch);
       let failure: SettingsUpdateResult | null = null;
 
       if (Object.keys(serverPatch).length > 0) {
-        if (environmentId) {
-          try {
-            const result = await persistServerSettings({
-              environmentId,
-              input: { patch: serverPatch },
-            });
-            if (result._tag === "Failure") {
+        const { sharedPatch, localPatch } = splitSharedServerPatch(serverPatch);
+        // Dropping the write silently leaves the control looking saved.
+        const warnUnsaved = () =>
+          toastManager.add({
+            type: "warning",
+            title: "Setting not saved",
+            description: PRIMARY_SETTINGS_UNAVAILABLE_MESSAGE,
+          });
+        if (Object.keys(localPatch).length > 0) {
+          if (environmentId) {
+            // Await the primary-only write so the fork's SettingsUpdateResult
+            // contract (the employees panel's save feedback) still reflects a
+            // real failure instead of always reporting success.
+            try {
+              const result = await persistServerSettings({
+                environmentId,
+                input: { patch: localPatch },
+              });
+              if (result._tag === "Failure") {
+                failure = { ok: false, reason: "request-failed" };
+              }
+            } catch {
               failure = { ok: false, reason: "request-failed" };
             }
-          } catch {
-            failure = { ok: false, reason: "request-failed" };
+          } else {
+            failure = { ok: false, reason: "no-primary-environment" };
+            warnUnsaved();
           }
-        } else {
-          failure = { ok: false, reason: "no-primary-environment" };
+        }
+        if (Object.keys(sharedPatch).length > 0) {
+          const targets = new Set(sharedSettingsSyncTargetIds);
+          if (environmentId) {
+            targets.add(environmentId);
+          }
+          if (targets.size === 0) {
+            failure = { ok: false, reason: "no-primary-environment" };
+            warnUnsaved();
+          }
+          for (const targetId of targets) {
+            void persistServerSettings({
+              environmentId: targetId,
+              input: { patch: sharedPatch },
+            });
+          }
         }
       }
       if (Object.keys(clientPatch).length > 0) {
@@ -362,10 +432,64 @@ function useUpdateSettingsTarget(environmentId: EnvironmentId | null) {
       }
       return failure ?? { ok: true };
     },
-    [environmentId, persistServerSettings],
+    [environmentId, persistServerSettings, sharedSettingsSyncTargetIds],
   );
 
   return updateSettings;
+}
+
+/**
+ * Shared-settings sync targets whose values differ from the primary's,
+ * plus an action that writes the primary's values to all of them. Drift
+ * happens when an environment was offline during an edit or was changed by
+ * an older client.
+ */
+export function useSharedSettingsSync() {
+  const primaryEnvironment = usePrimaryEnvironment();
+  const primaryEnvironmentId = primaryEnvironment?.environmentId ?? null;
+  // Read the loaded config, not `primaryServerSettingsAtom`: that atom falls
+  // back to defaults while the primary is disconnected, and "apply to all"
+  // must never push defaults over real values. Same for a primary too old to
+  // hold the shared keys: its decoded defaults are not a source of truth.
+  const primarySettings =
+    primaryEnvironment !== null && supportsSharedSettingsSync(primaryEnvironment)
+      ? (primaryEnvironment.serverConfig?.settings ?? null)
+      : null;
+  const { environments } = useEnvironments();
+  const persistServerSettings = useAtomCommand(
+    serverEnvironment.updateSettings,
+    "server settings update",
+  );
+
+  const mismatches = useMemo(
+    () =>
+      findSharedSettingsMismatches({
+        primaryEnvironmentId,
+        primarySettings,
+        environments: environments.map((environment) => ({
+          environmentId: environment.environmentId,
+          label: environment.label,
+          syncEligible: supportsSharedSettingsSync(environment),
+          settings: environment.serverConfig?.settings ?? null,
+        })),
+      }),
+    [environments, primaryEnvironmentId, primarySettings],
+  );
+
+  const applyToAll = useCallback(() => {
+    if (primarySettings === null) {
+      return;
+    }
+    const patch = pickSharedServerSettings(primarySettings);
+    for (const mismatch of mismatches) {
+      void persistServerSettings({
+        environmentId: mismatch.environmentId,
+        input: { patch },
+      });
+    }
+  }, [mismatches, persistServerSettings, primarySettings]);
+
+  return { mismatches, applyToAll };
 }
 
 export function useUpdateEnvironmentSettings(environmentId: EnvironmentId) {

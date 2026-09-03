@@ -47,6 +47,7 @@ import { SettingsAuthRouteScreen } from "./features/settings/SettingsAuthRouteSc
 import { SettingsEnvironmentsRouteScreen } from "./features/settings/SettingsEnvironmentsRouteScreen";
 import { SettingsLegalRouteScreen } from "./features/settings/SettingsLegalRouteScreen";
 import { SettingsProjectGroupingRouteScreen } from "./features/settings/SettingsProjectGroupingRouteScreen";
+import { SettingsProviderSetupRouteScreen } from "./features/settings/SettingsProviderSetupRouteScreen";
 import { UsageRouteScreen } from "./features/usage/UsageRouteScreen";
 import { SettingsRouteScreen } from "./features/settings/SettingsRouteScreen";
 import { ShowcaseCaptureCoordinator } from "./features/showcase/ShowcaseCaptureCoordinator";
@@ -64,6 +65,7 @@ import { NATIVE_LIQUID_GLASS_SUPPORTED } from "./native/native-glass";
 import { nativeHeaderScrollEdgeEffects } from "./native/StackHeader";
 import { FORM_SHEET_PRESENTATION_OPTIONS } from "./native/sheet-surface";
 import { useThreadOutboxDrain } from "./state/use-thread-outbox-drain";
+import { useComposerAttachmentUploadWorker } from "./state/composer-attachment-uploads";
 
 const HEADER_SCROLL_EDGE_EFFECTS = nativeHeaderScrollEdgeEffects(Platform.OS, Platform.Version);
 
@@ -161,6 +163,13 @@ const SettingsContentStack = createNativeStackNavigator({
       linking: "environment-new",
       options: {
         title: "Add Environment",
+      },
+    }),
+    SettingsProviderSetup: createNativeStackScreen({
+      screen: SettingsProviderSetupRouteScreen,
+      linking: "providers/:environmentId/:instanceId",
+      options: {
+        title: "Antigravity",
       },
     }),
     SettingsArchive: createNativeStackScreen({
@@ -317,6 +326,7 @@ function workspacePathFromState(state: NavigationState): string {
 // each enqueue, shell change, or reconnect.
 function ThreadOutboxDrainWorker() {
   useThreadOutboxDrain();
+  useComposerAttachmentUploadWorker();
   return null;
 }
 
@@ -594,12 +604,12 @@ export const RootStack = createNativeStackNavigator({
     }),
   },
 });
-type RootStackType = typeof RootStack;
 
 const navigationPathConfig = {
   screens: createPathConfigForStaticNavigation(RootStack) ?? {},
 };
 
-declare module "@react-navigation/native" {
-  interface RootNavigator extends RootStackType {}
-}
+// NOTE: the global navigation param list is registered in
+// navigation-param-list.d.ts from `typeof RootStack`. Augmenting `RootNavigator`
+// here does not reach core's global (the augmentation lands on the native
+// re-export, not the core declaration), so registration lives in that file.

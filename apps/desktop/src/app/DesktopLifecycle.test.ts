@@ -103,73 +103,7 @@ describe("DesktopLifecycle", () => {
   for (const platform of ["darwin", "win32", "linux"] satisfies ReadonlyArray<NodeJS.Platform>) {
     it.effect(`lets the updater's quit event proceed on ${platform}`, () => {
       const appListeners = new Map<string, (...args: readonly unknown[]) => void>();
-
-      const electronAppLayer = Layer.succeed(ElectronApp.ElectronApp, {
-        metadata: Effect.die("unexpected metadata read"),
-        name: Effect.succeed("ML Code"),
-        systemLocale: Effect.succeed("en-US"),
-        whenReady: Effect.void,
-        quit: Effect.void,
-        exit: () => Effect.void,
-        relaunch: () => Effect.void,
-        setPath: () => Effect.void,
-        setName: () => Effect.void,
-        setAboutPanelOptions: () => Effect.void,
-        setAppUserModelId: () => Effect.void,
-        getAppMetrics: Effect.succeed([]),
-        isDefaultProtocolClient: () => Effect.succeed(false),
-        setAsDefaultProtocolClient: () => Effect.succeed(true),
-        setDesktopName: () => Effect.void,
-        setDockIcon: () => Effect.void,
-        appendCommandLineSwitch: () => Effect.void,
-        removeCommandLineSwitch: () => Effect.void,
-        onBeforeQuitForUpdate: (listener) =>
-          Effect.acquireRelease(
-            Effect.sync(() => {
-              appListeners.set("before-quit-for-update", listener);
-            }),
-            () =>
-              Effect.sync(() => {
-                appListeners.delete("before-quit-for-update");
-              }),
-          ).pipe(Effect.asVoid),
-        on: (eventName, listener) =>
-          Effect.acquireRelease(
-            Effect.sync(() => {
-              appListeners.set(
-                eventName,
-                listener as unknown as (...args: readonly unknown[]) => void,
-              );
-            }),
-            () =>
-              Effect.sync(() => {
-                appListeners.delete(eventName);
-              }),
-          ).pipe(Effect.asVoid),
-      } satisfies ElectronApp.ElectronApp["Service"]);
-
-      const electronThemeLayer = Layer.succeed(ElectronTheme.ElectronTheme, {
-        shouldUseDarkColors: Effect.succeed(false),
-        setSource: () => Effect.void,
-        onUpdated: () => Effect.void,
-      });
-
-      const desktopWindowLayer = Layer.succeed(DesktopWindow.DesktopWindow, {
-        createMain: Effect.die("unexpected window creation"),
-        ensureMain: Effect.die("unexpected window creation"),
-        revealOrCreateMain: Effect.die("unexpected window creation"),
-        activate: Effect.void,
-        createMainIfBackendReady: Effect.void,
-        showConnectingSplash: Effect.void,
-        handleBackendReady: () => Effect.void,
-        handleBackendNotReady: Effect.void,
-        flushMainWindowBounds: Effect.void,
-        dispatchMenuAction: () => Effect.void,
-        zoomMain: () => Effect.void,
-        syncAppearance: Effect.void,
-        setPetOverlayInteractive: () => Effect.void,
-      });
-
+      let windowsDestroyed = false;
       const environmentLayer = Layer.succeed(DesktopEnvironment.DesktopEnvironment, {
         platform,
         isDevelopment: false,
@@ -178,7 +112,13 @@ describe("DesktopLifecycle", () => {
       const layer = DesktopLifecycle.layer.pipe(
         Layer.provideMerge(makeElectronAppLayer(appListeners)),
         Layer.provideMerge(electronThemeLayer),
-        Layer.provideMerge(makeElectronWindowLayer()),
+        Layer.provideMerge(
+          makeElectronWindowLayer(
+            Effect.sync(() => {
+              windowsDestroyed = true;
+            }),
+          ),
+        ),
         Layer.provideMerge(makeDesktopWindowLayer()),
         Layer.provideMerge(environmentLayer),
         Layer.provideMerge(DesktopShutdown.layer),
@@ -191,6 +131,7 @@ describe("DesktopLifecycle", () => {
           yield* lifecycle.register;
 
           appListeners.get("before-quit-for-update")?.();
+          yield* Effect.yieldNow;
 
           let prevented = false;
           const event = {
@@ -204,6 +145,7 @@ describe("DesktopLifecycle", () => {
             prevented,
             "cancelling this event prevents the updater from completing its relaunch",
           );
+          assert.isTrue(windowsDestroyed);
 
           const state = yield* DesktopState.DesktopState;
           assert.isTrue(yield* Ref.get(state.quitting));

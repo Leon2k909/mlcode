@@ -1,3 +1,5 @@
+import type { DraftId } from "~/composerDraftStore";
+import { useComposerDraftStore } from "~/composerDraftStore";
 import type { ScopedProjectRef } from "@t3tools/contracts";
 import { displayMlCodeProjectName } from "@t3tools/shared/productBranding";
 import { scopedProjectKey, scopeProjectRef } from "@t3tools/client-runtime/environment";
@@ -11,6 +13,7 @@ import {
   useSetProjectHidden,
   useUpdateClientSettings,
 } from "~/hooks/useSettings";
+import { hasExplicitComposerModelSelection } from "~/lib/chatThreadActions";
 import { selectProjectGroupingSettings } from "~/logicalProject";
 import {
   buildSidebarProjectPickerEntries,
@@ -33,6 +36,7 @@ import { toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
 interface DraftHeroHeadlineProps {
+  readonly draftId: DraftId | null;
   readonly activeProjectRef: ScopedProjectRef | null;
   readonly activeProjectTitle: string | null;
 }
@@ -66,6 +70,7 @@ function ProjectLocation({
 }
 
 export function DraftHeroHeadline({
+  draftId,
   activeProjectRef,
   activeProjectTitle,
 }: DraftHeroHeadlineProps) {
@@ -79,6 +84,12 @@ export function DraftHeroHeadline({
   const updateClientSettings = useUpdateClientSettings();
   const setProjectHidden = useSetProjectHidden();
   const handleNewThread = useNewThreadHandler();
+  const setLogicalProjectDraftThreadId = useComposerDraftStore(
+    (store) => store.setLogicalProjectDraftThreadId,
+  );
+  const getComposerDraft = useComposerDraftStore((store) => store.getComposerDraft);
+  const applyStickyState = useComposerDraftStore((store) => store.applyStickyState);
+  const setModelSelection = useComposerDraftStore((store) => store.setModelSelection);
   const openAddProject = useCallback(() => openCommandPalette({ open: "add-project" }), []);
 
   const environmentLabelById = useMemo(
@@ -202,12 +213,26 @@ export function DraftHeroHeadline({
               return;
             }
             const project = entry.targetProject;
-            // Changing the repo of a draft moves the typed content along:
-            // the user started writing in the wrong project, not a new task.
-            void handleNewThread(scopeProjectRef(project.environmentId, project.id), {
-              replace: true,
-              carryComposerContent: true,
-            });
+            if (!draftId) {
+              return;
+            }
+            // Project selection changes the target of the open draft in
+            // place. The prompt stays in the same composer session, so the
+            // sidebar only gets a draft row if the user later navigates away.
+            const currentDraft = getComposerDraft(draftId);
+            setLogicalProjectDraftThreadId(
+              entry.group.projectKey,
+              scopeProjectRef(project.environmentId, project.id),
+              draftId,
+            );
+            if (!hasExplicitComposerModelSelection(currentDraft)) {
+              applyStickyState(draftId);
+              if (project.defaultModelSelection) {
+                setModelSelection(draftId, project.defaultModelSelection, {
+                  replaceOptions: true,
+                });
+              }
+            }
           }}
         >
           {visibleProjectEntries.map(({ group, targetProject }) => {
