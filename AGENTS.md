@@ -1,4 +1,6 @@
-# T3 Code
+# ML Code
+
+ML Code builds on T3 Code. Product references below describe the upstream architecture unless a section specifies ML Code behavior.
 
 T3 Code is a minimal GUI for coding agents. A Node WebSocket server wraps provider CLIs and agents (Codex, Claude Code, Cursor, Grok, OpenCode, Antigravity, Kiro, Pi, Muse Code, fx) and serves web, desktop, and mobile clients.
 
@@ -77,6 +79,8 @@ See [00_development.md](docs/operations/00_development.md) for setup, ports, see
 
 ## Verifying
 
+- Ask before using a browser or computer-use tool to verify ML Code unless the user already authorized it.
+
 - Before you push, run `vp run check:changed`. **Do not run repo-wide checks** (`vp check`, `vp run -r test`, `vp run -r typecheck`) unless asked—CI owns the full suite.
 - Iterate with `vp test run <files>` (add `-t "<name>"` for large files) and `vp run typecheck` (`effect-tsgo tsrs --noEmit`). Run `node -e` snippets from the owning package (`effect` does not resolve from repo root).
 - Follow [15_testing.md](docs/internals/15_testing.md) for what to test, bug-fix proof, draining async work (no sleeps/polling), web browser tests (`await using screen = await render(...)`), and real-app [Scenarios](docs/internals/15_testing.md#scenarios) (`vp run scenarios:prove`).
@@ -106,6 +110,14 @@ Most code changes do not need an internal documentation change. Agents can read 
 - When a documented decision or constraint changes, rewrite or remove the affected text. Do not append another account of the new behavior. A new internal page needs a distinct, durable reason to exist.
 - `docs/user/` helps users accomplish tasks in the shipped product's voice, without implementation details or contributor tooling. Focus on what a feature does, how to start, and anything unintuitive—not descriptions of buttons, layouts, or UI tweaks.
 - `docs/operations/` holds maintainer setup, release, and debugging runbooks. Keep end-user server instructions in `docs/user/`.
+
+## ML Code releases
+
+The installed Windows desktop app updates through Nightly. After a completed user-requested repository change, commit the task-owned changes, push the verified commit to `origin/main`, and publish the next Nightly unless the user opts out. Stable releases are disabled.
+
+- Create and push `vX.Y.Z-nightly.YYYYMMDD.N` on the exact verified `main` commit to trigger `.github/workflows/release.yml`.
+- Monitor the workflow through completion and verify that the GitHub prerelease contains the Windows installer, its blockmap, and `nightly.yml`.
+- Diagnose and repair publication failures within the task. Report any credential or GitHub-side blocker.
 
 ## Plans and work artifacts
 

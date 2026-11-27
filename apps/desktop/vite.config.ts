@@ -1,5 +1,6 @@
 import "vite-plus/test/config";
 import * as NodeOS from "node:os";
+import { fileURLToPath } from "node:url";
 
 import { defaultInclude, defineConfig } from "vite-plus";
 import { Rolldown } from "vite-plus/pack";
@@ -119,6 +120,9 @@ export default defineConfig({
         "src/snapShot/RegionSnapShotWorker.ts",
         "src/snapShot/SnapShotAccessibilityWorker.ts",
       ],
+      alias: {
+        "@t3tools/contracts": fileURLToPath(import.meta.resolve("@t3tools/contracts")),
+      },
       clean: false,
       deps: {
         alwaysBundle: (id) => !id.startsWith("node:") && !isMainProcessExternal(id),
@@ -147,6 +151,9 @@ export default defineConfig({
       outExtensions: () => ({ js: ".cjs" }),
       define: publicConfigDefine,
       entry: ["src/preload.ts"],
+      alias: {
+        "@clerk/electron/preload": fileURLToPath(import.meta.resolve("@clerk/electron/preload")),
+      },
       deps: {
         // Sandboxed preloads cannot resolve imports inside ASAR; bundle Clerk's bridge.
         alwaysBundle: (id) => id === "@clerk/electron" || id.startsWith("@clerk/electron/"),

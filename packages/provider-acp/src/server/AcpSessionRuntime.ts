@@ -1752,6 +1752,7 @@ export const make = Effect.fn("AcpSessionRuntime.make")(function* (
     Effect.forkIn(runtimeScope),
   );
 
+  yield* HostProcess.deprioritizeAgentProcess(child.pid);
   const acpContext = yield* Layer.build(
     EffectAcpClient.layerChildProcess(child, {
       ...(options.transformStdout ? { transformStdout: options.transformStdout } : {}),

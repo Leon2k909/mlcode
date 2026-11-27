@@ -49,6 +49,7 @@ export interface UpdatesHarnessOptions {
 export function makeHarness(options: UpdatesHarnessOptions = {}) {
   let checkCount = 0;
   let quitAndInstallCount = 0;
+  let silentInstall: boolean | undefined;
   let downloadCount = 0;
   let allowDowngrade = false;
   const checkAllowedDowngrade: boolean[] = [];
@@ -101,9 +102,10 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
     downloadUpdate: Effect.sync(() => {
       downloadCount += 1;
     }).pipe(Effect.andThen(options.downloadUpdate ?? Effect.void)),
-    quitAndInstall: () =>
+    quitAndInstall: ({ isSilent }) =>
       Effect.sync(() => {
         quitAndInstallCount += 1;
+        silentInstall = isSilent;
         installSteps.push("quitAndInstall");
       }).pipe(Effect.andThen(options.quitAndInstall ?? Effect.void)),
     on: (eventName, listener) =>
@@ -317,6 +319,7 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
     layer,
     checkCount: () => checkCount,
     quitAndInstalls: () => quitAndInstallCount,
+    silentInstall: () => silentInstall,
     installSteps,
     updateRestartMarkers,
     updateInProgressMarker: () =>

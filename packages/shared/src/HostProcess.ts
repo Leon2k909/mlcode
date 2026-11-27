@@ -133,3 +133,12 @@ export const UserId = Context.Reference<number | undefined>("@t3tools/shared/Hos
 });
 
 export const isWindows = Effect.map(Platform, (platform) => platform === "win32");
+
+export const deprioritizeAgentProcess = (pid: number): Effect.Effect<void> =>
+  Effect.sync(() => {
+    try {
+      NodeOS.setPriority(pid, NodeOS.constants.priority.PRIORITY_BELOW_NORMAL);
+    } catch {
+      // The child may have exited or the host may deny the priority change.
+    }
+  });
