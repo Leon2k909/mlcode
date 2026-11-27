@@ -1,6 +1,6 @@
 import "vite-plus/test/config";
 import * as NodeOS from "node:os";
-import { fileURLToPath } from "node:url";
+import * as NodeURL from "node:url";
 
 import { defaultInclude, defineConfig } from "vite-plus";
 import { Rolldown } from "vite-plus/pack";
@@ -121,7 +121,7 @@ export default defineConfig({
         "src/snapShot/SnapShotAccessibilityWorker.ts",
       ],
       alias: {
-        "@t3tools/contracts": fileURLToPath(import.meta.resolve("@t3tools/contracts")),
+        "@t3tools/contracts": NodeURL.fileURLToPath(import.meta.resolve("@t3tools/contracts")),
       },
       clean: false,
       deps: {
@@ -152,7 +152,9 @@ export default defineConfig({
       define: publicConfigDefine,
       entry: ["src/preload.ts"],
       alias: {
-        "@clerk/electron/preload": fileURLToPath(import.meta.resolve("@clerk/electron/preload")),
+        "@clerk/electron/preload": NodeURL.fileURLToPath(
+          import.meta.resolve("@clerk/electron/preload"),
+        ),
       },
       deps: {
         // Sandboxed preloads cannot resolve imports inside ASAR; bundle Clerk's bridge.

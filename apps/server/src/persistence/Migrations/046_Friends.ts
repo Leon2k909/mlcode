@@ -1,19 +1,8 @@
 import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
 
-/**
- * Peer-to-peer friends: linked environments, the threads shared with them, and
- * the local identity we present.
- *
- * `friends.invite_subject` is the inbound half of a link — the session subject
- * that friend authenticates with when they reach us — and `access_token` is the
- * outbound half, the credential we hold to reach them. Both halves are unique
- * per friend so a revocation is a single row delete.
- *
- * `announce_code` is the reciprocal friend code we minted for them and still
- * need delivered. Our client carries it over on its next guest session so the
- * server never has to open one of its own.
- */
+// Each friend row holds both directions of the link so one delete revokes it.
+// The client delivers the reciprocal announce_code on its next guest session.
 export default Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
 
