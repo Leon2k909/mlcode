@@ -323,7 +323,8 @@ export const hasPendingMigrations = Effect.fn("hasPendingMigrations")(function* 
   const rows = yield* sql<{ readonly latestId: number | null; readonly previewRows: number }>`
     SELECT
       MAX(migration_id) AS latestId,
-      SUM(name = 'OrchestrationV2' AND migration_id IN (53, 54)) AS previewRows
+      SUM((name = 'OrchestrationV2' AND migration_id IN (53, 54)) OR
+          (name = 'ProjectionThreadMessageEmployeeId' AND migration_id = 41)) AS previewRows
     FROM effect_sql_migrations
   `;
   const row = rows[0];
@@ -343,7 +344,7 @@ export const runMigrations = Effect.fn("runMigrations")(function* ({
   // The desktop waits past its readiness budget until the finished line follows this one.
   const hasPending = yield* hasPendingMigrations();
   if (hasPending) yield* Effect.log(DATABASE_MIGRATIONS_STARTED_MESSAGE);
-  if (hasPending) yield* reconcileMlCodeMigrations();
+  if (hasPending) yield* reconcileMlCodeMigrations(migrationManifest);
   const includesV2 =
     toMigrationInclusive === undefined || toMigrationInclusive >= FIRST_V2_MIGRATION_ID;
   // The reconcile takes the write lock; CLI startup must not contend with the server for a no-op.

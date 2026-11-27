@@ -11,8 +11,10 @@ import ThreadGoal from "./Migrations/043_ProjectionThreadsGoal.ts";
 import MessageModelSelection from "./Migrations/044_ProjectionThreadMessageModelSelection.ts";
 import ThreadContinuation from "./Migrations/045_ProjectionThreadsContinuation.ts";
 import Friends from "./Migrations/046_Friends.ts";
+import AutoSettleDisabledAt from "./Migrations/054_ProjectionThreadsAutoSettleDisabledAt.ts";
+import OrchestrationV2 from "./Migrations/055_OrchestrationV2.ts";
 
-it.effect("upgrades the published ML Code migration history through upstream", () =>
+it.effect.each(["legacy", "mixed V2"])("upgrades the %s ML Code migration history", (variant) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
     yield* runMigrations({ toMigrationInclusive: 47 });
@@ -30,6 +32,14 @@ it.effect("upgrades the published ML Code migration history through upstream", (
     for (const [id, name, load] of yield* forkLoader) {
       yield* yield* load;
       yield* sql`INSERT INTO effect_sql_migrations (migration_id, name) VALUES (${id}, ${name})`;
+    }
+    if (variant === "mixed V2") {
+      yield* Migrator.make({})({
+        loader: Migrator.fromRecord({
+          "54_ProjectionThreadsAutoSettleDisabledAt": AutoSettleDisabledAt,
+          "55_OrchestrationV2": OrchestrationV2,
+        }),
+      });
     }
 
     yield* runMigrations();
