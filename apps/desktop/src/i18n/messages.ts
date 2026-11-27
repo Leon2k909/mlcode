@@ -43,8 +43,12 @@ export function m(message: string, variables: Readonly<Record<string, string>> =
       : activeCatalog[hashMessage(source, { ...options, $format: "ICU" })];
   // Untranslated text is English, so it takes English plural rules.
   return target === undefined
-    ? gtFallback(source, { ...options, $locale: DEFAULT_LOCALE })
-    : gtFallback(target, { ...options, $locale: activeLocale, $_fallback: source });
+    ? gtFallback(source.replaceAll("T3 Code", "ML Code"), { ...options, $locale: DEFAULT_LOCALE })
+    : gtFallback(target.replace(/T3[ -]Code/g, "ML Code"), {
+        ...options,
+        $locale: activeLocale,
+        $_fallback: source.replaceAll("T3 Code", "ML Code"),
+      });
 }
 
 /** Runs `listener` after each switch to a different UI language. */

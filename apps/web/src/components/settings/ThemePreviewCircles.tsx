@@ -1,6 +1,7 @@
 import { useGT } from "gt-react";
 import { MoonIcon, SunIcon } from "lucide-react";
 import type { CSSProperties } from "react";
+import { APP_BASE_NAME } from "../../branding";
 import {
   STANDARD_THEME_PREVIEW_COLORS as SHARED_STANDARD_THEME_PREVIEW_COLORS,
   THEME_PREVIEW_RENDER_SPECS,
@@ -59,7 +60,7 @@ const STANDARD_THEME_PREVIEW_COLORS: Record<
 export const STANDARD_THEME_CARDS: ReadonlyArray<ThemeCardDefinition> = [
   {
     id: "default",
-    label: "T3 Code",
+    label: APP_BASE_NAME,
     previews: (["light", "dark"] as const).map((mode) => ({
       mode,
       colors: STANDARD_THEME_PREVIEW_COLORS[mode],

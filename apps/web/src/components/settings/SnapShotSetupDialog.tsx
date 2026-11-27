@@ -31,7 +31,7 @@ const GNOME_ACCESS_COPY = {
   "not-installed": {
     title: msg("Install the extension"),
     description: msg(
-      "The T3 Code GNOME extension lets you capture other windows and bring them into your draft. Sign out once after installing.",
+      "The ML Code GNOME extension lets you capture other windows and bring them into your draft. Sign out once after installing.",
     ),
   },
   "restart-required": {
@@ -178,7 +178,7 @@ export function SnapShotSetupDialog({
                       ? gt("Update the capture helper")
                       : gt("Allow snapshots"),
                   description: gt(
-                    "T3 Code's capture helper lets you capture other apps and return to your draft. It's included with T3 Code.",
+                    "ML Code's capture helper lets you capture other apps and return to your draft. It's included with ML Code.",
                   ),
                 }
           : backend === "niri"
@@ -370,7 +370,7 @@ export function SnapShotSetupDialog({
                   ))}
                   {step === "access" && (backend === "gnome" || helperBackend) ? (
                     <p>
-                      <T>Included with T3 Code. No download needed.</T>
+                      <T>Included with ML Code. No download needed.</T>
                     </p>
                   ) : null}
                   {step === "access" && backend === "gnome" && extension?.status === "enabled" ? (
