@@ -10,8 +10,11 @@ import {
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import { it as effectIt } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
+import * as Path from "effect/Path";
 import * as Layer from "effect/Layer";
 import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
@@ -28,6 +31,7 @@ import {
   layerSettingsWatcher,
   providerHostLayer,
   seedDevReplayInstance,
+  seedInstalledWindowsProviders,
 } from "./ProviderInstanceRegistryHydration.ts";
 import * as ProviderHostLive from "./ProviderHostLive.ts";
 import { ProviderInstanceRegistryMutator } from "./ProviderInstanceRegistryMutator.ts";
@@ -105,6 +109,42 @@ describe("deriveProviderInstanceConfigMap", () => {
     expect(merged[instanceId]).toBe(settings.providerInstances[instanceId]);
   });
 });
+
+effectIt.effect("adds detected Windows providers and preserves a disabled instance", () =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const home = yield* fs.makeTempDirectoryScoped();
+    const antigravityDirectory = path.join(home, "Programs", "antigravity");
+    yield* fs.makeDirectory(antigravityDirectory, { recursive: true });
+    yield* fs.writeFileString(path.join(antigravityDirectory, "Antigravity.exe"), "");
+    yield* fs.writeFileString(path.join(home, "opencode.exe"), "");
+    const config = yield* ServerConfig.ServerConfig;
+    const settings = yield* ServerSettingsService;
+    yield* seedInstalledWindowsProviders().pipe(
+      Effect.provideService(ServerConfig.ServerConfig, { ...config, mode: "desktop" }),
+      Effect.provideService(HostProcess.Platform, "win32"),
+      Effect.provideService(HostProcess.Environment, { LOCALAPPDATA: home, PATH: home }),
+    );
+    const { providerInstances } = yield* settings.getSettings;
+    expect(providerInstances[ProviderInstanceId.make("antigravity")]?.enabled).toBe(true);
+    expect(providerInstances[ProviderInstanceId.make("opencode")]?.enabled).toBe(false);
+    expect(providerInstances[ProviderInstanceId.make("kiro")]).toBeUndefined();
+  }).pipe(
+    Effect.provide(
+      ServerSettingsService.layerTest({
+        providerInstances: {
+          [ProviderInstanceId.make("opencode")]: {
+            driver: ProviderDriverKind.make("opencode"),
+            enabled: false,
+          },
+        },
+      }),
+    ),
+    Effect.provide(ServerConfig.layerTest(process.cwd(), { prefix: "t3-provider-detection-" })),
+    Effect.provide(NodeServices.layer),
+  ),
+);
 
 describe("seedDevReplayInstance", () => {
   const seed = (devUrl: URL | undefined) =>

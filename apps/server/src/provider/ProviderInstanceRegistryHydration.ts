@@ -11,6 +11,7 @@ import {
 import * as NodeUtil from "node:util";
 
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import { resolveCommandPath } from "@t3tools/shared/shell";
 import type * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -87,6 +88,58 @@ export const deriveProviderInstanceConfigMap = (
 };
 
 export const DEV_REPLAY_INSTANCE_ID = ProviderInstanceId.make("devReplay");
+
+const detectableWindowsProviders = [
+  { driver: "antigravity", command: "agy" },
+  { driver: "opencode", command: "opencode" },
+  { driver: "grok", command: "grok" },
+  { driver: "kiro", command: "kiro-cli" },
+] as const;
+
+export const seedInstalledWindowsProviders = Effect.fn("seedInstalledWindowsProviders")(
+  function* () {
+    const config = yield* ServerConfig.ServerConfig;
+    if (config.mode !== "desktop" || (yield* HostProcess.Platform) !== "win32") return;
+
+    const settings = yield* Settings.ServerSettingsService;
+    const env = ManagedProviders.providerHostEnvironment(
+      settings.managedPolicy,
+      yield* HostProcess.Environment,
+    );
+    const path = yield* Path.Path;
+    const fs = yield* FileSystem.FileSystem;
+    for (const candidate of detectableWindowsProviders) {
+      const driver = ProviderDriverKind.make(candidate.driver);
+      const instanceId = defaultInstanceIdForDriver(driver);
+      if (ManagedProviders.disallowedDriverReason(settings.managedPolicy, driver)) continue;
+      // An explicit entry, including a disabled one, takes precedence over discovery.
+      if (Object.hasOwn((yield* settings.getSettings).providerInstances, instanceId)) continue;
+
+      const command = yield* resolveCommandPath(candidate.command, { env });
+      const installedAgy =
+        candidate.driver === "antigravity" && !command && env.LOCALAPPDATA
+          ? yield* resolveCommandPath(path.join(env.LOCALAPPDATA, "agy", "bin", "agy.exe"), { env })
+          : null;
+      const hasAntigravityDesktop =
+        candidate.driver === "antigravity" &&
+        Boolean(env.LOCALAPPDATA) &&
+        (yield* fs
+          .exists(path.join(env.LOCALAPPDATA!, "Programs", "antigravity", "Antigravity.exe"))
+          .pipe(Effect.orElseSucceed(() => false)));
+      // A desktop-only Antigravity install exposes setup; the driver still requires its ACP runtime.
+      if (!command && !installedAgy && !hasAntigravityDesktop) continue;
+      yield* settings.updateProviderInstance({
+        operation: "upsert",
+        instanceId,
+        instance: {
+          driver,
+          enabled: true,
+          ...(installedAgy ? { config: { binaryPath: installedAgy } } : {}),
+        },
+      });
+    }
+  },
+);
 
 /**
  * Dev servers run from source keep a free ACP agent that replays recorded turns, so UI checks
@@ -179,6 +232,11 @@ export const layer: Layer.Layer<
 > = Layer.unwrap(
   Effect.gen(function* () {
     const serverSettings = yield* Settings.ServerSettingsService;
+    yield* seedInstalledWindowsProviders().pipe(
+      Effect.catchCause((cause) =>
+        Effect.logWarning("Could not add detected local providers", cause),
+      ),
+    );
     yield* seedDevReplayInstance().pipe(
       Effect.catchCause((cause) => Effect.logWarning("Dev replay agent unavailable", cause)),
     );
