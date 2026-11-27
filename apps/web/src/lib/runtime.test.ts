@@ -64,7 +64,7 @@ describe("web runtime relay telemetry policy", () => {
       exports: true,
     },
   ])("applies $surface before the first relay span", async (surface) => {
-    const { desktopBridge, exports } = surface;
+    const { desktopBridge } = surface;
     vi.resetModules();
     vi.stubEnv("T3CODE_TELEMETRY_ENABLED", "false");
     vi.stubEnv("T3CODE_OTEL_SDK_DISABLED", "true");
@@ -113,13 +113,6 @@ describe("web runtime relay telemetry policy", () => {
       await freshRuntime.dispose();
     }
 
-    if (exports) {
-      expect(fetchFn).toHaveBeenCalledOnce();
-      expect(String(fetchFn.mock.calls[0]?.[0])).toBe("https://telemetry.example.test/v1/traces");
-      const payload = new TextDecoder().decode(fetchFn.mock.calls[0]?.[1]?.body as Uint8Array);
-      expect(payload).toContain('"name":"relay.first-operation"');
-    } else {
-      expect(fetchFn).not.toHaveBeenCalled();
-    }
+    expect(fetchFn).not.toHaveBeenCalled();
   });
 });

@@ -108,7 +108,10 @@ export function makeRelayUrlConfig(fallback = buildTimeRelayUrl) {
   );
 }
 
-export const relayUrlConfig = makeRelayUrlConfig();
+const cloudDisabled = new ConfigProvider.SourceError({
+  message: "Managed T3 Connect is disabled in ML Code.",
+});
+export const relayUrlConfig: Config.Config<string> = Config.fail(cloudDisabled);
 
 export const hostedAppUrlConfig = makePublicValueConfig(
   "T3CODE_HOSTED_APP_URL",
@@ -216,10 +219,6 @@ export function makeCloudCliOAuthConfig({
   );
 }
 
-export const cloudCliOAuthConfig = makeCloudCliOAuthConfig();
+export const cloudCliOAuthConfig: Config.Config<CloudCliOAuthConfig> = Config.fail(cloudDisabled);
 
-export const hasCloudPublicConfig = Boolean(
-  (normalizeSecureRelayUrl(process.env.T3CODE_RELAY_URL ?? "") ?? buildTimeRelayUrl) &&
-  (process.env.T3CODE_CLERK_PUBLISHABLE_KEY?.trim() || buildTimeClerkPublishableKey) &&
-  (process.env.T3CODE_CLERK_CLI_OAUTH_CLIENT_ID?.trim() || buildTimeClerkCliOAuthClientId),
-);
+export const hasCloudPublicConfig: boolean = false;

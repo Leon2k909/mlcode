@@ -9,6 +9,36 @@ const CONNECT_AUTHORIZE_PATH = "/connect";
 
 export const DEFAULT_HOSTED_APP_URL = "https://app.t3.codes";
 
+export function isUpstreamT3Url(value: string): boolean {
+  try {
+    const url = new URL(value);
+    const hostname = url.hostname.toLowerCase().replace(/\.$/, "");
+    if (
+      ["t3.codes", "t3coderelay.com"].some(
+        (domain) => hostname === domain || hostname.endsWith(`.${domain}`),
+      )
+    )
+      return true;
+    if (
+      hostname === "github.com" ||
+      hostname === "raw.githubusercontent.com" ||
+      hostname === "api.github.com"
+    ) {
+      return /(?:^|\/)pingdotgg\/t3code(?:\/|\.git(?:\/|$)|$)/i.test(url.pathname);
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+export const fetchWithoutUpstreamT3: typeof fetch = (input, init) => {
+  const url = input instanceof Request ? input.url : String(input);
+  if (isUpstreamT3Url(url))
+    return Promise.reject(new Error("ML Code blocks requests to upstream T3 Code services."));
+  return globalThis.fetch(input, init);
+};
+
 export const CONNECT_OAUTH_SCOPES = ["openid", "profile", "email", "offline_access"] as const;
 
 export interface ConnectAuthorizeRequest {

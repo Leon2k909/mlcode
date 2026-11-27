@@ -78,6 +78,7 @@ function makeFakeBrowserWindow() {
     session: {
       setPermissionRequestHandler: vi.fn(),
       webRequest: {
+        onBeforeRequest: vi.fn(),
         onBeforeSendHeaders: vi.fn(),
       },
     },

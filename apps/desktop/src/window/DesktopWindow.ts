@@ -796,6 +796,17 @@ export const make = Effect.gen(function* () {
     });
     // Chromium asks this before handing a navigation to an OS protocol handler, and grants it
     // when nothing answers. External links are opened through ElectronShell only.
+    window.webContents.session.webRequest.onBeforeRequest(
+      {
+        urls: [
+          "*://t3.codes/*",
+          "*://*.t3.codes/*",
+          "*://t3coderelay.com/*",
+          "*://*.t3coderelay.com/*",
+        ],
+      },
+      (_details, callback) => callback({ cancel: true }),
+    );
     window.webContents.session.setPermissionRequestHandler((_contents, permission, callback) =>
       callback(permission !== "openExternal"),
     );

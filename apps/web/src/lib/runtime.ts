@@ -4,6 +4,7 @@ import * as Layer from "effect/Layer";
 import * as Socket from "effect/socket/Socket";
 
 import { layerRemoteHttpClient } from "@t3tools/client-runtime/rpc";
+import { fetchWithoutUpstreamT3 } from "@t3tools/shared/connectAuth";
 import * as RelayTracing from "@t3tools/shared/relayTracing";
 import * as PrimaryEnvironmentHttpClient from "../environments/primary/httpClient";
 import * as PrimaryEnvironmentHttpLayer from "../environments/primary/httpLayer";
@@ -21,7 +22,7 @@ function configuredRelayUrl(): string {
   return resolveCloudPublicConfig().relayUrl ?? "http://relay.invalid";
 }
 
-const layerHttpClient = layerRemoteHttpClient((input, init) => globalThis.fetch(input, init));
+const layerHttpClient = layerRemoteHttpClient(fetchWithoutUpstreamT3);
 const layerRelayTracing = RelayTracing.layer(
   resolveRelayTracingConfig(),
   {

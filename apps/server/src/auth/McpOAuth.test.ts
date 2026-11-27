@@ -788,7 +788,7 @@ it.live("an app approval code approves only an app sign-in, at its own level", (
 );
 
 it.effect(
-  "sends an app sign-in on the linked tunnel to the hosted app, and a link to its own page",
+  "keeps app sign-in and link approval on the environment even on a linked tunnel",
   () =>
     Effect.gen(function* () {
       const handoff = (tunnelHostname: string, peerLink = false) =>
@@ -817,11 +817,7 @@ it.effect(
         );
 
       const onTunnel = yield* handoff("box.example.ts.net");
-      const hosted = new URL(onTunnel.location);
-      expect(`${hosted.origin}${hosted.pathname}`).toBe("https://app.t3.codes/approve-agent");
-      expect(hosted.searchParams.get("environment")).toEqual(expect.any(String));
-      hosted.searchParams.delete("environment");
-      expect(hosted.searchParams.toString()).toBe(onTunnel.query);
+      expect(onTunnel.location).toBe(`/connect-agent?${onTunnel.query}`);
 
       const elsewhere = yield* handoff("other.t3coderelay.com");
       expect(elsewhere.location).toBe(`/connect-agent?${elsewhere.query}`);
